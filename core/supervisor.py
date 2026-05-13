@@ -4,8 +4,10 @@ from core.config import config
 from core.risk_manager import RiskManager
 from core.decision_filter import DecisionFilter, TradeGrade
 from agents.signal_agent import TradeSignal, SignalType
-from connectors.glint_connector import GlintConnector, GlintSignal
+from connectors.glint_connector import GlintSignal
+from connectors.glint_browser import GlintBrowser
 from dashboard.telegram_bot import TradingTelegramBot
+from dashboard.telegram_commander import TelegramCommander
 
 
 class TradingSupervisor:
@@ -28,9 +30,16 @@ class TradingSupervisor:
             on_approve=self._execute_trade,
             on_reject=self._reject_trade,
         )
-        self.glint = GlintConnector(
+        self.commander = TelegramCommander(
+            bot_token=config.telegram_bot_token,
+            chat_id=config.telegram_chat_id,
+            on_mode_change=self._on_mode_change,
+            on_callback=self.telegram.handle_callback,
+        )
+        self.glint = GlintBrowser(
             ws_url=config.glint_ws_url,
             session_token=config.glint_session_token,
+            email=config.glint_email,
             on_signal=self._on_glint_signal,
             min_impact="High",
         )
@@ -38,6 +47,12 @@ class TradingSupervisor:
         self._last_glint_text: str = ""
         self.mode    = config.operation_mode
         self._running = False
+
+    # ── Mode change callback (from TelegramCommander) ─────────────────────
+
+    def _on_mode_change(self, mode: str):
+        self.mode = mode
+        print(f"[Mode] Cambiado a: {mode.upper()} vía Telegram")
 
     # ── Glint callback ────────────────────────────────────────────────────
 
@@ -154,6 +169,7 @@ class TradingSupervisor:
         print()
 
         await asyncio.gather(
+            self.commander.start_polling(),
             self.glint.connect(),
             self._market_scan_loop(),
         )

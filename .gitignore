@@ -29,6 +29,7 @@ env/
 # Data & memory (local only)
 memory/models/
 memory/strategies_db/
+memory/glint_session.json
 logs/
 *.log
 *.db

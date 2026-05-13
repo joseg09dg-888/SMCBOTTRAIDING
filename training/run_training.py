@@ -66,23 +66,23 @@ except ImportError:
 
 # ── Telegram progress reporting ───────────────────────────────────────────────
 
-async def _tg_send(msg: str):
+def _tg_send(msg: str):
+    """Synchronous Telegram send — safe to call from any context."""
     if not HAS_TELEGRAM or not config.telegram_bot_token or not config.telegram_chat_id:
-        print(f"[Telegram] {msg}")
         return
     try:
-        bot = Bot(token=config.telegram_bot_token)
-        await bot.send_message(chat_id=config.telegram_chat_id, text=msg)
+        async def _send():
+            bot = Bot(token=config.telegram_bot_token)
+            await bot.send_message(chat_id=config.telegram_chat_id, text=msg)
+        asyncio.run(_send())
     except Exception as e:
-        print(f"[Telegram send failed: {e}] {msg}")
+        print(f"[Telegram send failed: {e}]")
 
-def progress(msg: str):
+def progress(msg: str, telegram: bool = True):
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}")
-    try:
-        asyncio.get_event_loop().run_until_complete(_tg_send(msg))
-    except Exception:
-        pass
+    if telegram:
+        _tg_send(msg)
 
 
 # ── Phase 1: YouTube Training ─────────────────────────────────────────────────
@@ -125,19 +125,19 @@ def phase_youtube(skip: bool = False):
     for channel, video_ids in SAMPLE_VIDEOS.items():
         for vid_id in video_ids:
             processed += 1
-            progress(f"Procesando video {processed}/{total} — {channel} [{vid_id}]...")
+            progress(f"📚 Procesando video {processed}/{total} — {channel}...")
             try:
                 strategy = trainer.process_video(vid_id, channel)
                 if strategy:
                     strategies_found += 1
-                    progress(f"  -> Estrategia extraida: {strategy.title} ({strategy.style.value})")
+                    progress(f"  ✅ Estrategia: {strategy.title} ({strategy.style.value})")
                 else:
-                    print(f"  -> Sin estrategia clara en {vid_id}")
+                    progress(f"  -> Sin estrategia clara en {vid_id}", telegram=False)
             except Exception as e:
                 print(f"  -> Error en {vid_id}: {e}")
             time.sleep(0.5)  # Rate limit
 
-    progress(f"YouTube completado: {strategies_found} estrategias de {processed} videos")
+    progress(f"📚 YouTube completado: {strategies_found} estrategias de {processed} videos")
     CURRICULUM[0].status = HitoStatus.COMPLETADO
     CURRICULUM[0].progreso = 1.0
     return strategies_found
@@ -157,7 +157,7 @@ def phase_ml_training(skip: bool = False):
         print(f"[SKIP] Faltan: {', '.join(missing) if missing else 'flag --skip-ml'}")
         return None
 
-    progress("Generando dataset de entrenamiento con features SMC...")
+    progress("🧠 Entrenando modelos ML — generando dataset SMC (5000 muestras)...")
 
     # Generate synthetic training data based on SMC features
     np.random.seed(42)
@@ -202,7 +202,7 @@ def phase_ml_training(skip: bool = False):
     models = {}
 
     # Random Forest
-    progress("Entrenando Random Forest...")
+    progress("🧠 Entrenando Random Forest (100 árboles)...")
     rf = RandomForestClassifier(n_estimators=100, max_depth=8, random_state=42, n_jobs=-1)
     rf.fit(X_train, y_train)
     rf_acc = accuracy_score(y_test, rf.predict(X_test))
@@ -211,7 +211,7 @@ def phase_ml_training(skip: bool = False):
 
     # XGBoost
     if HAS_XGB:
-        progress("Entrenando XGBoost...")
+        progress("🧠 Entrenando XGBoost (200 estimadores)...")
         xgb_model = xgb.XGBClassifier(
             n_estimators=200, max_depth=6, learning_rate=0.05,
             subsample=0.8, random_state=42, eval_metric="logloss",
@@ -222,7 +222,7 @@ def phase_ml_training(skip: bool = False):
         progress(f"  -> XGBoost accuracy: {xgb_acc*100:.1f}%")
         models["xgboost"] = xgb_model
     else:
-        progress("[SKIP] XGBoost no instalado — solo Random Forest")
+        progress("🧠 [SKIP] XGBoost no instalado — solo Random Forest")
 
     # Save models
     models_dir = Path("memory/models")
@@ -238,7 +238,7 @@ def phase_ml_training(skip: bool = False):
     with open(models_dir / "feature_names.json", "w") as f:
         json.dump(feature_names, f)
 
-    progress(f"ML training completado. {len(models)} modelos guardados.")
+    progress(f"🧠 ML completado — {len(models)} modelos guardados en memory/models/")
     CURRICULUM[3].status = HitoStatus.COMPLETADO
     CURRICULUM[3].progreso = 1.0
     return models
@@ -300,27 +300,30 @@ def phase_demo_warmup(n_trades: int = 20):
         )
 
         if result.grade == TradeGrade.NO_TRADE:
-            print(f"  Trade {i:3d}: BLOQUEADO (score {result.score}) — {result.reason[:50]}")
+            progress(f"📈 Trade demo {i}/{n_trades} — BLOQUEADO (score {result.score})", telegram=False)
         else:
             if trade_won:
                 wins += 1
                 pnl = rm.capital * cfg.max_risk_per_trade * result.risk_multiplier * 2.5
                 rm.record_trade(pnl)
-                print(f"  Trade {i:3d}: WIN  +${pnl:.2f} | Score {result.score} | {result.grade.value.upper()}")
+                progress(
+                    f"📈 Trade demo {i}/{n_trades} — ✅ WIN +${pnl:.2f} "
+                    f"| Score {result.score} | {result.grade.value.upper()}",
+                    telegram=(i % 10 == 0 or i == n_trades),
+                )
             else:
                 losses += 1
                 pnl = -rm.capital * cfg.max_risk_per_trade * result.risk_multiplier
                 rm.record_trade(pnl)
-                print(f"  Trade {i:3d}: LOSS -${abs(pnl):.2f} | Score {result.score} | {result.grade.value.upper()}")
-
-        total_closed = wins + losses
-        if total_closed > 0 and total_closed % 10 == 0:
-            wr = wins / total_closed * 100
-            progress(f"Demo trade {total_closed}/{n_trades} — Win rate: {wr:.1f}%")
+                progress(
+                    f"📈 Trade demo {i}/{n_trades} — ❌ LOSS -${abs(pnl):.2f} "
+                    f"| Score {result.score} | {result.grade.value.upper()}",
+                    telegram=(i % 10 == 0 or i == n_trades),
+                )
 
     total_closed = wins + losses
     wr = wins / total_closed * 100 if total_closed > 0 else 0
-    progress(f"Calentamiento completado: {wins}W / {losses}L — Win rate: {wr:.1f}%")
+    progress(f"📈 Calentamiento completado: {wins}W / {total_closed - wins}L — Win rate: {wr:.1f}%")
 
     if wr >= 50:
         CURRICULUM[2].status = HitoStatus.COMPLETADO
@@ -426,6 +429,11 @@ def main():
         phase_final_check()
         return
 
+    progress(
+        f"🚀 Iniciando entrenamiento SMC — "
+        f"YouTube + ML + {args.demo_trades} trades demo en background..."
+    )
+
     # Run all phases
     strategies = phase_youtube(skip=args.skip_youtube)
     models     = phase_ml_training(skip=args.skip_ml)
@@ -443,8 +451,10 @@ def main():
     print("\n" + "="*55)
     if all_ok:
         print("  ENTRENAMIENTO COMPLETO. Ejecuta: python main.py")
+        progress("✅ Entrenamiento completado — bot listo para operar. Ejecuta startup.py")
     else:
         print("  ENTRENAMIENTO INCOMPLETO. Revisa los errores arriba.")
+        progress("⚠️ Entrenamiento incompleto — revisa la terminal para ver los errores")
     print("="*55 + "\n")
 
 

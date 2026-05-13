@@ -1,4 +1,5 @@
 # dashboard/telegram_commander.py
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -67,16 +68,30 @@ class TelegramCommander:
     """
     Full Telegram command interface for the SMC Trading Bot.
     Handles all /commands and routes to the appropriate bot actions.
+    Call start_polling() as an asyncio task to activate command listening.
     """
 
-    def __init__(self, bot_token: str = "", chat_id: str = "",
-                 on_close_all: Optional[Callable] = None):
-        self.bot_token  = bot_token
-        self.chat_id    = chat_id
-        self.on_close_all = on_close_all
-        self.state      = BotStatus()
-        self._bot       = None
-        self._app       = None
+    # Class-level defaults so tests that use __new__() don't get AttributeError
+    on_mode_change = None
+    on_callback    = None
+    on_close_all   = None
+
+    def __init__(
+        self,
+        bot_token: str = "",
+        chat_id: str = "",
+        on_close_all: Optional[Callable] = None,
+        on_mode_change: Optional[Callable[[str], None]] = None,
+        on_callback: Optional[Callable] = None,
+    ):
+        self.bot_token      = bot_token
+        self.chat_id        = chat_id
+        self.on_close_all   = on_close_all
+        self.on_mode_change = on_mode_change
+        self.on_callback    = on_callback
+        self.state          = BotStatus()
+        self._bot           = None
+        self._app           = None
 
     def handle_command(self, command: str) -> CommandResult:
         """Synchronous command handler — used in tests and fallback mode."""
@@ -111,6 +126,8 @@ class TelegramCommander:
         self.state.mode = BotMode.AUTO
         self.state.paused = False
         self._log_mode_change("auto", "Activado por comando /auto")
+        if self.on_mode_change:
+            self.on_mode_change("auto")
         return CommandResult(
             success=True,
             message="Modo AUTO activado. Operare solo sin pedir confirmacion.",
@@ -121,6 +138,8 @@ class TelegramCommander:
         self.state.mode = BotMode.SEMI
         self.state.paused = False
         self._log_mode_change("semi", "Activado por comando /semi")
+        if self.on_mode_change:
+            self.on_mode_change("semi")
         return CommandResult(
             success=True,
             message="Modo SEMI activado. Te pedire confirmacion antes de cada trade.",
@@ -130,6 +149,8 @@ class TelegramCommander:
     def _cmd_pause(self) -> CommandResult:
         self.state.paused = True
         self._log_mode_change("paused", "Pausado por comando /pause")
+        if self.on_mode_change:
+            self.on_mode_change("paused")
         return CommandResult(
             success=True,
             message="Bot pausado. No abrire nuevas posiciones hasta /resume.",
@@ -139,6 +160,8 @@ class TelegramCommander:
     def _cmd_resume(self) -> CommandResult:
         self.state.paused = False
         self._log_mode_change(self.state.mode.value, "Reanudado por comando /resume")
+        if self.on_mode_change:
+            self.on_mode_change(self.state.mode.value)
         return CommandResult(
             success=True,
             message=f"Bot reanudado. Modo activo: {self.state.mode.value.upper()}",
@@ -240,6 +263,54 @@ class TelegramCommander:
             await bot.send_message(chat_id=self.chat_id, text=text, parse_mode="Markdown")
         except Exception as e:
             logger.error(f"Telegram send error: {e}")
+
+    async def start_polling(self):
+        """
+        Starts listening for Telegram commands as an asyncio task.
+        Registers all /commands and runs until cancelled.
+        Compatible with python-telegram-bot v20+.
+        """
+        if not HAS_TELEGRAM or not self.bot_token:
+            print("[Telegram] Sin token — polling de comandos desactivado")
+            await asyncio.Event().wait()
+            return
+
+        try:
+            app = Application.builder().token(self.bot_token).build()
+
+            for cmd in COMMANDS:
+                app.add_handler(CommandHandler(cmd.lstrip("/"), self._make_handler(cmd)))
+
+            if self.on_callback:
+                app.add_handler(CallbackQueryHandler(self.on_callback))
+
+            async with app:
+                await app.start()
+                await app.updater.start_polling(drop_pending_updates=True)
+                await self.send_message(
+                    "🤖 Bot online — comandos activos: /status /auto /semi /pause /resume "
+                    "/positions /scores /risk /train /youtube"
+                )
+                print("[Telegram] Polling activo — escuchando comandos")
+                await asyncio.Event().wait()   # runs until task is cancelled
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Telegram polling error: {e}")
+            print(f"[Telegram] Error en polling: {e}")
+
+    def _make_handler(self, cmd: str):
+        """Returns a PTB-compatible async handler for the given command."""
+        async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            if not update.message:
+                return
+            result = self.handle_command(cmd)
+            parse = "Markdown" if any(c in result.message for c in ("*", "_", "`")) else None
+            try:
+                await update.message.reply_text(result.message, parse_mode=parse)
+            except Exception as e:
+                logger.error(f"Reply error for {cmd}: {e}")
+        return handler
 
     def update_state(self, **kwargs):
         """Update bot state from supervisor."""
