@@ -16,7 +16,7 @@ class Config:
     binance_testnet: bool = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 
     # MetaTrader
-    mt5_login: int = int(os.getenv("MT5_LOGIN", "0"))
+    mt5_login: int = int(os.getenv("MT5_LOGIN", "0")) if os.getenv("MT5_LOGIN", "0").isdigit() else 0
     mt5_password: str = os.getenv("MT5_PASSWORD", "")
     mt5_server: str = os.getenv("MT5_SERVER", "MetaQuotes-Demo")
     mt5_demo: bool = os.getenv("MT5_DEMO", "true").lower() == "true"
