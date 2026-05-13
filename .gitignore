@@ -1,13 +1,55 @@
-.venv/
+# Secrets — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# ML models (binary, large)
+*.h5
+*.pkl
+*.joblib
+*.pt
+*.pth
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.env
+*.pyd
+.Python
 *.egg-info/
 dist/
 build/
+pip-selfcheck.json
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Data & memory (local only)
+memory/models/
+memory/strategies_db/
+logs/
+*.log
+*.db
+*.sqlite3
+
+# Test artifacts
 .pytest_cache/
 .coverage
 htmlcov/
-*.db
-*.sqlite3
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
