@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 class SignalType(Enum):
@@ -11,6 +11,7 @@ class SignalType(Enum):
 
 @dataclass
 class TradeSignal:
+    # Required fields (no defaults)
     symbol: str
     signal_type: SignalType
     entry: float
@@ -19,8 +20,14 @@ class TradeSignal:
     timeframe: str
     trigger: str
     confidence: float
+    # Optional fields (with defaults)
     glint_context: str = ""
     notes: str = ""
+    decision_score: int = 0
+    decision_grade: str = ""
+    risk_multiplier: float = 1.0
+    premium_alert: bool = False
+    score_breakdown: Dict = field(default_factory=dict)
 
     @property
     def risk_reward(self) -> float:
@@ -43,6 +50,17 @@ class TradeSignal:
     def format_telegram(self) -> str:
         direction = "🟢 LONG" if self.signal_type == SignalType.LONG else "🔴 SHORT"
         valid_mark = "✅ SETUP VÁLIDO" if self.is_valid() else "⛔ SIN SETUP — No se opera"
+
+        score_line = ""
+        if self.decision_score:
+            grade_emoji = {"premium": "🔥", "full": "✅", "reduced": "⚠️", "no_trade": "❌"}
+            em = grade_emoji.get(self.decision_grade, "")
+            risk_pct = int(self.risk_multiplier * 100)
+            score_line = f"\nScore: `{self.decision_score}/100` {em} | Riesgo: `{risk_pct}%`"
+            if self.score_breakdown:
+                bd = self.score_breakdown
+                score_line += f"\n  SMC:{bd.get('smc',0)} ML:{bd.get('ml',0)} Sent:{bd.get('sentiment',0)} Risk:{bd.get('risk',0)}"
+
         lines = [
             f"*{direction} — {self.symbol} | {self.timeframe}*",
             f"Entrada: `{self.entry}`",
@@ -53,6 +71,8 @@ class TradeSignal:
             f"Confianza: {self.confidence*100:.0f}%",
             valid_mark,
         ]
+        if score_line:
+            lines.insert(1, score_line)
         if self.glint_context:
             lines.append(f"Contexto: {self.glint_context}")
         return "\n".join(lines)
