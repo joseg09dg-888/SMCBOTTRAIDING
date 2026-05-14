@@ -8,6 +8,7 @@ from connectors.glint_connector import GlintSignal
 from connectors.glint_browser import GlintBrowser
 from dashboard.telegram_bot import TradingTelegramBot
 from dashboard.telegram_commander import TelegramCommander
+from training.historical_agent import HistoricalDataAgent
 
 
 class TradingSupervisor:
@@ -22,10 +23,12 @@ class TradingSupervisor:
     """
 
     def __init__(self, capital: float = 1000.0):
-        self.config       = config
-        self.capital      = capital
-        self.risk_manager = RiskManager(config, capital)
-        self.decision     = DecisionFilter(config, self.risk_manager)
+        self.config         = config
+        self.capital        = capital
+        self.risk_manager   = RiskManager(config, capital)
+        self.historical     = HistoricalDataAgent()
+        self.decision       = DecisionFilter(config, self.risk_manager,
+                                             historical_agent=self.historical)
         self.telegram     = TradingTelegramBot(
             on_approve=self._execute_trade,
             on_reject=self._reject_trade,
@@ -35,6 +38,7 @@ class TradingSupervisor:
             chat_id=config.telegram_chat_id,
             on_mode_change=self._on_mode_change,
             on_callback=self.telegram.handle_callback,
+            on_history=self._on_history_command,
         )
         self.glint = GlintBrowser(
             ws_url=config.glint_ws_url,
@@ -48,11 +52,14 @@ class TradingSupervisor:
         self.mode    = config.operation_mode
         self._running = False
 
-    # ── Mode change callback (from TelegramCommander) ─────────────────────
+    # ── Callbacks from TelegramCommander ─────────────────────────────────
 
     def _on_mode_change(self, mode: str):
         self.mode = mode
         print(f"[Mode] Cambiado a: {mode.upper()} vía Telegram")
+
+    def _on_history_command(self, symbol: str) -> str:
+        return self.historical.get_market_summary(symbol or "BTC")
 
     # ── Glint callback ────────────────────────────────────────────────────
 

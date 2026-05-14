@@ -61,6 +61,8 @@ COMMANDS = {
     "/scores":    "Ultimos 10 scores del DecisionFilter",
     "/risk":      "Estado del riesgo (correlaciones, sesion, volatilidad)",
     "/youtube":   "Estado del aprendizaje YouTube",
+    "/history":   "Análisis histórico de un símbolo. Ej: /history BTC",
+    "/memory":    "Estado de memoria y accuracy de todos los agentes",
 }
 
 
@@ -75,6 +77,8 @@ class TelegramCommander:
     on_mode_change = None
     on_callback    = None
     on_close_all   = None
+    on_history     = None
+    on_memory      = None
 
     def __init__(
         self,
@@ -83,12 +87,16 @@ class TelegramCommander:
         on_close_all: Optional[Callable] = None,
         on_mode_change: Optional[Callable[[str], None]] = None,
         on_callback: Optional[Callable] = None,
+        on_history: Optional[Callable[[str], str]] = None,
+        on_memory: Optional[Callable[[], str]] = None,
     ):
         self.bot_token      = bot_token
         self.chat_id        = chat_id
         self.on_close_all   = on_close_all
         self.on_mode_change = on_mode_change
         self.on_callback    = on_callback
+        self.on_history     = on_history
+        self.on_memory      = on_memory
         self.state          = BotStatus()
         self._bot           = None
         self._app           = None
@@ -109,6 +117,7 @@ class TelegramCommander:
             "/scores":    self._cmd_scores,
             "/risk":      self._cmd_risk,
             "/youtube":   self._cmd_youtube,
+            "/memory":    self._cmd_memory,
         }
 
         handler = handlers.get(cmd)
@@ -245,6 +254,19 @@ class TelegramCommander:
             action="youtube",
         )
 
+    def _cmd_memory(self) -> CommandResult:
+        if self.on_memory:
+            try:
+                text = self.on_memory()
+            except Exception as e:
+                text = f"Error al obtener memoria: {e}"
+        else:
+            text = (
+                "Memoria del bot: sin conexion a AgentMemoryManager.\n"
+                "Reinicia el bot con memoria activa para ver estadisticas."
+            )
+        return CommandResult(success=True, message=text, action="memory")
+
     # ── Helpers ───────────────────────────────────────────────────────────
 
     def _log_mode_change(self, mode: str, reason: str):
@@ -301,6 +323,9 @@ class TelegramCommander:
 
     def _make_handler(self, cmd: str):
         """Returns a PTB-compatible async handler for the given command."""
+        if cmd == "/history":
+            return self._make_history_handler()
+
         async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not update.message:
                 return
@@ -310,6 +335,26 @@ class TelegramCommander:
                 await update.message.reply_text(result.message, parse_mode=parse)
             except Exception as e:
                 logger.error(f"Reply error for {cmd}: {e}")
+        return handler
+
+    def _make_history_handler(self):
+        """Handler for /history [symbol] — calls on_history callback."""
+        async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            if not update.message:
+                return
+            symbol = (context.args[0].upper() if context.args else "BTC")
+            if self.on_history:
+                try:
+                    text = self.on_history(symbol)
+                except Exception as e:
+                    text = f"Error generando historial para {symbol}: {e}"
+            else:
+                text = f"Agente histórico no disponible. Reinicia el bot."
+            parse = "Markdown" if "*" in text else None
+            try:
+                await update.message.reply_text(text, parse_mode=parse)
+            except Exception as e:
+                logger.error(f"History reply error: {e}")
         return handler
 
     def update_state(self, **kwargs):

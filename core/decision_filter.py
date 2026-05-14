@@ -40,7 +40,8 @@ class DecisionResult:
 
 class DecisionFilter:
     """
-    Aggregates SMC, ML, sentiment, and risk signals into a score 0-100.
+    Aggregates SMC, ML, sentiment, risk, and historical signals into a
+    score 0-100.
 
     Routing:
       < 60  → NO_TRADE   (risk_multiplier=0.0)
@@ -49,11 +50,13 @@ class DecisionFilter:
       90+   → PREMIUM    (risk_multiplier=1.0, premium_alert=True)
     """
 
-    def __init__(self, config: Config, risk_manager: RiskManager):
-        self.config = config
-        self.rm     = risk_manager
-        self._ml    = MLPredictor()
-        self._sa    = SentimentAnalyzer()
+    def __init__(self, config: Config, risk_manager: RiskManager,
+                 historical_agent=None):
+        self.config    = config
+        self.rm        = risk_manager
+        self._ml       = MLPredictor()
+        self._sa       = SentimentAnalyzer()
+        self._hist     = historical_agent  # optional HistoricalDataAgent
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -88,20 +91,36 @@ class DecisionFilter:
         sentiment_score         = sentiment_result.component_score
         risk_score, risk_detail = self._score_risk(entry, stop_loss, take_profit)
 
-        total = smc_score + ml_score + sentiment_score + risk_score
+        # Historical context bonus (+0 to +20)
+        hist_score = 0
+        hist_detail = "sin agente histórico"
+        if self._hist is not None:
+            try:
+                from datetime import datetime as _dt
+                bonus = self._hist.score_adjustment(
+                    symbol, bias, _dt.utcnow().month, entry
+                )
+                hist_score  = bonus.points
+                hist_detail = bonus.breakdown_str()
+            except Exception:
+                pass
+
+        total = smc_score + ml_score + sentiment_score + risk_score + hist_score
         total = min(max(total, 0), 100)
 
         breakdown = {
-            "smc":       smc_score,
-            "ml":        ml_score,
-            "sentiment": sentiment_score,
-            "risk":      risk_score,
+            "smc":        smc_score,
+            "ml":         ml_score,
+            "sentiment":  sentiment_score,
+            "risk":       risk_score,
+            "historical": hist_score,
         }
         detail = {
-            "smc":       smc_detail,
-            "ml":        f"dir={ml_result.direction} conf={ml_result.confidence:.0%}",
-            "sentiment": sentiment_result.reason,
-            "risk":      risk_detail,
+            "smc":        smc_detail,
+            "ml":         f"dir={ml_result.direction} conf={ml_result.confidence:.0%}",
+            "sentiment":  sentiment_result.reason,
+            "risk":       risk_detail,
+            "historical": hist_detail,
         }
 
         result = self._score_to_result(total, symbol, breakdown)
