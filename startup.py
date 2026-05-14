@@ -1,8 +1,9 @@
 """
-SMC Bot — Startup Script (modo no-interactivo)
-Lee capital y modo desde .env, envía mensaje de bienvenida por Telegram.
-Uso: python startup.py
+SMC Bot — Startup Script
+Uso manual:    python startup.py
+Autoarranque:  python startup.py --auto --capital 1000 --reason auto_restart
 """
+import argparse
 import asyncio
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core.config import config
 from core.supervisor import TradingSupervisor
+from core.wakeup_recovery import run_recovery
 
 
 WELCOME_MSG = """SMC Bot iniciado en modo {mode}
@@ -22,14 +24,41 @@ Comandos: /auto /semi /pause /status /scores /risk /positions
 Regla de oro: Si no hay setup claro, no se opera.
 Listo para operar. La paciencia paga."""
 
+RESTART_REASONS = {
+    "auto_restart": "Reinicio automático de Windows",
+    "watchdog":     "Reiniciado por watchdog (proceso caído)",
+    "crash":        "Reiniciado tras error inesperado",
+}
 
-async def send_welcome(supervisor: TradingSupervisor):
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="SMC Trading Bot")
+    parser.add_argument("--auto",    action="store_true",   help="Modo no-interactivo (autoarranque)")
+    parser.add_argument("--capital", type=float, default=1000.0, help="Capital inicial en USD")
+    parser.add_argument("--reason",  type=str,  default="",      help="Motivo del arranque para Telegram")
+    return parser.parse_args()
+
+
+async def send_welcome(supervisor: TradingSupervisor, capital: float, auto: bool, reason: str):
     mode = config.operation_mode.upper()
-    capital = float(input("\nCapital inicial (USD) [1000]: ").strip() or "1000")
+
+    if not auto:
+        try:
+            raw = input("\nCapital inicial (USD) [1000]: ").strip()
+            capital = float(raw) if raw else capital
+        except (EOFError, ValueError):
+            pass
+
     supervisor.capital = capital
     supervisor.risk_manager.capital = capital
 
-    msg = WELCOME_MSG.format(
+    if auto and reason:
+        reason_label = RESTART_REASONS.get(reason, reason)
+        restart_header = f"🔄 *Bot reiniciado automáticamente — todo OK*\nMotivo: {reason_label}\n\n"
+    else:
+        restart_header = ""
+
+    msg = restart_header + WELCOME_MSG.format(
         mode=mode,
         capital=capital,
         risk=config.max_risk_per_trade * 100,
@@ -39,8 +68,16 @@ async def send_welcome(supervisor: TradingSupervisor):
     print("="*55 + "\n")
     await supervisor.telegram.send_glint_alert(msg)
 
+    if auto and reason in ("auto_restart", "watchdog", "crash"):
+        recovery_msg = await run_recovery(supervisor.telegram, capital)
+        if recovery_msg:
+            print(recovery_msg)
+            await supervisor.telegram.send_glint_alert(recovery_msg)
+
 
 async def main():
+    args = _parse_args()
+
     # Validate required credentials
     missing = []
     if not config.anthropic_api_key or "PEGA" in config.anthropic_api_key:
@@ -59,9 +96,11 @@ async def main():
     print(f"[OK] Modo: {config.operation_mode.upper()}")
     print(f"[OK] Testnet Binance: {config.binance_testnet}")
     print(f"[OK] MT5 Demo: {config.mt5_demo}")
+    if args.auto:
+        print(f"[OK] Autoarranque: capital=${args.capital:,.0f}")
 
-    supervisor = TradingSupervisor(capital=1000.0)
-    await send_welcome(supervisor)
+    supervisor = TradingSupervisor(capital=args.capital)
+    await send_welcome(supervisor, args.capital, args.auto, args.reason)
     await supervisor.run()
 
 

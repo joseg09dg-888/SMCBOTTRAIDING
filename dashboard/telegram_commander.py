@@ -61,8 +61,17 @@ COMMANDS = {
     "/scores":    "Ultimos 10 scores del DecisionFilter",
     "/risk":      "Estado del riesgo (correlaciones, sesion, volatilidad)",
     "/youtube":   "Estado del aprendizaje YouTube",
-    "/history":   "Análisis histórico de un símbolo. Ej: /history BTC",
-    "/memory":    "Estado de memoria y accuracy de todos los agentes",
+    "/history":          "Análisis histórico de un símbolo. Ej: /history BTC",
+    "/memory":           "Estado de memoria y accuracy de todos los agentes",
+    "/health":           "Health check de los 21 agentes del bot",
+    "/energy":           "Lectura energetica del mercado. Ej: /energy BTC",
+    "/reporte_semanal":  "Genera reporte semanal ahora",
+    "/reporte_mensual":  "Genera reporte mensual ahora",
+    "/criterios":        "Muestra criterios para ir a cuenta real",
+    "/proyeccion":       "Proyeccion de la proxima semana",
+    "/vision":           "Activa/desactiva vision de pantalla",
+    "/screenshot":       "Captura y analiza pantalla ahora",
+    "/mirror":           "Activa/desactiva modo espejo",
 }
 
 
@@ -117,7 +126,16 @@ class TelegramCommander:
             "/scores":    self._cmd_scores,
             "/risk":      self._cmd_risk,
             "/youtube":   self._cmd_youtube,
-            "/memory":    self._cmd_memory,
+            "/memory":           self._cmd_memory,
+            "/health":           self._cmd_health,
+            "/energy":           self._cmd_energy,
+            "/reporte_semanal":  self._cmd_reporte_semanal,
+            "/reporte_mensual":  self._cmd_reporte_mensual,
+            "/criterios":        self._cmd_criterios,
+            "/proyeccion":       self._cmd_proyeccion,
+            "/vision":           self._cmd_vision,
+            "/screenshot":       self._cmd_screenshot,
+            "/mirror":           self._cmd_mirror,
         }
 
         handler = handlers.get(cmd)
@@ -254,6 +272,16 @@ class TelegramCommander:
             action="youtube",
         )
 
+    def _cmd_health(self) -> CommandResult:
+        from core.agent_health_check import AgentHealthCheck
+        checker = AgentHealthCheck()
+        report = checker.run_full_check()
+        return CommandResult(
+            success=True,
+            message=report.format_telegram(),
+            action="health",
+        )
+
     def _cmd_memory(self) -> CommandResult:
         if self.on_memory:
             try:
@@ -266,6 +294,75 @@ class TelegramCommander:
                 "Reinicia el bot con memoria activa para ver estadisticas."
             )
         return CommandResult(success=True, message=text, action="memory")
+
+    def _cmd_energy(self) -> CommandResult:
+        from agents.energy_frequency_agent import EnergyFrequencyAgent
+        agent = EnergyFrequencyAgent()
+        reading = agent.analyze("BTC", price=0.0)
+        return CommandResult(
+            success=True,
+            message=reading.format_telegram(),
+            action="energy",
+        )
+
+    def _cmd_reporte_semanal(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        from datetime import date, timedelta
+        agent = ReportAgent(capital=self.state.capital)
+        today = date.today()
+        days_since_monday = today.weekday()
+        week_start = today - timedelta(days=days_since_monday)
+        stats = agent.calculate_weekly_stats(week_start)
+        summary = agent.generate_telegram_summary(stats)
+        return CommandResult(success=True, message=summary, action="reporte_semanal")
+
+    def _cmd_reporte_mensual(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        from datetime import date
+        agent = ReportAgent(capital=self.state.capital)
+        today = date.today()
+        stats = agent.calculate_monthly_stats(today.year, today.month)
+        summary = agent.generate_telegram_summary(stats)
+        return CommandResult(success=True, message=summary, action="reporte_mensual")
+
+    def _cmd_criterios(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        agent = ReportAgent(capital=self.state.capital)
+        msg = agent.generate_criteria_message()
+        return CommandResult(success=True, message=msg, action="criterios")
+
+    def _cmd_proyeccion(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        agent = ReportAgent(capital=self.state.capital)
+        msg = agent.generate_projection_message()
+        return CommandResult(success=True, message=msg, action="proyeccion")
+
+    def _cmd_vision(self) -> CommandResult:
+        from agents.screen_vision_agent import ScreenVisionAgent
+        agent = ScreenVisionAgent()
+        new_state = agent.toggle()
+        status = "activada" if new_state else "desactivada"
+        return CommandResult(success=True, message=f"Vision de pantalla {status}.", action="vision")
+
+    def _cmd_screenshot(self) -> CommandResult:
+        from agents.screen_vision_agent import ScreenVisionAgent
+        agent = ScreenVisionAgent()
+        cap = agent.capture_full_screen() or agent.create_mock_capture()
+        analysis = agent.analyze_capture(cap)
+        msg = agent.build_alert_message(analysis, "full")
+        return CommandResult(success=True, message=msg, action="screenshot")
+
+    def _cmd_mirror(self) -> CommandResult:
+        from agents.screen_vision_agent import ScreenVisionAgent
+        agent = ScreenVisionAgent()
+        if not agent._mirror_active:
+            agent.start_mirror_mode()
+            msg = "Modo espejo ACTIVADO. El bot aprende de tus operaciones."
+        else:
+            session = agent.stop_mirror_mode()
+            actions = session.actions_recorded if session else 0
+            msg = f"Modo espejo DESACTIVADO. Acciones grabadas: {actions}"
+        return CommandResult(success=True, message=msg, action="mirror")
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
