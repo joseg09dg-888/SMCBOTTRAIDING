@@ -72,6 +72,11 @@ COMMANDS = {
     "/vision":           "Activa/desactiva vision de pantalla",
     "/screenshot":       "Captura y analiza pantalla ahora",
     "/mirror":           "Activa/desactiva modo espejo",
+    "/analysis":         "Análisis SMC completo del mercado. Ej: /analysis BTC",
+    "/onchain":          "Métricas on-chain actuales (flujos ballenas, exchange netflow)",
+    "/lunar":            "Análisis de ciclos lunares y su correlación con el mercado",
+    "/elliott":          "Conteo de ondas de Elliott en el símbolo activo",
+    "/edge":             "Statistical edge y winrate histórico del sistema",
 }
 
 
@@ -126,6 +131,7 @@ class TelegramCommander:
             "/scores":    self._cmd_scores,
             "/risk":      self._cmd_risk,
             "/youtube":   self._cmd_youtube,
+            "/history":   self._cmd_history,
             "/memory":           self._cmd_memory,
             "/health":           self._cmd_health,
             "/energy":           self._cmd_energy,
@@ -136,6 +142,11 @@ class TelegramCommander:
             "/vision":           self._cmd_vision,
             "/screenshot":       self._cmd_screenshot,
             "/mirror":           self._cmd_mirror,
+            "/analysis":         self._cmd_analysis,
+            "/onchain":          self._cmd_onchain,
+            "/lunar":            self._cmd_lunar,
+            "/elliott":          self._cmd_elliott,
+            "/edge":             self._cmd_edge,
         }
 
         handler = handlers.get(cmd)
@@ -282,6 +293,19 @@ class TelegramCommander:
             action="health",
         )
 
+    def _cmd_history(self) -> CommandResult:
+        if self.on_history:
+            try:
+                text = self.on_history("BTC")
+            except Exception as e:
+                text = f"Error al obtener historial: {e}"
+        else:
+            text = (
+                "Historial: agente histórico no conectado.\n"
+                "Usa /history BTC para análisis por símbolo."
+            )
+        return CommandResult(success=True, message=text, action="history")
+
     def _cmd_memory(self) -> CommandResult:
         if self.on_memory:
             try:
@@ -363,6 +387,66 @@ class TelegramCommander:
             actions = session.actions_recorded if session else 0
             msg = f"Modo espejo DESACTIVADO. Acciones grabadas: {actions}"
         return CommandResult(success=True, message=msg, action="mirror")
+
+    def _cmd_analysis(self) -> CommandResult:
+        return CommandResult(
+            success=True,
+            message=(
+                "Análisis SMC: Para análisis completo pasa un símbolo.\n"
+                "Ej: /analysis BTC\n"
+                "(Agente de análisis no conectado en modo standalone)"
+            ),
+            action="analysis",
+        )
+
+    def _cmd_onchain(self) -> CommandResult:
+        return CommandResult(
+            success=True,
+            message=(
+                "On-Chain Metrics:\n"
+                "  Exchange Netflow: sin datos en tiempo real\n"
+                "  Whale Flows: sin datos en tiempo real\n"
+                "Conecta OnchainAgent para métricas en vivo."
+            ),
+            action="onchain",
+        )
+
+    def _cmd_lunar(self) -> CommandResult:
+        return CommandResult(
+            success=True,
+            message=(
+                "Análisis Lunar:\n"
+                "  Ciclo lunar: disponible vía LunarAgent\n"
+                "  Correlación histórica: sin datos cargados\n"
+                "Conecta LunarAgent para lectura completa."
+            ),
+            action="lunar",
+        )
+
+    def _cmd_elliott(self) -> CommandResult:
+        return CommandResult(
+            success=True,
+            message=(
+                "Ondas de Elliott:\n"
+                "  Conteo activo: sin datos de mercado en tiempo real\n"
+                "  Pasa un símbolo al supervisor para análisis completo.\n"
+                "Conecta ElliottAgent para conteo en vivo."
+            ),
+            action="elliott",
+        )
+
+    def _cmd_edge(self) -> CommandResult:
+        return CommandResult(
+            success=True,
+            message=(
+                "Statistical Edge del Sistema:\n"
+                "  Winrate histórico: sin trades registrados aún\n"
+                "  Expectancy: N/A\n"
+                "  Sharpe Ratio: N/A\n"
+                "Ejecuta /history para ver datos por símbolo."
+            ),
+            action="edge",
+        )
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
