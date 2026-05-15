@@ -181,13 +181,51 @@ class TradingSupervisor:
             self._market_scan_loop(),
         )
 
+    @staticmethod
+    async def _check_internet() -> bool:
+        """Fast TCP probe to 8.8.8.8:53 — no external libraries needed."""
+        import socket
+        loop = asyncio.get_event_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: socket.create_connection(("8.8.8.8", 53), timeout=3),
+                ),
+                timeout=4,
+            )
+            return True
+        except Exception:
+            return False
+
     async def _market_scan_loop(self):
+        _was_offline = False
         while self._running:
             try:
+                online = await self._check_internet()
+
+                if not online:
+                    if not _was_offline:
+                        _was_offline = True
+                    print("[Bot] Sin internet — reintentando en 30s...")
+                    await asyncio.sleep(30)
+                    continue
+
+                if _was_offline:
+                    _was_offline = False
+                    try:
+                        await self.telegram.send_glint_alert(
+                            "🔄 Conexion restaurada — bot activo"
+                        )
+                    except Exception:
+                        pass
+
                 print("[Scan] Escaneando mercados...")
                 await asyncio.sleep(60)
-            except Exception as e:
-                print(f"[Scan] Error: {e}")
+
+            except asyncio.CancelledError:
+                break
+            except Exception:
                 await asyncio.sleep(10)
 
     def stop(self):

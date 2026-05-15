@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional, Dict, Any
 
 POLLING_INTERVAL    = 15   # seconds between polls when connected
-RETRY_INTERVAL      = 300  # 5 minutes before retrying after full failure
+RETRY_INTERVAL      = 60   # seconds before retrying after full failure
 MAX_SEEN_IDS        = 1000 # prevent unbounded memory growth
 
 CATEGORY_INSTRUMENTS = {

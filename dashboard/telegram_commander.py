@@ -386,7 +386,7 @@ class TelegramCommander:
     async def start_polling(self):
         """
         Starts listening for Telegram commands as an asyncio task.
-        Registers all /commands and runs until cancelled.
+        Reconnects automatically every 30 s on any connection failure (silent).
         Compatible with python-telegram-bot v20+.
         """
         if not HAS_TELEGRAM or not self.bot_token:
@@ -394,29 +394,31 @@ class TelegramCommander:
             await asyncio.Event().wait()
             return
 
-        try:
-            app = Application.builder().token(self.bot_token).build()
+        while True:
+            try:
+                app = Application.builder().token(self.bot_token).build()
 
-            for cmd in COMMANDS:
-                app.add_handler(CommandHandler(cmd.lstrip("/"), self._make_handler(cmd)))
+                for cmd in COMMANDS:
+                    app.add_handler(CommandHandler(cmd.lstrip("/"), self._make_handler(cmd)))
 
-            if self.on_callback:
-                app.add_handler(CallbackQueryHandler(self.on_callback))
+                if self.on_callback:
+                    app.add_handler(CallbackQueryHandler(self.on_callback))
 
-            async with app:
-                await app.start()
-                await app.updater.start_polling(drop_pending_updates=True)
-                await self.send_message(
-                    "🤖 Bot online — comandos activos: /status /auto /semi /pause /resume "
-                    "/positions /scores /risk /train /youtube"
-                )
-                print("[Telegram] Polling activo — escuchando comandos")
-                await asyncio.Event().wait()   # runs until task is cancelled
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"Telegram polling error: {e}")
-            print(f"[Telegram] Error en polling: {e}")
+                async with app:
+                    await app.start()
+                    await app.updater.start_polling(drop_pending_updates=True)
+                    await self.send_message(
+                        "🤖 Bot online — comandos activos: /status /auto /semi /pause /resume "
+                        "/positions /scores /risk /train /youtube"
+                    )
+                    print("[Telegram] Polling activo — escuchando comandos")
+                    await asyncio.Event().wait()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug("Telegram polling perdido, reconectando en 30s: %s", exc)
+                await asyncio.sleep(30)
 
     def _make_handler(self, cmd: str):
         """Returns a PTB-compatible async handler for the given command."""

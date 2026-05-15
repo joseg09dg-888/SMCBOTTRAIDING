@@ -19,7 +19,7 @@ from connectors.glint_connector import GlintSignal
 
 GLINT_URL        = "https://glint.trade"
 POLLING_INTERVAL = 15      # seconds
-RETRY_INTERVAL   = 300     # 5 min before retrying after total failure
+RETRY_INTERVAL   = 60      # seconds before retrying after total failure
 MAX_SEEN_IDS     = 1000
 SESSION_FILE     = Path(__file__).parent.parent / "memory" / "glint_session.json"
 
