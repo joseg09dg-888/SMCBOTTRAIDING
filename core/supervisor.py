@@ -1,34 +1,75 @@
-import asyncio
+﻿import asyncio
+import logging
+from datetime import datetime, timezone
 from typing import Optional, List, Dict
+import pandas as pd
+
 from core.config import config
 from core.risk_manager import RiskManager
 from core.decision_filter import DecisionFilter, TradeGrade
-from agents.signal_agent import TradeSignal, SignalType
+from agents.signal_agent import TradeSignal, SignalType, SignalAgent
+from connectors.binance_connector import BinanceConnector
 from connectors.glint_connector import GlintSignal
 from connectors.glint_browser import GlintBrowser
 from dashboard.telegram_bot import TradingTelegramBot
 from dashboard.telegram_commander import TelegramCommander
 from training.historical_agent import HistoricalDataAgent
 
+logger = logging.getLogger(__name__)
+
+# Demo mode: lower score threshold so the bot actually trades while learning
+DEMO_SCORE_THRESHOLD = 35   # instead of 60 â€” generates more trades for training
+DEMO_MAX_POSITIONS   = 5    # maximum simultaneous demo trades
+
+# Symbols and timeframes to scan
+SCAN_SYMBOLS     = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"]
+SCAN_TIMEFRAMES  = ["1h", "4h"]
+
+
+class DemoTrade:
+    """In-memory record of a simulated demo trade."""
+    def __init__(self, signal: TradeSignal, score: int):
+        self.signal      = signal
+        self.score       = score
+        self.opened_at   = datetime.now(timezone.utc)
+        self.status      = "open"
+        self.close_price = 0.0
+        self.pnl         = 0.0
+
+    def close(self, current_price: float):
+        self.close_price = current_price
+        if self.signal.signal_type == SignalType.LONG:
+            self.pnl = (current_price - self.signal.entry) / self.signal.entry
+        else:
+            self.pnl = (self.signal.entry - current_price) / self.signal.entry
+        self.status = "closed"
+
 
 class TradingSupervisor:
     """
     Master orchestrator. Full pipeline:
 
-    Glint signal → SMC analysis → ML + Sentiment → DecisionFilter (0-100)
-        → < 60  : NO TRADE (log reason)
-        → 60-74 : REDUCED (25% risk)
-        → 75-89 : FULL (100% risk)
-        → 90+   : PREMIUM (100% risk + Telegram alert 🔥)
+    Market data â†’ SMC analysis â†’ DecisionFilter (0-100)
+        Demo:  score >= 40 â†’ execute simulated trade
+        Live:  score >= 60 â†’ REDUCED | >= 75 â†’ FULL | >= 90 â†’ PREMIUM
+
+    In demo mode all trades are simulated (no real orders placed).
     """
 
-    def __init__(self, capital: float = 1000.0):
+    def __init__(self, capital: float = 1000.0, demo_mode: bool = True):
         self.config         = config
         self.capital        = capital
+        self.demo_mode      = demo_mode
         self.risk_manager   = RiskManager(config, capital)
         self.historical     = HistoricalDataAgent()
         self.decision       = DecisionFilter(config, self.risk_manager,
                                              historical_agent=self.historical)
+        self.signal_agent   = SignalAgent(min_confidence=0.55)
+        self.binance        = BinanceConnector(
+            api_key    = config.binance_api_key,
+            api_secret = config.binance_api_secret,
+            testnet    = config.binance_testnet,
+        )
         self.telegram     = TradingTelegramBot(
             on_approve=self._execute_trade,
             on_reject=self._reject_trade,
@@ -47,21 +88,22 @@ class TradingSupervisor:
             on_signal=self._on_glint_signal,
             min_impact="High",
         )
-        self._glint_buffer: List[Dict] = []
-        self._last_glint_text: str = ""
+        self._glint_buffer: List[Dict]  = []
+        self._last_glint_text: str      = ""
+        self._demo_trades: List[DemoTrade] = []
         self.mode    = config.operation_mode
         self._running = False
 
-    # ── Callbacks from TelegramCommander ─────────────────────────────────
+    # â”€â”€ Callbacks from TelegramCommander â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _on_mode_change(self, mode: str):
         self.mode = mode
-        print(f"[Mode] Cambiado a: {mode.upper()} vía Telegram")
+        print(f"[Mode] Cambiado a: {mode.upper()} vÃ­a Telegram")
 
     def _on_history_command(self, symbol: str) -> str:
         return self.historical.get_market_summary(symbol or "BTC")
 
-    # ── Glint callback ────────────────────────────────────────────────────
+    # â”€â”€ Glint callback â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _on_glint_signal(self, glint: GlintSignal):
         if glint.is_actionable():
@@ -72,7 +114,7 @@ class TradingSupervisor:
             asyncio.create_task(self.telegram.send_glint_alert(glint.format_alert()))
             print(f"[Glint] {glint.impact}: {glint.text[:80]}...")
 
-    # ── Decision pipeline ─────────────────────────────────────────────────
+    # â”€â”€ Decision pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def route_signal(self, signal: TradeSignal, df=None) -> TradeSignal:
         """
@@ -113,7 +155,7 @@ class TradingSupervisor:
         grade = signal.decision_grade
 
         if signal.signal_type == SignalType.WAIT:
-            print(f"[FILTER] NO TRADE — {signal.notes}")
+            print(f"[FILTER] NO TRADE â€” {signal.notes}")
             return
 
         # Log decision
@@ -133,7 +175,7 @@ class TradingSupervisor:
         else:
             asyncio.create_task(self.telegram.send_signal(signal, mode="auto"))
 
-    # ── Trade execution ───────────────────────────────────────────────────
+    # â”€â”€ Trade execution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     def _execute_trade(self, signal: TradeSignal):
         allowed, reason = self.risk_manager.can_open_trade()
@@ -155,24 +197,27 @@ class TradingSupervisor:
 
         print(f"[EXECUTE] {signal.symbol} {signal.signal_type.value.upper()}")
         print(f"  Entry: {signal.entry} | SL: {signal.stop_loss} | TP: {signal.take_profit}")
-        print(f"  Size: {actual_size} (base {base_size} × {signal.risk_multiplier}) | R:R 1:{validation['risk_reward']}")
+        print(f"  Size: {actual_size} (base {base_size} Ã— {signal.risk_multiplier}) | R:R 1:{validation['risk_reward']}")
         self.risk_manager.open_positions += 1
 
     def _reject_trade(self, signal: TradeSignal):
-        print(f"[REJECT] {signal.symbol} — rechazado manualmente")
+        print(f"[REJECT] {signal.symbol} â€” rechazado manualmente")
 
-    # ── Main loop ─────────────────────────────────────────────────────────
+    # â”€â”€ Main loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def run(self):
         self._running = True
         print("=" * 55)
-        print("  SMC TRADING BOT — Claude AI + Glint + DecisionFilter")
+        print("  SMC TRADING BOT â€” Claude AI + Glint + DecisionFilter")
         print("=" * 55)
         print(f"  Modo:          {self.mode.upper()}")
         print(f"  Capital:       ${self.capital:,.2f}")
         print(f"  Riesgo max:    {self.config.max_risk_per_trade*100}% por trade")
         print(f"  Timeframes:    {', '.join(self.config.timeframes)}")
         print(f"  Score gates:   <60=NO | 60-74=25% | 75-89=100% | 90+=PREMIUM")
+        if self.demo_mode:
+            print(f"  DEMO MODE:     threshold={DEMO_SCORE_THRESHOLD} | max_trades={DEMO_MAX_POSITIONS}")
+            print(f"  Pares:         {', '.join(SCAN_SYMBOLS)}")
         print()
 
         await asyncio.gather(
@@ -183,7 +228,7 @@ class TradingSupervisor:
 
     @staticmethod
     async def _check_internet() -> bool:
-        """Fast TCP probe to 8.8.8.8:53 — no external libraries needed."""
+        """Fast TCP probe to 8.8.8.8:53 â€” no external libraries needed."""
         import socket
         loop = asyncio.get_event_loop()
         try:
@@ -198,8 +243,145 @@ class TradingSupervisor:
         except Exception:
             return False
 
+    # â”€â”€ Technical SMC analysis (no API call) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def _run_smc_lite(self, df: pd.DataFrame) -> dict:
+        """
+        Lightweight SMC analysis without Claude API â€” runs in the scan loop.
+        Returns a dict with bias, order blocks, FVGs, and a simple setup flag.
+        """
+        from smc.structure import MarketStructure
+        from smc.orderblocks import OrderBlockDetector, FVGDetector
+        ms      = MarketStructure(df)
+        struct  = ms.analyze()
+        ob_det  = OrderBlockDetector(df)
+        fvg_det = FVGDetector(df)
+        bull_obs  = ob_det.find_bullish_obs()
+        bear_obs  = ob_det.find_bearish_obs()
+        bull_fvgs = fvg_det.find_bullish_fvg()
+        bear_fvgs = fvg_det.find_bearish_fvg()
+        bos_list  = ms.detect_bos()
+        choch_list = ms.detect_choch()
+
+        poi_zones = []
+        for ob in (bull_obs + bear_obs)[:3]:
+            poi_zones.append(ob)
+
+        is_bullish = struct.bias == "bullish"
+        is_bearish = struct.bias == "bearish"
+
+        # When bias is neutral, use direction of the last confirmed BOS
+        if not (is_bullish or is_bearish) and bos_list:
+            last_dir = bos_list[-1].get("direction", "")
+            if last_dir == "bullish":
+                is_bullish = True
+            elif last_dir == "bearish":
+                is_bearish = True
+
+        # When still neutral but recent CHoCH, use it for direction
+        if not (is_bullish or is_bearish) and choch_list:
+            last_choch = choch_list[-1].get("direction", "")
+            if last_choch == "bullish":
+                is_bullish = True
+            elif last_choch == "bearish":
+                is_bearish = True
+
+        has_ob  = bool(bull_obs if is_bullish else bear_obs)
+        has_fvg = bool(bull_fvgs if is_bullish else bear_fvgs)
+        has_bos = bool(bos_list)
+        has_setup = (is_bullish or is_bearish) and (has_ob or has_fvg or has_bos)
+
+        direction_word = "bullish" if is_bullish else ("bearish" if is_bearish else "neutral")
+        analysis_text = f"{direction_word} trend {struct.structure_type.value}"
+        if has_bos:    analysis_text += " BOS confirmado âœ…"
+        if choch_list: analysis_text += " CHoCH detectado âœ…"
+        if has_ob:     analysis_text += " order block presente âœ…"
+        if has_fvg:    analysis_text += " FVG presente âœ…"
+        if has_setup:  analysis_text += " setup vÃ¡lido"
+
+        return {
+            "bias": struct.bias,
+            "has_ob": has_ob,
+            "has_fvg": has_fvg,
+            "has_bos": has_bos,
+            "has_choch": bool(choch_list),
+            "has_setup": has_setup,
+            "poi_zones": poi_zones,
+            "analysis_text": analysis_text,
+            "structure": struct,
+        }
+
+    async def _scan_symbol(self, symbol: str, timeframe: str) -> Optional[TradeSignal]:
+        """
+        Full pipeline for one symbol/timeframe:
+        fetch â†’ SMC lite â†’ SignalAgent â†’ DecisionFilter â†’ return signal or None
+        """
+        loop = asyncio.get_event_loop()
+        df = await loop.run_in_executor(
+            None, lambda: self.binance.get_ohlcv(symbol, timeframe, limit=200)
+        )
+        if df.empty or len(df) < 50:
+            return None
+
+        smc = self._run_smc_lite(df)
+        current_price = float(df["close"].iloc[-1])
+
+        signal = self.signal_agent.evaluate(
+            analysis_text = smc["analysis_text"],
+            symbol        = symbol,
+            timeframe     = timeframe,
+            current_price = current_price,
+            poi_zones     = smc["poi_zones"],
+            glint_context = self._last_glint_text,
+        )
+
+        if signal.signal_type == SignalType.WAIT:
+            return signal   # still return so we can log the score=0
+
+        signal = self.route_signal(signal, df)
+        return signal
+
+    # â”€â”€ Demo trade execution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    async def _execute_demo_trade(self, signal: TradeSignal):
+        """Record a simulated trade, send Telegram notification."""
+        if len(self._demo_trades) >= DEMO_MAX_POSITIONS:
+            return
+
+        demo = DemoTrade(signal, signal.decision_score)
+        self._demo_trades.append(demo)
+
+        direction = "ðŸŸ¢ LONG" if signal.signal_type == SignalType.LONG else "ðŸ”´ SHORT"
+        score_label = f"Score: {signal.decision_score}/100"
+        if self.demo_mode:
+            score_label = f"[DEMO] {score_label}"
+
+        msg = (
+            f"ðŸš€ *TRADE DEMO ABIERTO*\n"
+            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+            f"{direction} â€” *{signal.symbol}* | {signal.timeframe}\n"
+            f"Entrada: `{signal.entry:,.5f}`\n"
+            f"Stop Loss: `{signal.stop_loss:,.5f}`\n"
+            f"Take Profit: `{signal.take_profit:,.5f}`\n"
+            f"R:R = `1:{signal.risk_reward:.1f}`\n"
+            f"Trigger: {signal.trigger}\n"
+            f"{score_label}\n"
+            f"Trades demo activos: {len(self._demo_trades)}/{DEMO_MAX_POSITIONS}\n"
+            f"ðŸ’¡ Modo DEMO â€” sin dinero real"
+        )
+        print(f"[DEMO TRADE] {signal.symbol} {signal.signal_type.value.upper()} "
+              f"entry={signal.entry:.4f} score={signal.decision_score}")
+        try:
+            await self.telegram.send_glint_alert(msg)
+        except Exception:
+            pass
+
+    # â”€â”€ Market scan loop (REAL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
     async def _market_scan_loop(self):
         _was_offline = False
+        threshold = DEMO_SCORE_THRESHOLD if self.demo_mode else 60
+
         while self._running:
             try:
                 online = await self._check_internet()
@@ -207,26 +389,53 @@ class TradingSupervisor:
                 if not online:
                     if not _was_offline:
                         _was_offline = True
-                    print("[Bot] Sin internet — reintentando en 30s...")
+                    print("[Bot] Sin internet â€” reintentando en 30s...")
                     await asyncio.sleep(30)
                     continue
 
                 if _was_offline:
                     _was_offline = False
                     try:
-                        await self.telegram.send_glint_alert(
-                            "🔄 Conexion restaurada — bot activo"
-                        )
+                        await self.telegram.send_glint_alert("ðŸ”„ Conexion restaurada â€” bot activo")
                     except Exception:
                         pass
 
-                print("[Scan] Escaneando mercados...")
-                await asyncio.sleep(60)
+                # â”€â”€ Full market scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                for symbol in SCAN_SYMBOLS:
+                    for tf in SCAN_TIMEFRAMES:
+                        if not self._running:
+                            break
+                        try:
+                            signal = await self._scan_symbol(symbol, tf)
+                            if signal is None:
+                                print(f"[{symbol}][{tf}] Sin datos")
+                                continue
+
+                            score = signal.decision_score
+                            bias  = signal.signal_type.value.upper()
+                            print(f"[{symbol}][{tf}] Score: {score} | {bias}", end="")
+
+                            if signal.signal_type == SignalType.WAIT or score < threshold:
+                                print(" â€” sin setup")
+                            elif self.demo_mode:
+                                print(f" â€” ejecutando trade DEMO")
+                                await self._execute_demo_trade(signal)
+                            else:
+                                print(f" â€” ejecutando trade")
+                                self._dispatch(signal)
+
+                        except Exception as exc:
+                            print(f"[{symbol}][{tf}] Error: {exc.__class__.__name__}: {exc}")
+
+                        await asyncio.sleep(1)  # rate limit between symbols
 
             except asyncio.CancelledError:
                 break
             except Exception:
                 await asyncio.sleep(10)
 
+            await asyncio.sleep(60)  # next full scan in 60s
+
     def stop(self):
         self._running = False
+
