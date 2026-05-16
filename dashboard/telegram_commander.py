@@ -478,6 +478,19 @@ class TelegramCommander:
             await asyncio.Event().wait()
             return
 
+        # Kill any stale getUpdates session before starting
+        if HAS_TELEGRAM and self.bot_token:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10) as hx:
+                    await hx.post(
+                        f"https://api.telegram.org/bot{self.bot_token}/getUpdates",
+                        json={"offset": -1, "timeout": 0},
+                    )
+            except Exception:
+                pass
+            await asyncio.sleep(1)
+
         while True:
             try:
                 app = Application.builder().token(self.bot_token).build()
@@ -490,7 +503,10 @@ class TelegramCommander:
 
                 async with app:
                     await app.start()
-                    await app.updater.start_polling(drop_pending_updates=True)
+                    await app.updater.start_polling(
+                        drop_pending_updates=True,
+                        allowed_updates=["message", "callback_query"],
+                    )
                     await self.send_message(
                         "🤖 Bot online — comandos activos: /status /auto /semi /pause /resume "
                         "/positions /scores /risk /train /youtube"

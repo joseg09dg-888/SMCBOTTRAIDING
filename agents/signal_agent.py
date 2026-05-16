@@ -99,7 +99,8 @@ class SignalAgent:
     ) -> TradeSignal:
         is_bullish = "bullish" in analysis_text.lower() or "alcista" in analysis_text.lower()
         is_bearish = "bearish" in analysis_text.lower() or "bajista" in analysis_text.lower()
-        has_setup  = "setup válido" in analysis_text.lower() or "✅" in analysis_text
+        at_lower   = analysis_text.lower()
+        has_setup  = ("setup" in at_lower and ("valid" in at_lower or "valido" in at_lower or "válido" in at_lower)) or "✅" in analysis_text
 
         if not has_setup or (not is_bullish and not is_bearish):
             return TradeSignal(

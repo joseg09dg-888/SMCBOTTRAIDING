@@ -5,9 +5,33 @@ Autoarranque:  python startup.py --auto --capital 1000 --reason auto_restart
 """
 import argparse
 import asyncio
+import atexit
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
+
+# ── Process lock: garantiza que solo corra una instancia ─────────────────────
+LOCK_FILE = Path(__file__).parent / "trading_bot.lock"
+
+def _acquire_lock():
+    if LOCK_FILE.exists():
+        try:
+            old_pid = int(LOCK_FILE.read_text().strip())
+            import psutil
+            psutil.Process(old_pid).kill()
+            print(f"[Bot] Instancia anterior (PID {old_pid}) terminada")
+        except Exception:
+            pass
+        LOCK_FILE.unlink(missing_ok=True)
+    LOCK_FILE.write_text(str(os.getpid()))
+    atexit.register(lambda: LOCK_FILE.unlink(missing_ok=True) if LOCK_FILE.exists() else None)
+
+try:
+    _acquire_lock()
+except Exception as e:
+    print(f"[Bot] Lock warning: {e}")
+# ─────────────────────────────────────────────────────────────────────────────
 
 from core.config import config
 from core.supervisor import TradingSupervisor

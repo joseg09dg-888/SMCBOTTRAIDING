@@ -293,11 +293,11 @@ class TradingSupervisor:
 
         direction_word = "bullish" if is_bullish else ("bearish" if is_bearish else "neutral")
         analysis_text = f"{direction_word} trend {struct.structure_type.value}"
-        if has_bos:    analysis_text += " BOS confirmado âœ…"
-        if choch_list: analysis_text += " CHoCH detectado âœ…"
-        if has_ob:     analysis_text += " order block presente âœ…"
-        if has_fvg:    analysis_text += " FVG presente âœ…"
-        if has_setup:  analysis_text += " setup vÃ¡lido"
+        if has_bos:    analysis_text += " BOS confirmado"
+        if choch_list: analysis_text += " CHoCH detectado"
+        if has_ob:     analysis_text += " order block presente"
+        if has_fvg:    analysis_text += " FVG presente"
+        if has_setup:  analysis_text += " setup valido"
 
         return {
             "bias": struct.bias,
