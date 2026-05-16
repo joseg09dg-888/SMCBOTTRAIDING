@@ -38,15 +38,15 @@ from core.supervisor import TradingSupervisor
 from core.wakeup_recovery import run_recovery
 
 
-WELCOME_MSG = """SMC Bot iniciado en modo {mode}
+WELCOME_MSG = """<b>SMC Bot iniciado en modo {mode}</b>
 Capital: ${capital:,.0f} (DEMO)
 Riesgo max: {risk}% por trade
-Pares crypto:  BTC ETH BNB SOL XRP ADA DOGE AVAX
-Pares forex:   EURUSD GBPUSD XAUUSD US30 NAS100 USOIL USDJPY GBPJPY
-DecisionFilter: <60=NO | 60-74=25% | 75-89=100% | 90+=PREMIUM
-Comandos: /auto /semi /pause /status /scores /risk /positions
-Regla de oro: Si no hay setup claro, no se opera.
-Listo para operar. La paciencia paga."""
+Pares crypto: BTC ETH BNB SOL XRP
+Pares forex:  EURUSD GBPUSD XAUUSD USDJPY
+Score: 35+=DEMO | 60+=REAL | 90+=PREMIUM
+Comandos: /auto /semi /pause /status /scores
+Regla: Si no hay setup claro, no se opera.
+Listo para operar."""
 
 RESTART_REASONS = {
     "auto_restart": "Reinicio automático de Windows",

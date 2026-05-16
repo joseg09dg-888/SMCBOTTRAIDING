@@ -60,20 +60,22 @@ class MT5Connector:
         return False
 
     def last_error_msg(self) -> str:
-        """Human-readable last error. Returns empty string if no error."""
+        """Human-readable last error."""
         if not HAS_MT5:
-            return "MetaTrader5 package not installed"
+            return "MetaTrader5 no instalado"
         try:
             code, msg = mt5.last_error()
-            if code == -6:
+            if code in (-6, 1):
                 return (
-                    "MT5: Algo Trading desactivado. "
-                    "En MT5 activa el boton 'Algo Trading' (rayo verde) "
-                    "en la barra superior."
+                    "MT5 no autorizado — activa 'Algo Trading' en MT5: "
+                    "Tools > Options > Expert Advisors > Allow automated trading "
+                    "O haz clic en el boton verde 'Algo Trading' de la barra superior."
                 )
+            if code == 0:
+                return "MT5: conexion OK"
             return f"MT5 error {code}: {msg}"
         except Exception:
-            return "MT5 desconocido"
+            return "MT5: error desconocido"
 
     def get_ohlcv(self, symbol: str, timeframe: str = "H1", count: int = 200) -> pd.DataFrame:
         if not HAS_MT5:
