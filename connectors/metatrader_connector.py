@@ -34,17 +34,46 @@ class MT5Connector:
 
     def connect(self) -> bool:
         if not HAS_MT5:
-            logger.warning("MetaTrader5 not installed")
             return False
         try:
-            if not mt5.initialize():
-                return False
-            result = mt5.login(self.login, password=self.password, server=self.server)
-            self._connected = result
-            return result
-        except Exception as e:
-            logger.error(f"MT5 connect error: {e}")
-            return False
+            mt5.shutdown()  # reset any stale state
+        except Exception:
+            pass
+        for attempt in [
+            # 1. Direct credentials
+            lambda: mt5.initialize(login=self.login, password=self.password, server=self.server),
+            # 2. Path + credentials
+            lambda: mt5.initialize(
+                path=r"C:\Program Files\MetaTrader 5\terminal64.exe",
+                login=self.login, password=self.password, server=self.server),
+            # 3. Active session (no credentials)
+            lambda: mt5.initialize(),
+        ]:
+            try:
+                if attempt():
+                    self._connected = True
+                    return True
+                mt5.shutdown()
+            except Exception:
+                pass
+        self._connected = False
+        return False
+
+    def last_error_msg(self) -> str:
+        """Human-readable last error. Returns empty string if no error."""
+        if not HAS_MT5:
+            return "MetaTrader5 package not installed"
+        try:
+            code, msg = mt5.last_error()
+            if code == -6:
+                return (
+                    "MT5: Algo Trading desactivado. "
+                    "En MT5 activa el boton 'Algo Trading' (rayo verde) "
+                    "en la barra superior."
+                )
+            return f"MT5 error {code}: {msg}"
+        except Exception:
+            return "MT5 desconocido"
 
     def get_ohlcv(self, symbol: str, timeframe: str = "H1", count: int = 200) -> pd.DataFrame:
         if not HAS_MT5:

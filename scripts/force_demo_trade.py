@@ -19,25 +19,46 @@ load_dotenv()
 DEMO_THRESHOLD = 35  # demo mode threshold
 
 
-async def run(symbol: str = "BTCUSDT", timeframe: str = "1h"):
+MT5_SYMBOLS = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "NAS100", "US30"]
+
+
+async def run(symbol: str = "BTCUSDT", timeframe: str = "1h", market: str = ""):
+    use_mt5 = market.upper() == "MT5" or symbol.upper() in MT5_SYMBOLS
+    market_label = "MT5" if use_mt5 else "Binance Testnet"
+
     print(f"\n{'='*55}")
-    print(f"  FORCE DEMO TRADE — {symbol} | {timeframe}")
+    print(f"  FORCE DEMO TRADE — {symbol} | {timeframe} | {market_label}")
     print(f"{'='*55}\n")
 
-    # --- 1. Fetch real data ---
-    from connectors.binance_connector import BinanceConnector
     from core.config import config
 
-    binance = BinanceConnector(
-        api_key    = config.binance_api_key,
-        api_secret = config.binance_api_secret,
-        testnet    = config.binance_testnet,
-    )
-    print(f"[1/5] Descargando datos {symbol} {timeframe} desde Binance testnet...")
-    df = binance.get_ohlcv(symbol, timeframe, limit=200)
+    # --- 1. Fetch real data ---
+    if use_mt5:
+        from connectors.metatrader_connector import MT5Connector
+        print(f"[1/5] Conectando a MT5...")
+        mt5c = MT5Connector(config.mt5_login, config.mt5_password, config.mt5_server)
+        if not mt5c.connect():
+            print(f"  FAIL: {mt5c.last_error_msg()}")
+            print(f"\n  SOLUCION: En MT5, activa el boton 'Algo Trading' (rayo verde).")
+            return
+        # Map timeframe to MT5 format
+        tf_mt5 = timeframe.upper().replace("1H", "H1").replace("4H", "H4").replace("1D", "D1")
+        if "1h" in timeframe.lower(): tf_mt5 = "H1"
+        if "4h" in timeframe.lower(): tf_mt5 = "H4"
+        print(f"  MT5 conectado. Descargando {symbol} {tf_mt5}...")
+        df = mt5c.get_ohlcv(symbol, tf_mt5, 200)
+    else:
+        from connectors.binance_connector import BinanceConnector
+        binance = BinanceConnector(
+            api_key    = config.binance_api_key,
+            api_secret = config.binance_api_secret,
+            testnet    = config.binance_testnet,
+        )
+        print(f"[1/5] Descargando datos {symbol} {timeframe} desde {market_label}...")
+        df = binance.get_ohlcv(symbol, timeframe, limit=200)
 
-    if df.empty:
-        print(f"ERROR: No se obtuvieron datos. Verificar conexion a Binance.")
+    if df is None or df.empty:
+        print(f"ERROR: No se obtuvieron datos.")
         return
 
     current_price = float(df["close"].iloc[-1])
@@ -192,7 +213,8 @@ async def run(symbol: str = "BTCUSDT", timeframe: str = "1h"):
 if __name__ == "__main__":
     symbol    = sys.argv[1].upper() if len(sys.argv) > 1 else "BTCUSDT"
     timeframe = sys.argv[2].lower() if len(sys.argv) > 2 else "1h"
-    asyncio.run(run(symbol, timeframe))
+    market    = sys.argv[3].upper() if len(sys.argv) > 3 else ""
+    asyncio.run(run(symbol, timeframe, market))
 
 
 

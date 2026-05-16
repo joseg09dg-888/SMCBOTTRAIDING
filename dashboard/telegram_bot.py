@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 from typing import Optional, Callable
 from core.config import config
 from agents.signal_agent import TradeSignal, SignalType
@@ -41,14 +41,14 @@ class TradingTelegramBot:
             try:
                 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 keyboard = InlineKeyboardMarkup([[
-                    InlineKeyboardButton("✅ EJECUTAR", callback_data=f"approve:{id(signal)}"),
-                    InlineKeyboardButton("❌ RECHAZAR", callback_data=f"reject:{id(signal)}"),
+                    InlineKeyboardButton("âœ… EJECUTAR", callback_data=f"approve:{id(signal)}"),
+                    InlineKeyboardButton("âŒ RECHAZAR", callback_data=f"reject:{id(signal)}"),
                 ]])
                 self._pending[str(id(signal))] = signal
                 await bot.send_message(
                     chat_id=config.telegram_chat_id,
-                    text=f"⏳ *SEÑAL PENDIENTE DE APROBACIÓN*\n\n{text}",
-                    parse_mode="Markdown",
+                    text=f"â³ *SEÃ‘AL PENDIENTE DE APROBACIÃ“N*\n\n{text}",
+                    parse_mode="HTML",
                     reply_markup=keyboard,
                 )
             except Exception as e:
@@ -58,7 +58,7 @@ class TradingTelegramBot:
                 await bot.send_message(
                     chat_id=config.telegram_chat_id,
                     text=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
             except Exception as e:
                 print(f"[Telegram] send failed: {e}")
@@ -72,16 +72,16 @@ class TradingTelegramBot:
             await bot.send_message(
                 chat_id=config.telegram_chat_id,
                 text=signal_text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
         except Exception as e:
             print(f"[Telegram] glint alert failed: {e}")
 
     async def send_trade_result(self, symbol: str, pnl: float, direction: str):
-        emoji = "🟢" if pnl > 0 else "🔴"
+        emoji = "ðŸŸ¢" if pnl > 0 else "ðŸ”´"
         msg = (
-            f"{emoji} *TRADE CERRADO — {symbol}*\n"
-            f"Dirección: {direction}\n"
+            f"{emoji} *TRADE CERRADO â€” {symbol}*\n"
+            f"DirecciÃ³n: {direction}\n"
             f"P&L: `{'+'if pnl>0 else ''}{pnl:.2f} USD`"
         )
         bot = self._get_bot()
@@ -92,13 +92,13 @@ class TradingTelegramBot:
             await bot.send_message(
                 chat_id=config.telegram_chat_id,
                 text=msg,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
         except Exception as e:
             print(f"[Telegram] trade result failed: {e}")
 
     async def send_risk_alert(self, reason: str):
-        msg = f"🚨 *ALERTA DE RIESGO*\n{reason}\n\n⛔ Bot pausado automáticamente."
+        msg = f"ðŸš¨ *ALERTA DE RIESGO*\n{reason}\n\nâ›” Bot pausado automÃ¡ticamente."
         bot = self._get_bot()
         if not bot or not config.telegram_chat_id:
             print(f"[Telegram/Risk] {msg}")
@@ -107,7 +107,7 @@ class TradingTelegramBot:
             await bot.send_message(
                 chat_id=config.telegram_chat_id,
                 text=msg,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
         except Exception as e:
             print(f"[Telegram] risk alert failed: {e}")
@@ -119,11 +119,12 @@ class TradingTelegramBot:
         signal = self._pending.pop(signal_id, None)
         if action == "approve" and signal and self.on_approve:
             await query.edit_message_text(
-                f"✅ *APROBADO — Ejecutando...*\n\n{signal.format_telegram()}",
-                parse_mode="Markdown",
+                f"âœ… *APROBADO â€” Ejecutando...*\n\n{signal.format_telegram()}",
+                parse_mode="HTML",
             )
             self.on_approve(signal)
         elif action == "reject":
-            await query.edit_message_text("❌ *Señal rechazada. No se opera.*", parse_mode="Markdown")
+            await query.edit_message_text("âŒ *SeÃ±al rechazada. No se opera.*", parse_mode="HTML")
             if signal and self.on_reject:
                 self.on_reject(signal)
+
