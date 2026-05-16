@@ -76,7 +76,8 @@ COMMANDS = {
     "/onchain":          "Métricas on-chain actuales (flujos ballenas, exchange netflow)",
     "/lunar":            "Análisis de ciclos lunares y su correlación con el mercado",
     "/elliott":          "Conteo de ondas de Elliott en el símbolo activo",
-    "/edge":             "Statistical edge y winrate histórico del sistema",
+    "/edge":             "Statistical edge y winrate historico del sistema",
+    "/footprint":        "Analisis footprint (delta, absorcion, imbalances). Ej: /footprint BTC",
 }
 
 
@@ -147,6 +148,7 @@ class TelegramCommander:
             "/lunar":            self._cmd_lunar,
             "/elliott":          self._cmd_elliott,
             "/edge":             self._cmd_edge,
+            "/footprint":        self._cmd_footprint,
         }
 
         handler = handlers.get(cmd)
@@ -447,6 +449,24 @@ class TelegramCommander:
             ),
             action="edge",
         )
+
+    def _cmd_footprint(self) -> CommandResult:
+        from agents.footprint_agent import FootprintAgent
+        from core.config import config
+        agent = FootprintAgent(
+            api_key=config.binance_api_key,
+            api_secret=config.binance_api_secret,
+            testnet=config.binance_testnet,
+        )
+        candle = agent.build_live_footprint("BTCUSDT")
+        if candle is None:
+            return CommandResult(
+                success=True,
+                message="No hay datos de footprint disponibles. Verifica conexion Binance.",
+                action="footprint",
+            )
+        msg = agent.format_telegram(candle, "BTCUSDT")
+        return CommandResult(success=True, message=msg, action="footprint")
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
