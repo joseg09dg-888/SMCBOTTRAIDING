@@ -97,6 +97,49 @@ class TradingTelegramBot:
         except Exception as e:
             print(f"[Telegram] trade result failed: {e}")
 
+    async def send_signal_demo(
+        self,
+        symbol: str,
+        direction: str,
+        entry: float,
+        sl: float,
+        tp: float,
+        score: int,
+        timeframe: str,
+        market: str = "Binance",
+    ):
+        """Send a formatted demo trade signal to Telegram."""
+        emoji = "🟢" if direction == "long" else "🔴"
+        dir_text = "LONG ▲" if direction == "long" else "SHORT ▼"
+        rr = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
+        msg = (
+            f"<b>{emoji} TRADE DEMO — {symbol}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⏱ TF: {timeframe} | {market}\n"
+            f"📊 Dirección: <b>{dir_text}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📍 Entrada:    <code>{entry:.5f}</code>\n"
+            f"🛑 Stop Loss:  <code>{sl:.5f}</code>\n"
+            f"🎯 Take Profit:<code>{tp:.5f}</code>\n"
+            f"📊 R:R: <code>1:{rr:.1f}</code>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ Score: <b>{score}/100</b>\n"
+            f"💰 Riesgo: $5.00 (0.5%)\n"
+            f"🤖 Modo: DEMO - sin dinero real"
+        )
+        bot = self._get_bot()
+        if not bot or not config.telegram_chat_id:
+            print(f"[Telegram/Demo] {symbol} {dir_text} score={score}")
+            return
+        try:
+            await bot.send_message(
+                chat_id=config.telegram_chat_id,
+                text=msg,
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            print(f"[Telegram] send_signal_demo failed: {e}")
+
     async def send_risk_alert(self, reason: str):
         msg = f"ðŸš¨ *ALERTA DE RIESGO*\n{reason}\n\nâ›” Bot pausado automÃ¡ticamente."
         bot = self._get_bot()

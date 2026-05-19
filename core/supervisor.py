@@ -19,12 +19,13 @@ from training.historical_agent import HistoricalDataAgent
 logger = logging.getLogger(__name__)
 
 # Demo mode: lower score threshold so the bot actually trades while learning
-DEMO_SCORE_THRESHOLD = 35   # instead of 60 â€” generates more trades for training
+DEMO_SCORE_THRESHOLD = 30   # aggressive demo
+SCAN_INTERVAL_SEC    = 30   # instead of 60 â€” generates more trades for training
 DEMO_MAX_POSITIONS   = 5    # maximum simultaneous demo trades
 
 # Symbols and timeframes to scan
-SCAN_SYMBOLS     = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"]
-SCAN_TIMEFRAMES  = ["1h", "4h"]
+SCAN_SYMBOLS    = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT"]
+SCAN_TIMEFRAMES = ["5m", "15m", "1h", "4h"]
 
 # MT5 forex/indices symbols
 MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "NAS100", "US30"]
@@ -230,6 +231,8 @@ class TradingSupervisor:
         if self.demo_mode:
             print(f"  DEMO MODE:     threshold={DEMO_SCORE_THRESHOLD} | max_trades={DEMO_MAX_POSITIONS}")
             print(f"  Crypto:        {', '.join(SCAN_SYMBOLS)}")
+            print(f"  Timeframes:    {', '.join(SCAN_TIMEFRAMES)}")
+            print(f"  Scan interval: {SCAN_INTERVAL_SEC}s")
         print()
 
         # MT5 startup check
@@ -378,9 +381,7 @@ class TradingSupervisor:
     async def _scan_mt5_symbol(self, symbol: str, timeframe: str):
         """Fetch MT5 OHLCV, run SMC lite, return signal or None."""
         loop = asyncio.get_event_loop()
-        df = await loop.run_in_executor(
-            None, lambda: self.mt5.get_ohlcv(symbol, timeframe, 200)
-        )
+        df = await loop.run_in_executor(None, lambda: self.mt5.get_ohlcv(symbol, timeframe, 200))
         if df is None or df.empty or len(df) < 50:
             return None
         smc = self._run_smc_lite(df)
@@ -396,39 +397,33 @@ class TradingSupervisor:
         return signal
 
     async def _execute_demo_trade(self, signal: TradeSignal):
-        """Record a simulated trade, send Telegram notification."""
+        """Record a simulated demo trade and notify via Telegram."""
         if len(self._demo_trades) >= DEMO_MAX_POSITIONS:
             return
 
         demo = DemoTrade(signal, signal.decision_score)
         self._demo_trades.append(demo)
 
-        direction = "ðŸŸ¢ LONG" if signal.signal_type == SignalType.LONG else "ðŸ”´ SHORT"
-        score_label = f"Score: {signal.decision_score}/100"
-        if self.demo_mode:
-            score_label = f"[DEMO] {score_label}"
+        direction = "long" if signal.signal_type == SignalType.LONG else "short"
+        market    = "MT5" if signal.symbol in MT5_SYMBOLS else "Binance"
 
-        msg = (
-            f"ðŸš€ *TRADE DEMO ABIERTO*\n"
-            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-            f"{direction} â€” *{signal.symbol}* | {signal.timeframe}\n"
-            f"Entrada: `{signal.entry:,.5f}`\n"
-            f"Stop Loss: `{signal.stop_loss:,.5f}`\n"
-            f"Take Profit: `{signal.take_profit:,.5f}`\n"
-            f"R:R = `1:{signal.risk_reward:.1f}`\n"
-            f"Trigger: {signal.trigger}\n"
-            f"{score_label}\n"
-            f"Trades demo activos: {len(self._demo_trades)}/{DEMO_MAX_POSITIONS}\n"
-            f"ðŸ’¡ Modo DEMO â€” sin dinero real"
-        )
-        print(f"[DEMO TRADE] {signal.symbol} {signal.signal_type.value.upper()} "
-              f"entry={signal.entry:.4f} score={signal.decision_score}")
+        print(f"[DEMO TRADE] {signal.symbol} {direction.upper()} "
+              f"entry={signal.entry:.4f} score={signal.decision_score} "
+              f"({market}) [{len(self._demo_trades)}/{DEMO_MAX_POSITIONS}]")
+
         try:
-            await self.telegram.send_glint_alert(msg)
+            await self.telegram.send_signal_demo(
+                symbol    = signal.symbol,
+                direction = direction,
+                entry     = signal.entry,
+                sl        = signal.stop_loss if signal.stop_loss else signal.entry * 0.995,
+                tp        = signal.take_profit,
+                score     = signal.decision_score,
+                timeframe = signal.timeframe,
+                market    = market,
+            )
         except Exception:
             pass
-
-    # â”€â”€ Market scan loop (REAL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _market_scan_loop(self):
         _was_offline = False
@@ -510,7 +505,7 @@ class TradingSupervisor:
             except Exception:
                 await asyncio.sleep(10)
 
-            await asyncio.sleep(60)  # next full scan in 60s
+            await asyncio.sleep(SCAN_INTERVAL_SEC)  # next full scan
 
     def stop(self):
         self._running = False
