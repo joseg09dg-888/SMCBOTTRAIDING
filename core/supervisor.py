@@ -17,11 +17,12 @@ from dashboard.telegram_commander import TelegramCommander
 from training.historical_agent import HistoricalDataAgent
 
 logger = logging.getLogger(__name__)
+from core.score_db import save_score
 
 # Demo mode: lower score threshold so the bot actually trades while learning
-DEMO_SCORE_THRESHOLD = 30   # aggressive demo
-SCAN_INTERVAL_SEC    = 30   # instead of 60 â€” generates more trades for training
-DEMO_MAX_POSITIONS   = 5    # maximum simultaneous demo trades
+DEMO_SCORE_THRESHOLD = 30
+DEMO_MAX_POSITIONS   = 5
+SCAN_INTERVAL_SEC    = 30
 
 # Symbols and timeframes to scan
 SCAN_SYMBOLS    = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT"]
@@ -32,11 +33,9 @@ MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "NAS100", 
 MT5_TIMEFRAMES   = ["H1", "H4"]
 MT5_MIN_VOLUME   = 0.01
 
-# yfinance forex symbols (fallback when MT5 unavailable)
+# yfinance forex (fallback when MT5 unavailable)
 YFINANCE_FOREX   = {"EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X",
                     "USDJPY": "USDJPY=X", "GBPJPY": "GBPJPY=X"}
-YFINANCE_TF      = ["1h", "4h"]
-
 
 class DemoTrade:
     """In-memory record of a simulated demo trade."""
@@ -401,14 +400,12 @@ class TradingSupervisor:
         signal = self.route_signal(signal, df)
         return signal
 
-
     async def _scan_forex_yfinance(self, symbol: str, tf_yf: str, tf_label: str):
         """Scan forex pair using yfinance data (MT5 fallback)."""
         try:
             import yfinance as yf
             loop = asyncio.get_event_loop()
             ticker_sym = YFINANCE_FOREX.get(symbol, symbol + "=X")
-
             def _fetch():
                 period_map = {"1h": "5d", "4h": "30d"}
                 period = period_map.get(tf_yf, "5d")
@@ -416,14 +413,11 @@ class TradingSupervisor:
                 df = t.history(period=period, interval=tf_yf)
                 if df.empty:
                     return None
-                df = df.rename(columns={"Open":"open","High":"high",
-                                        "Low":"low","Close":"close","Volume":"volume"})
+                df = df.rename(columns={"Open":"open","High":"high","Low":"low","Close":"close","Volume":"volume"})
                 return df[["open","high","low","close","volume"]].copy()
-
             df = await loop.run_in_executor(None, _fetch)
             if df is None or len(df) < 50:
                 return None
-
             smc = self._run_smc_lite(df)
             current_price = float(df["close"].iloc[-1])
             signal = self.signal_agent.evaluate(
@@ -440,7 +434,7 @@ class TradingSupervisor:
             return None
 
     async def _execute_demo_trade(self, signal: TradeSignal):
-        """Record a simulated demo trade and notify via Telegram."""
+        """Record a simulated demo trade, notify via Telegram, log to SQLite."""
         if len(self._demo_trades) >= DEMO_MAX_POSITIONS:
             return
 
@@ -450,20 +444,44 @@ class TradingSupervisor:
         direction = "long" if signal.signal_type == SignalType.LONG else "short"
         market    = "MT5" if signal.symbol in MT5_SYMBOLS else "Binance"
 
+        # Log to SQLite for /scores and /criterios commands
+        save_score(
+            symbol    = signal.symbol,
+            timeframe = signal.timeframe,
+            score     = signal.decision_score,
+            direction = direction,
+            entry     = signal.entry,
+            sl        = signal.stop_loss if signal.stop_loss else 0.0,
+            tp        = signal.take_profit,
+            executed  = True,
+        )
+
         print(f"[DEMO TRADE] {signal.symbol} {direction.upper()} "
               f"entry={signal.entry:.4f} score={signal.decision_score} "
               f"({market}) [{len(self._demo_trades)}/{DEMO_MAX_POSITIONS}]")
 
+        msg = (
+            f"<b>TRADE DEMO ABIERTO</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Par: <b>{signal.symbol}</b> | {signal.timeframe} | {market}\n"
+            f"{'LONG' if direction=='long' else 'SHORT'}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Entrada:    <code>{signal.entry:,.5f}</code>\n"
+            f"Stop Loss:  <code>{signal.stop_loss if signal.stop_loss else 0.0:,.5f}</code>\n"
+            f"Take Profit:<code>{signal.take_profit:,.5f}</code>\n"
+            f"R:R: <code>1:{signal.risk_reward:.1f}</code>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Score: <b>{signal.decision_score}/100</b>\n"
+            f"Activos: {len(self._demo_trades)}/{DEMO_MAX_POSITIONS}\n"
+            f"DEMO - sin dinero real"
+        )
         try:
             await self.telegram.send_signal_demo(
-                symbol    = signal.symbol,
-                direction = direction,
-                entry     = signal.entry,
-                sl        = signal.stop_loss if signal.stop_loss else signal.entry * 0.995,
-                tp        = signal.take_profit,
-                score     = signal.decision_score,
-                timeframe = signal.timeframe,
-                market    = market,
+                symbol=signal.symbol, direction=direction,
+                entry=signal.entry,
+                sl=signal.stop_loss if signal.stop_loss else signal.entry*0.995,
+                tp=signal.take_profit, score=signal.decision_score,
+                timeframe=signal.timeframe, market=market,
             )
         except Exception:
             pass
@@ -519,8 +537,7 @@ class TradingSupervisor:
 
                         await asyncio.sleep(1)  # rate limit between symbols
 
-
-                # yfinance forex scan (always runs — no MT5 required)
+                # yfinance forex scan (always runs)
                 for symbol, tf_yf, tf_label in [
                     ("EURUSD","1h","1H"), ("GBPUSD","1h","1H"),
                     ("USDJPY","1h","1H"), ("GBPJPY","1h","1H"),
@@ -543,30 +560,6 @@ class TradingSupervisor:
                     except Exception as exc:
                         print(f"[FOREX][{symbol}] Error: {exc.__class__.__name__}")
                     await asyncio.sleep(0.5)
-
-                # MT5 forex/indices scan
-                if self._mt5_available:
-                    for symbol in MT5_SYMBOLS:
-                        for tf in MT5_TIMEFRAMES:
-                            if not self._running: break
-                            try:
-                                signal = await self._scan_mt5_symbol(symbol, tf)
-                                if signal is None:
-                                    print(f"[MT5][{symbol}][{tf}] Sin datos")
-                                    continue
-                                score = signal.decision_score
-                                bias  = signal.signal_type.value.upper()
-                                print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="")
-                                if signal.signal_type == SignalType.WAIT or score < threshold:
-                                    print(" -- sin setup")
-                                elif self.demo_mode:
-                                    print(f" -- trade DEMO MT5")
-                                    await self._execute_demo_trade(signal)
-                                else:
-                                    self._dispatch(signal)
-                            except Exception as exc:
-                                print(f"[MT5][{symbol}][{tf}] Error: {exc.__class__.__name__}")
-                            await asyncio.sleep(0.5)
 
             except asyncio.CancelledError:
                 break
