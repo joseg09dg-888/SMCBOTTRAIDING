@@ -1,0 +1,8 @@
+{
+  "startup": "Leer CLAUDE.md primero — es la fuente de verdad del proyecto",
+  "memory": "CLAUDE.md contiene toda la arquitectura, estado y reglas del bot",
+  "encoding_rule": "NUNCA usar PowerShell Out-File para archivos .py — usar Write tool",
+  "mt5_rule": "NO intentar fix programático de MT5 — Python crashea el terminal",
+  "test_rule": "Verificar 1003 tests con pytest tests/ -q antes de cualquier commit",
+  "skill_on_start": "Usar trading-bot-tracker skill al inicio de cada sesion"
+}
