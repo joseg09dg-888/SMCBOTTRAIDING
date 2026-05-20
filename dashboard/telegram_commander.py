@@ -1,4 +1,4 @@
-﻿# dashboard/telegram_commander.py
+# dashboard/telegram_commander.py
 import asyncio
 import logging
 from dataclasses import dataclass, field
@@ -61,7 +61,9 @@ COMMANDS = {
     "/scores":    "Ultimos 10 scores del DecisionFilter",
     "/risk":      "Estado del riesgo (correlaciones, sesion, volatilidad)",
     "/youtube":   "Estado del aprendizaje YouTube",
-    "/history":          "AnÃ¡lisis histÃ³rico de un sÃ­mbolo. Ej: /history BTC",
+    "/ftmo": "Estado del FTMO challenge y criterios para cuentas fondeadas",
+
+    "/history":          "Análisis histórico de un símbolo. Ej: /history BTC",
     "/memory":           "Estado de memoria y accuracy de todos los agentes",
     "/health":           "Health check de los 21 agentes del bot",
     "/energy":           "Lectura energetica del mercado. Ej: /energy BTC",
@@ -72,10 +74,10 @@ COMMANDS = {
     "/vision":           "Activa/desactiva vision de pantalla",
     "/screenshot":       "Captura y analiza pantalla ahora",
     "/mirror":           "Activa/desactiva modo espejo",
-    "/analysis":         "AnÃ¡lisis SMC completo del mercado. Ej: /analysis BTC",
-    "/onchain":          "MÃ©tricas on-chain actuales (flujos ballenas, exchange netflow)",
-    "/lunar":            "AnÃ¡lisis de ciclos lunares y su correlaciÃ³n con el mercado",
-    "/elliott":          "Conteo de ondas de Elliott en el sÃ­mbolo activo",
+    "/analysis":         "Análisis SMC completo del mercado. Ej: /analysis BTC",
+    "/onchain":          "Métricas on-chain actuales (flujos ballenas, exchange netflow)",
+    "/lunar":            "Análisis de ciclos lunares y su correlación con el mercado",
+    "/elliott":          "Conteo de ondas de Elliott en el símbolo activo",
     "/edge":             "Statistical edge y winrate historico del sistema",
     "/footprint":        "Analisis footprint (delta, absorcion, imbalances). Ej: /footprint BTC",
 }
@@ -117,7 +119,7 @@ class TelegramCommander:
         self._app           = None
 
     def handle_command(self, command: str) -> CommandResult:
-        """Synchronous command handler â€” used in tests and fallback mode."""
+        """Synchronous command handler - used in tests and fallback mode."""
         cmd = command.strip().lower().split()[0]
 
         handlers: Dict[str, Callable] = {
@@ -160,7 +162,7 @@ class TelegramCommander:
             )
         return handler()
 
-    # â”€â”€ Command handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ── Command handlers ──────────────────────────────────────────────────
 
     def _cmd_auto(self) -> CommandResult:
         self.state.mode = BotMode.AUTO
@@ -210,52 +212,22 @@ class TelegramCommander:
 
     def _cmd_status(self) -> CommandResult:
         s = self.state
-        win_total  = s.wins_today + s.losses_today
-        wr_str     = f"{s.wins_today}W / {s.losses_today}L ({s.win_rate:.1f}%)" if win_total > 0 else "Sin trades hoy"
-        pnl_sign   = "+" if s.daily_pnl >= 0 else ""
-        state_icon = "ðŸ”´ PAUSADO" if s.paused else "ðŸŸ¢ Activo"
-        pnl_icon   = "ðŸ“ˆ" if s.daily_pnl >= 0 else "ðŸ“‰"
-
-        # Try to get live MT5 balance
-        mt5_bal_str = "No conectado"
-        mt5_pos_str = "0"
-        try:
-            from connectors.metatrader_connector import MT5Connector
-            from core.config import config as cfg
-            mt5c = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
-            if mt5c.connect():
-                info = mt5c.get_account_info()
-                mt5_bal_str = f"${info.get('balance', 0):,.2f}"
-                mt5_pos_str = str(len(mt5c.get_positions()))
-                mt5c.mt5.shutdown() if hasattr(mt5c, 'mt5') else None
-        except Exception:
-            pass
-
-        msg = (
-            f"<b>ðŸ¤– SMC BOT â€” ESTADO ACTUAL</b>\n"
-            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-            f"âš™ï¸ Modo: {s.mode.value.upper()} | {state_icon}\n"
-            f"ðŸ’° Capital: ${s.capital:,.2f}\n"
-            f"{pnl_icon} P&amp;L hoy: {pnl_sign}${s.daily_pnl:.2f}\n"
-            f"ðŸ“Š P&amp;L total: {'+' if s.total_pnl >= 0 else ''}${s.total_pnl:.2f}\n"
-            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-            f"<b>â‚¿ CRYPTO (Binance Testnet)</b>\n"
-            f"ðŸ’µ Balance: ${s.balance:,.2f}\n"
-            f"ðŸ“‚ Posiciones: {s.open_positions}\n"
-            f"âœ… Trades hoy: {wr_str}\n"
-            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-            f"<b>ðŸ’± FOREX (MT5 Demo)</b>\n"
-            f"ðŸ’µ Balance: {mt5_bal_str}\n"
-            f"ðŸ“‚ Posiciones: {mt5_pos_str}\n"
-            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
-            f"<b>ðŸ“Š ESTADÃSTICAS</b>\n"
-            f"ðŸŽ¯ Win Rate: {s.win_rate:.1f}%\n"
-            f"ðŸ“‰ Drawdown: {s.drawdown:.1f}%\n"
-            f"ðŸ”¢ Total trades: {win_total}\n"
-            f"Ultimo: {s.last_trade_symbol or 'N/A'} "
-            f"{'+' if s.last_trade_pnl >= 0 else ''}${s.last_trade_pnl:.2f}"
+        win_total = s.wins_today + s.losses_today
+        win_rate_str = f"{s.wins_today}W / {s.losses_today}L ({s.win_rate:.1f}%)" if win_total > 0 else "Sin trades hoy"
+        pnl_sign = "+" if s.daily_pnl >= 0 else ""
+        status_msg = (
+            f"SMC Bot Status\n"
+            f"Modo: {s.mode.value.upper()} | {'PAUSADO' if s.paused else 'ACTIVO'}\n"
+            f"Capital: ${s.capital:,.2f} | Balance: ${s.balance:,.2f}\n"
+            f"Posiciones abiertas: {s.open_positions}\n"
+            f"P&L hoy: {pnl_sign}${s.daily_pnl:.2f}\n"
+            f"P&L total: {'+' if s.total_pnl >= 0 else ''}${s.total_pnl:.2f}\n"
+            f"Trades hoy: {win_rate_str}\n"
+            f"Win rate total: {s.win_rate:.1f}%\n"
+            f"Drawdown actual: {s.drawdown:.1f}%\n"
+            f"Ultimo trade: {s.last_trade_symbol} {'+' if s.last_trade_pnl >= 0 else ''}${s.last_trade_pnl:.2f}"
         )
-        return CommandResult(success=True, message=msg, action="status")
+        return CommandResult(success=True, message=status_msg, action="status")
 
     def _cmd_positions(self) -> CommandResult:
         if self.state.open_positions == 0:
@@ -333,8 +305,8 @@ class TelegramCommander:
                 text = f"Error al obtener historial: {e}"
         else:
             text = (
-                "Historial: agente histÃ³rico no conectado.\n"
-                "Usa /history BTC para anÃ¡lisis por sÃ­mbolo."
+                "Historial: agente histórico no conectado.\n"
+                "Usa /history BTC para análisis por símbolo."
             )
         return CommandResult(success=True, message=text, action="history")
 
@@ -424,9 +396,9 @@ class TelegramCommander:
         return CommandResult(
             success=True,
             message=(
-                "AnÃ¡lisis SMC: Para anÃ¡lisis completo pasa un sÃ­mbolo.\n"
+                "Análisis SMC: Para análisis completo pasa un símbolo.\n"
                 "Ej: /analysis BTC\n"
-                "(Agente de anÃ¡lisis no conectado en modo standalone)"
+                "(Agente de análisis no conectado en modo standalone)"
             ),
             action="analysis",
         )
@@ -438,7 +410,7 @@ class TelegramCommander:
                 "On-Chain Metrics:\n"
                 "  Exchange Netflow: sin datos en tiempo real\n"
                 "  Whale Flows: sin datos en tiempo real\n"
-                "Conecta OnchainAgent para mÃ©tricas en vivo."
+                "Conecta OnchainAgent para métricas en vivo."
             ),
             action="onchain",
         )
@@ -447,9 +419,9 @@ class TelegramCommander:
         return CommandResult(
             success=True,
             message=(
-                "AnÃ¡lisis Lunar:\n"
-                "  Ciclo lunar: disponible vÃ­a LunarAgent\n"
-                "  CorrelaciÃ³n histÃ³rica: sin datos cargados\n"
+                "Análisis Lunar:\n"
+                "  Ciclo lunar: disponible vía LunarAgent\n"
+                "  Correlación histórica: sin datos cargados\n"
                 "Conecta LunarAgent para lectura completa."
             ),
             action="lunar",
@@ -461,7 +433,7 @@ class TelegramCommander:
             message=(
                 "Ondas de Elliott:\n"
                 "  Conteo activo: sin datos de mercado en tiempo real\n"
-                "  Pasa un sÃ­mbolo al supervisor para anÃ¡lisis completo.\n"
+                "  Pasa un símbolo al supervisor para análisis completo.\n"
                 "Conecta ElliottAgent para conteo en vivo."
             ),
             action="elliott",
@@ -472,10 +444,10 @@ class TelegramCommander:
             success=True,
             message=(
                 "Statistical Edge del Sistema:\n"
-                "  Winrate histÃ³rico: sin trades registrados aÃºn\n"
+                "  Winrate histórico: sin trades registrados aún\n"
                 "  Expectancy: N/A\n"
                 "  Sharpe Ratio: N/A\n"
-                "Ejecuta /history para ver datos por sÃ­mbolo."
+                "Ejecuta /history para ver datos por símbolo."
             ),
             action="edge",
         )
@@ -498,7 +470,129 @@ class TelegramCommander:
         msg = agent.format_telegram(candle, "BTCUSDT")
         return CommandResult(success=True, message=msg, action="footprint")
 
-    # â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    def _cmd_history(self) -> CommandResult:
+        if self.on_history:
+            try:
+                text = self.on_history("BTC")
+            except Exception as e:
+                text = f"Error: {e}"
+        else:
+            text = "Agente historico no disponible."
+        return CommandResult(success=True, message=text, action="history")
+
+    def _cmd_health(self) -> CommandResult:
+        from core.agent_health_check import AgentHealthCheck
+        checker = AgentHealthCheck()
+        report = checker.run_full_check()
+        return CommandResult(success=True, message=report.format_telegram(), action="health")
+
+    def _cmd_energy(self) -> CommandResult:
+        from agents.energy_frequency_agent import EnergyFrequencyAgent
+        agent = EnergyFrequencyAgent()
+        reading = agent.analyze("BTC", price=0.0)
+        return CommandResult(success=True, message=reading.format_telegram(), action="energy")
+
+    def _cmd_reporte_semanal(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        from datetime import date, timedelta
+        agent = ReportAgent(capital=self.state.capital)
+        today = date.today()
+        week_start = today - timedelta(days=today.weekday())
+        stats = agent.calculate_weekly_stats(week_start)
+        summary = agent.generate_telegram_summary(stats)
+        return CommandResult(success=True, message=summary, action="reporte_semanal")
+
+    def _cmd_reporte_mensual(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        from datetime import date
+        agent = ReportAgent(capital=self.state.capital)
+        today = date.today()
+        stats = agent.calculate_monthly_stats(today.year, today.month)
+        summary = agent.generate_telegram_summary(stats)
+        return CommandResult(success=True, message=summary, action="reporte_mensual")
+
+    def _cmd_criterios(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        agent = ReportAgent(capital=self.state.capital)
+        return CommandResult(success=True, message=agent.generate_criteria_message(), action="criterios")
+
+    def _cmd_proyeccion(self) -> CommandResult:
+        from agents.report_agent import ReportAgent
+        agent = ReportAgent(capital=self.state.capital)
+        return CommandResult(success=True, message=agent.generate_projection_message(), action="proyeccion")
+
+    def _cmd_vision(self) -> CommandResult:
+        from agents.screen_vision_agent import ScreenVisionAgent
+        agent = ScreenVisionAgent()
+        new_state = agent.toggle()
+        status = "activada" if new_state else "desactivada"
+        return CommandResult(success=True, message=f"Vision de pantalla {status}.", action="vision")
+
+    def _cmd_screenshot(self) -> CommandResult:
+        from agents.screen_vision_agent import ScreenVisionAgent
+        agent = ScreenVisionAgent()
+        cap = agent.capture_full_screen() or agent.create_mock_capture()
+        analysis = agent.analyze_capture(cap)
+        return CommandResult(success=True, message=agent.build_alert_message(analysis, "full"), action="screenshot")
+
+    def _cmd_mirror(self) -> CommandResult:
+        from agents.screen_vision_agent import ScreenVisionAgent
+        agent = ScreenVisionAgent()
+        if not agent._mirror_active:
+            agent.start_mirror_mode()
+            msg = "Modo espejo ACTIVADO."
+        else:
+            session = agent.stop_mirror_mode()
+            actions = session.actions_recorded if session else 0
+            msg = f"Modo espejo DESACTIVADO. Acciones: {actions}"
+        return CommandResult(success=True, message=msg, action="mirror")
+
+    def _cmd_analysis(self) -> CommandResult:
+        return CommandResult(success=True, message="Analisis SMC: conecta el bot con datos en vivo para analisis completo.", action="analysis")
+
+    def _cmd_onchain(self) -> CommandResult:
+        return CommandResult(success=True, message="OnChain metrics: conecta el bot para ver flujos de ballenas y exchange netflow.", action="onchain")
+
+    def _cmd_lunar(self) -> CommandResult:
+        from agents.lunar_agent import LunarCycleAgent
+        agent = LunarCycleAgent()
+        return CommandResult(success=True, message=agent.format_telegram(), action="lunar")
+
+    def _cmd_elliott(self) -> CommandResult:
+        return CommandResult(success=True, message="Elliott Wave: conecta con datos OHLCV para conteo de ondas.", action="elliott")
+
+    def _cmd_edge(self) -> CommandResult:
+        return CommandResult(success=True, message="Statistical Edge: winrate historico disponible despues de 50+ trades demo.", action="edge")
+
+    def _cmd_footprint(self) -> CommandResult:
+        from agents.footprint_agent import FootprintAgent
+        from core.config import config
+        agent = FootprintAgent(api_key=config.binance_api_key, api_secret=config.binance_api_secret, testnet=config.binance_testnet)
+        candle = agent.build_live_footprint("BTCUSDT")
+        if candle is None:
+            return CommandResult(success=True, message="No hay datos de footprint disponibles.", action="footprint")
+        return CommandResult(success=True, message=agent.format_telegram(candle, "BTCUSDT"), action="footprint")
+
+    def _cmd_ftmo(self) -> CommandResult:
+        from strategies.ftmo_agent import FTMOAgent, ChallengeType
+        agent = FTMOAgent()
+        state = FTMOAgent.new_challenge(initial_balance=self.state.capital, challenge_type=ChallengeType.TWO_STEP)
+        if self.state.total_pnl != 0:
+            try:
+                state = agent.record_trade(state, self.state.total_pnl)
+            except Exception:
+                pass
+        msg = agent.format_daily_report(state)
+        income = agent.calculate_monthly_income(200000, 0.05, 0.90)
+        msg += (
+            "\n━━━━━━━━━━━━━━━━━━━━\n"
+            "<b>POTENCIAL CON $200K FTMO</b>\n"
+            f"5%/mes: ${income['net_monthly']:,.0f}/mes | ${income['yearly']:,.0f}/anio"
+        )
+        return CommandResult(success=True, message=msg, action="ftmo")
+
+    # ── Helpers ───────────────────────────────────────────────────────────
 
     def _log_mode_change(self, mode: str, reason: str):
         self.state.mode_history.append({
@@ -513,7 +607,7 @@ class TelegramCommander:
             return
         try:
             bot = Bot(token=self.bot_token)
-            await bot.send_message(chat_id=self.chat_id, text=text, parse_mode="HTML")
+            await bot.send_message(chat_id=self.chat_id, text=text, parse_mode="Markdown")
         except Exception as e:
             logger.error(f"Telegram send error: {e}")
 
@@ -524,7 +618,7 @@ class TelegramCommander:
         Compatible with python-telegram-bot v20+.
         """
         if not HAS_TELEGRAM or not self.bot_token:
-            print("[Telegram] Sin token â€” polling de comandos desactivado")
+            print("[Telegram] Sin token - polling de comandos desactivado")
             await asyncio.Event().wait()
             return
 
@@ -558,10 +652,10 @@ class TelegramCommander:
                         allowed_updates=["message", "callback_query"],
                     )
                     await self.send_message(
-                        "ðŸ¤– Bot online â€” comandos activos: /status /auto /semi /pause /resume "
+                        "🤖 Bot online - comandos activos: /status /auto /semi /pause /resume "
                         "/positions /scores /risk /train /youtube"
                     )
-                    print("[Telegram] Polling activo â€” escuchando comandos")
+                    print("[Telegram] Polling activo - escuchando comandos")
                     await asyncio.Event().wait()
 
             except asyncio.CancelledError:
@@ -587,7 +681,7 @@ class TelegramCommander:
         return handler
 
     def _make_history_handler(self):
-        """Handler for /history [symbol] â€” calls on_history callback."""
+        """Handler for /history [symbol] - calls on_history callback."""
         async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not update.message:
                 return
@@ -598,7 +692,7 @@ class TelegramCommander:
                 except Exception as e:
                     text = f"Error generando historial para {symbol}: {e}"
             else:
-                text = f"Agente histÃ³rico no disponible. Reinicia el bot."
+                text = f"Agente histórico no disponible. Reinicia el bot."
             parse = "Markdown" if "*" in text else None
             try:
                 await update.message.reply_text(text, parse_mode=parse)
@@ -611,4 +705,3 @@ class TelegramCommander:
         for k, v in kwargs.items():
             if hasattr(self.state, k):
                 setattr(self.state, k, v)
-
