@@ -169,6 +169,7 @@ class TelegramCommander:
             "/edge":             self._cmd_edge,
             "/footprint":        self._cmd_footprint,
             "/ftmo":             self._cmd_ftmo,
+            "/axi":              self._cmd_axi,
 
             "/history":   self._cmd_history,
             "/memory":           self._cmd_memory,
@@ -727,6 +728,20 @@ class TelegramCommander:
             f"Ingreso anual: ${income['yearly']:,.0f}"
         )
         return CommandResult(success=True, message=msg, action="ftmo")
+    def _cmd_axi(self) -> CommandResult:
+        from strategies.axi_select_agent import AxiSelectAgent
+        from core.score_db import get_stats
+        agent = AxiSelectAgent()
+        state = AxiSelectAgent.new_state(initial_balance=500.0)
+        stats = get_stats()
+        if stats["executed"] > 0:
+            state.trades_closed = stats["executed"]
+            state.wins   = stats["high_score"]
+            state.losses = max(0, stats["executed"] - stats["high_score"])
+            state.edge_score = agent.calculate_edge_score(state)
+            state.stage = agent.get_current_stage(state)
+        return CommandResult(success=True, message=agent.format_telegram(state), action="axi")
+
     def _log_mode_change(self, mode: str, reason: str):
         self.state.mode_history.append({
             "timestamp": datetime.now(timezone.utc).isoformat(),
