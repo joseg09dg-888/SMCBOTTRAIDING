@@ -51,22 +51,32 @@ pm2 status
 | PM2 | ✅ smc-bot ONLINE | auto-restart cada 10s |
 | Windows startup | ✅ | Startup folder + .bat |
 | MT5 MetaQuotes | ❌ BLOQUEADO | servidores no accesibles en red del usuario |
-| MT5 ICMarkets | ⚠️ PENDIENTE | instalado, necesita login manual |
+| MT5 XM Demo | ⚠️ PENDIENTE | login=345308080 server=XMGlobal-MT5 10, ingresar pwd en GUI |
+| Forex yfinance | ✅ ACTIVO | EURUSD/GBPUSD/USDJPY/GBPJPY escaneando |
+| SQLite scores | ✅ ACTIVO | memory/scores.db — 15+ scores guardados |
 | Glint | ✅ headless | cookies en memory/glint_session.json |
 
 ---
 
-## 4. PROBLEMA MT5 — DIAGNÓSTICO DEFINITIVO
+## 4. CREDENCIALES MT5 XM (obtenidas de Gmail MCP 2026-05-20)
 
 ```
-mt5.metaquotes.net:443  → BLOQUEADO (ISP/firewall del usuario)
-mt5.icmarkets.com:443   → ACCESIBLE ✅
-Pepperstone demo        → ACCESIBLE ✅
+MT5_LOGIN=345308080
+MT5_PASSWORD=IMSMCbot*2
+MT5_SERVER=XMGlobal-MT5 10
+Cuenta: Demo XM Global
+Email: site@xm.com (email de bienvenida)
 ```
 
-**Fix pendiente (acción del usuario):**
-1. Abrir MT5 manualmente desde menú Inicio
-2. File → Open Account → buscar "ICMarkets SC" → Open Demo Account
+**Servidor accesible:** `mt5.xmglobal.com:443 → TRUE`
+
+**Fix pendiente (una sola vez):**
+1. MT5 está abierto y configurado para XMGlobal-MT5 10
+2. En la ventana de MT5 → ingresar Password: IMSMCbot*2 → OK
+3. Esperar que aparezcan cotizaciones (EURUSD etc.)
+4. Correr: `.venv\Scripts\python scripts/test_xm_mt5.py`
+
+**NO tocar MT5 con Python hasta que esté completamente logueado en la GUI.**
 3. Completar formulario → recibir credenciales por email
 4. Actualizar `.env`: MT5_LOGIN, MT5_PASSWORD, MT5_SERVER=ICMarketsSC-Demo
 5. Correr: `.venv\Scripts\python scripts/mt5_full_test.py`
