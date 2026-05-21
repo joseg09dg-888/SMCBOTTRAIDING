@@ -39,15 +39,22 @@ class MT5Connector:
             mt5.shutdown()  # reset any stale state
         except Exception:
             pass
+        # Try Axi-specific terminal first, then fallback
+        axi_exe = r"C:\Program Files\Axi MetaTrader 5 Terminal\terminal64.exe"
+        std_exe  = r"C:\Program Files\MetaTrader 5\terminal64.exe"
+        import os
+        axi_path = axi_exe if os.path.exists(axi_exe) else std_exe
+
         for attempt in [
-            # 1. Direct credentials
-            lambda: mt5.initialize(login=self.login, password=self.password, server=self.server),
-            # 2. Path + credentials
-            lambda: mt5.initialize(
-                path=r"C:\Program Files\MetaTrader 5\terminal64.exe",
-                login=self.login, password=self.password, server=self.server),
-            # 3. Active session (no credentials)
-            lambda: mt5.initialize(),
+            # 1. Direct credentials with short timeout
+            lambda: mt5.initialize(login=self.login, password=self.password,
+                                   server=self.server, timeout=5000),
+            # 2. With Axi/standard terminal path
+            lambda: mt5.initialize(path=axi_path, login=self.login,
+                                   password=self.password, server=self.server,
+                                   timeout=5000),
+            # 3. Active session only
+            lambda: mt5.initialize(timeout=5000),
         ]:
             try:
                 if attempt():
