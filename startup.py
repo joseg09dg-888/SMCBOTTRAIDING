@@ -3,11 +3,18 @@ SMC Bot — Startup Script
 Uso manual:    python startup.py
 Autoarranque:  python startup.py --auto --capital 1000 --reason auto_restart
 """
+# Fix encoding — eliminates garbled characters (â€" â€˜ etc.) in terminal
+import sys, io, os
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+os.environ['PYTHONUTF8']       = '1'
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'buffer'):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 import argparse
 import asyncio
 import atexit
-import os
-import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
