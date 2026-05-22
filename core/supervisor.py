@@ -239,8 +239,9 @@ class TradingSupervisor:
             print(f"  Scan interval: {SCAN_INTERVAL_SEC}s")
         print()
 
-        # MT5 startup check
+        # MT5 startup check — try port 443 first for ISP compatibility
         loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self.mt5.ensure_port_443_config)
         mt5_ok = await loop.run_in_executor(None, self.mt5.connect)
         if mt5_ok:
             self._mt5_available = True
@@ -248,6 +249,12 @@ class TradingSupervisor:
             bal  = info.get("balance", 0)
             print(f"  MT5:           CONECTADO -- Balance ${bal:,.2f}")
             print(f"  Forex:         {', '.join(MT5_SYMBOLS)}")
+            try:
+                await self.telegram.send_glint_alert(
+                    f"<b>MT5 AXI CONECTADO</b>\nBalance: ${bal:,.2f} USD\nServer: {self.mt5.server}"
+                )
+            except Exception:
+                pass
         else:
             self._mt5_available = False
             msg = self.mt5.last_error_msg()
@@ -565,6 +572,32 @@ class TradingSupervisor:
                 break
             except Exception:
                 await asyncio.sleep(10)
+
+            # MT5 reconnect monitor — check every scan cycle
+            if self._mt5_available and not self.mt5.is_connected():
+                self._mt5_available = False
+                print("[MT5] Desconectado — reintentando en 60s...")
+                try:
+                    await self.telegram.send_glint_alert(
+                        self.mt5.disconnect_alert_msg()
+                    )
+                except Exception:
+                    pass
+            elif not self._mt5_available:
+                # Silent reconnect attempt every scan cycle
+                loop2 = asyncio.get_event_loop()
+                mt5_ok = await loop2.run_in_executor(None, self.mt5.reconnect)
+                if mt5_ok:
+                    self._mt5_available = True
+                    info = await loop2.run_in_executor(None, self.mt5.get_account_info)
+                    bal = info.get("balance", 0)
+                    print(f"[MT5] Reconectado! Balance ${bal:,.2f}")
+                    try:
+                        await self.telegram.send_glint_alert(
+                            f"<b>MT5 AXI RECONECTADO</b>\nBalance: ${bal:,.2f} USD"
+                        )
+                    except Exception:
+                        pass
 
             await asyncio.sleep(SCAN_INTERVAL_SEC)  # next full scan
 
