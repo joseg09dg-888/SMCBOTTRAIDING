@@ -3,4 +3,5 @@ builder = "dockerfile"
 
 [deploy]
 startCommand = "python -u startup.py --auto --capital 1000"
-restartPolicyType = "always"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

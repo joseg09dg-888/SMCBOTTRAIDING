@@ -195,6 +195,73 @@ class MQL5Reader:
         """Return last n saved strategies."""
         return self._strategies[-n:]
 
+    # ── MT5 news via terminal API ─────────────────────────────────────────
+
+    def fetch_mt5_news(self, limit: int = 99) -> list:
+        """
+        Read news directly from running MT5 terminal via mt5.news_get().
+        Returns list of MQL5Item. Works only when MT5 is connected.
+        """
+        items = []
+        try:
+            import MetaTrader5 as mt5
+            news = mt5.news_get(limit)
+            if news is None:
+                return items
+            for n in news:
+                # MT5 news object has: time, category, source, title, body, url
+                title   = getattr(n, "title",    "") or ""
+                body    = getattr(n, "body",     "") or ""
+                url     = getattr(n, "url",      "") or ""
+                source  = getattr(n, "source",   "") or ""
+                ts      = getattr(n, "time",     0)
+                cat     = getattr(n, "category", "") or ""
+
+                if not title:
+                    continue
+
+                link    = url or f"mt5://news/{ts}"
+                item_id = hashlib.sha256(link.encode()).hexdigest()[:16]
+                items.append(MQL5Item(
+                    feed_type   = "mt5_news",
+                    title       = title[:120],
+                    link        = link,
+                    description = body[:400],
+                    pub_date    = str(ts),
+                    item_id     = item_id,
+                ))
+        except Exception as e:
+            logger.debug(f"MT5 news fetch error: {e}")
+        return items
+
+    def scan_mt5_news(self, limit: int = 99) -> list:
+        """
+        Fetch MT5 terminal news, extract strategies for new items.
+        Returns list of new MQL5Item.
+        """
+        items    = self.fetch_mt5_news(limit)
+        new_items = []
+        for item in items:
+            if item.item_id in self._seen_ids:
+                continue
+            self._seen_ids.add(item.item_id)
+            # Extract strategy impact with Claude
+            if self._api_key and "PEGA" not in self._api_key:
+                item.strategy_summary = self.extract_strategy(item)
+                item.extracted_at = datetime.now(timezone.utc).isoformat()
+            new_items.append(item)
+            self._strategies.append({
+                "feed":     "mt5_news",
+                "title":    item.title,
+                "link":     item.link,
+                "summary":  item.strategy_summary,
+                "date":     item.pub_date,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            })
+        self._save_cache()
+        self._save_strategies()
+        return new_items
+
     def format_telegram(self, items: list) -> str:
         """Format new items for Telegram notification."""
         if not items:
