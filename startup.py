@@ -3,14 +3,12 @@ SMC Bot — Startup Script
 Uso manual:    python startup.py
 Autoarranque:  python startup.py --auto --capital 1000 --reason auto_restart
 """
-# Fix encoding — eliminates garbled characters (â€" â€˜ etc.) in terminal
-import sys, io, os
+# Encoding fix: use environment variables (safe in all contexts)
+import sys, os
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 os.environ['PYTHONUTF8']       = '1'
-if hasattr(sys.stdout, 'buffer'):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'buffer'):
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import argparse
 import asyncio
@@ -25,9 +23,14 @@ def _acquire_lock():
     if LOCK_FILE.exists():
         try:
             old_pid = int(LOCK_FILE.read_text().strip())
-            import psutil
-            psutil.Process(old_pid).kill()
-            print(f"[Bot] Instancia anterior (PID {old_pid}) terminada")
+            if old_pid != os.getpid():
+                import psutil
+                p = psutil.Process(old_pid)
+                pname = (p.name() or "").lower()
+                # Only kill if it is actually a Python/bot process
+                if "python" in pname:
+                    p.kill()
+                    print(f"[Bot] Instancia anterior (PID {old_pid}) terminada")
         except Exception:
             pass
         LOCK_FILE.unlink(missing_ok=True)
