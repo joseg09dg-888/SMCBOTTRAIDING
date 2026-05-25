@@ -459,34 +459,69 @@ class TelegramCommander:
 
     def _cmd_criterios(self) -> CommandResult:
         from core.score_db import get_stats
+        from strategies.axi_select_agent import AxiSelectAgent
+
         stats = get_stats()
         total    = stats["executed"]
         wr       = stats["win_rate"]
-        cr_wr    = "✅" if wr >= 60 else "❌"
+        high     = stats["high_score"]
+        losses   = max(0, total - high)
+        pf       = high / max(losses, 1)
+
+        # Edge Score via AxiSelectAgent
+        try:
+            agent_axi = AxiSelectAgent()
+            axi_state = AxiSelectAgent.new_state(500.0)
+            axi_state.trades_closed = total
+            axi_state.wins   = high
+            axi_state.losses = losses
+            axi_state.edge_score = agent_axi.calculate_edge_score(axi_state)
+            edge_total = axi_state.edge_score.total
+        except Exception:
+            edge_total = 0
+
+        # MT5 connectivity check
+        try:
+            import MetaTrader5 as mt5
+            mt5_info = mt5.terminal_info()
+            mt5_ok = mt5_info is not None
+        except Exception:
+            mt5_ok = False
+
+        cr_wr     = "✅" if wr >= 60    else "❌"
         cr_trades = "✅" if total >= 100 else "❌"
-        cr_50    = "✅" if total >= 50 else "❌"
-        progress = f"{min(total,100)}/100"
-        est = max(0, 100 - total)
-        status = "🟢 LISTO" if total >= 100 and wr >= 60 else "🟡 EN PROGRESO"
+        cr_risk   = "✅"
+        cr_edge   = "✅" if edge_total >= 50 else "❌"
+        cr_mt5    = "✅" if mt5_ok       else "❌"
+        cr_pf     = "✅" if pf >= 1.5 or losses == 0 else "❌"
+
+        criteria = [cr_wr, cr_trades, cr_risk, cr_edge, cr_mt5, cr_pf]
+        failed   = criteria.count("❌")
+
+        if failed == 0:
+            veredicto = "🟢 LISTO PARA REAL — deposita $500 en Axi"
+        else:
+            veredicto = f"🟡 FALTAN {failed} criterios — sigue en demo"
+
+        pf_str = ">" if losses == 0 else f"{pf:.2f}"
+        mt5_str = "Conectado" if mt5_ok else "Desconectado"
+
         text = (
             f"<b>CRITERIOS PARA IR A REAL</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>OBLIGATORIOS:</b>\n"
-            f"{cr_wr} Win Rate > 60%: {wr:.1f}%\n"
-            f"{cr_trades} 100+ trades demo: {progress}\n"
-            f"✅ Sin violaciones de riesgo\n"
-            f"✅ 24 agentes operativos\n"
+            f"{cr_wr} Win Rate &gt; 60%: {wr:.1f}%\n"
+            f"{cr_trades} 100+ trades demo: {min(total,100)}/100\n"
+            f"{cr_risk} Sin violaciones de riesgo\n"
+            f"{cr_edge} Edge Score Axi &gt; 50: {edge_total}\n"
+            f"{cr_mt5} MT5 Axi conectado: {mt5_str}\n"
+            f"{cr_pf} Profit Factor &gt; 1.5: {pf_str}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>PARA FTMO CHALLENGE:</b>\n"
-            f"{cr_50} 50+ trades: {total}/50\n"
-            f"{cr_wr} Win Rate > 60%: {wr:.1f}%\n"
+            f"<b>VEREDICTO:</b>\n"
+            f"{veredicto}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"Estado: {status}\n"
-            f"Trades acumulados: {total}\n"
-            f"Estimado: {est} trades mas\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>POTENCIAL FTMO $200K</b>\n"
-            f"5%/mes x 90% split = $9,000/mes"
+            f"Trades: {total} | Estimado: {max(0,100-total)} mas\n"
+            f"<b>POTENCIAL AXI SELECT $1M</b>\n"
+            f"2%/mes x 80% split = $16,000/mes"
         )
         return CommandResult(success=True, message=text, action="criterios")
 
