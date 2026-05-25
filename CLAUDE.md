@@ -44,16 +44,17 @@ pm2 status
 | Componente | Estado | Notas |
 |-----------|--------|-------|
 | Tests | ✅ 1003/1003 pasando | `pytest tests/ -q` |
-| Binance Testnet | ✅ CONECTADO | 1 BTC + 10K USDT |
+| Binance Testnet | ⚠️ DNS falla en PM2 | datos cacheados funcionan |
 | Scan crypto | ✅ ACTIVO | BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT/ADAUSDT |
-| Scan forex | ✅ ACTIVO | yfinance: EURUSD/GBPUSD/USDJPY/GBPJPY |
+| Scan forex | ✅ MT5 REAL | EURUSD/GBPUSD/XAUUSD/USDJPY/GBPJPY/NAS100/US30 via MT5 |
+| MT5 Axi Demo | ✅ CONECTADO | login=10042896 server=Axi-US50-Demo balance=$100,000 |
+| MT5 ordenes reales | ✅ FUNCIONANDO | Ticket #59708384 USDJPY BUY ejecutado 2026-05-25 |
+| MT5 scan loop | ✅ ACTIVO | _scan_mt5_symbol() H1+H4 para 7 pares forex |
+| MT5 auto-reconexion | ✅ | delay 2s en connect() + loop cada 30s |
 | Telegram polling | ✅ ACTIVO | parse_mode=HTML, 27 comandos |
-| PM2 | ✅ smc-bot ONLINE | auto-restart cada 10s |
+| PM2 | ✅ smc-bot ONLINE | auto-restart |
 | Windows startup | ✅ | Startup folder + .bat |
-| MT5 MetaQuotes | ❌ BLOQUEADO | servidores no accesibles en red del usuario |
-| MT5 XM Demo | ⚠️ PENDIENTE | login=345308080 server=XMGlobal-MT5 10, ingresar pwd en GUI |
-| Forex yfinance | ✅ ACTIVO | EURUSD/GBPUSD/USDJPY/GBPJPY escaneando |
-| SQLite scores | ✅ ACTIVO | memory/scores.db — 15+ scores guardados |
+| SQLite scores | ✅ ACTIVO | memory/scores.db |
 | Glint | ✅ headless | cookies en memory/glint_session.json |
 
 ---

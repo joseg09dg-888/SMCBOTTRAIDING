@@ -12,7 +12,15 @@ import os
 from pathlib import Path
 from typing import Optional
 
-SIGNALS_DIR  = Path(__file__).parent.parent / "mt5_signals"
+# MT5 reads from Common\Files when using FILE_COMMON flag in MQL5
+# This is the correct path that MT5 EAs can access
+_APPDATA = Path(os.environ.get("APPDATA", ""))
+MT5_COMMON_FILES = _APPDATA / "MetaQuotes" / "Terminal" / "Common" / "Files"
+
+# Use Common\Files if available (EA uses FILE_COMMON), else fallback to local
+SIGNALS_DIR = MT5_COMMON_FILES if MT5_COMMON_FILES.parent.exists() else (
+    Path(__file__).parent.parent / "mt5_signals"
+)
 SIGNAL_FILE  = SIGNALS_DIR / "signal.json"
 RESULT_FILE  = SIGNALS_DIR / "result.json"
 LOCK_FILE    = SIGNALS_DIR / "processing.lock"

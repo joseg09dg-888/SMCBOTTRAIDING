@@ -69,12 +69,14 @@ class MT5Connector:
     # ── Connection ────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
+        import time
         if not HAS_MT5:
             return False
         try:
             mt5.shutdown()
         except Exception:
             pass
+        time.sleep(2)  # allow MT5 terminal to reset IPC state
 
         axi_path = AXI_EXE if os.path.exists(AXI_EXE) else STD_EXE
 
@@ -82,18 +84,18 @@ class MT5Connector:
         server_443 = f"{self.server}:443" if ":" not in self.server else self.server
 
         attempts = [
-            # 1. Server with port 443 (bypasses ISP port blocks)
+            # 1. Normal server name (most reliable on Axi)
             lambda: mt5.initialize(login=self.login, password=self.password,
-                                   server=server_443, timeout=5000),
-            # 2. Normal server name
+                                   server=self.server, timeout=8000),
+            # 2. Server with port 443 (bypasses ISP port blocks)
             lambda: mt5.initialize(login=self.login, password=self.password,
-                                   server=self.server, timeout=5000),
-            # 3. Axi terminal path + port 443
+                                   server=server_443, timeout=8000),
+            # 3. Axi terminal path explicit
             lambda: mt5.initialize(path=axi_path, login=self.login,
-                                   password=self.password, server=server_443,
-                                   timeout=5000),
+                                   password=self.password, server=self.server,
+                                   timeout=8000),
             # 4. Attach to active session
-            lambda: mt5.initialize(timeout=5000),
+            lambda: mt5.initialize(timeout=8000),
         ]
 
         for attempt in attempts:
@@ -102,6 +104,7 @@ class MT5Connector:
                     self._connected = True
                     return True
                 mt5.shutdown()
+                time.sleep(1)
             except Exception:
                 pass
 
@@ -228,17 +231,52 @@ class MT5Connector:
         if not HAS_MT5:
             return {"error": "MT5 not installed"}
         try:
-            action = mt5.TRADE_ACTION_DEAL
-            ot = mt5.ORDER_TYPE_BUY if order_type.upper() == "BUY" else mt5.ORDER_TYPE_SELL
+            mt5.symbol_select(symbol, True)
+            tick = mt5.symbol_info_tick(symbol)
+            if tick is None:
+                return {"error": f"No tick for {symbol}: {mt5.last_error()}"}
+            info = mt5.symbol_info(symbol)
+            ot    = mt5.ORDER_TYPE_BUY if order_type.upper() == "BUY" else mt5.ORDER_TYPE_SELL
+            price = tick.ask if ot == mt5.ORDER_TYPE_BUY else tick.bid
+
+            # Enforce minimum stop distance required by the broker
+            if info is not None:
+                point     = info.point
+                min_dist  = info.trade_stops_level * point
+                # Add a safety buffer: 3× the minimum stop distance
+                safe_dist = max(min_dist * 3, point * 50)
+                if sl != 0.0:
+                    if ot == mt5.ORDER_TYPE_BUY and sl >= price - safe_dist:
+                        sl = round(price - safe_dist, info.digits)
+                    elif ot == mt5.ORDER_TYPE_SELL and sl <= price + safe_dist:
+                        sl = round(price + safe_dist, info.digits)
+                if tp != 0.0:
+                    if ot == mt5.ORDER_TYPE_BUY and tp <= price + safe_dist:
+                        tp = round(price + safe_dist, info.digits)
+                    elif ot == mt5.ORDER_TYPE_SELL and tp >= price - safe_dist:
+                        tp = round(price - safe_dist, info.digits)
+
             request = {
-                "action": action, "symbol": symbol, "volume": volume,
-                "type": ot, "sl": sl, "tp": tp,
-                "comment": "SMC Bot", "type_filling": mt5.ORDER_FILLING_IOC,
+                "action":       mt5.TRADE_ACTION_DEAL,
+                "symbol":       symbol,
+                "volume":       volume,
+                "type":         ot,
+                "price":        price,
+                "sl":           sl,
+                "tp":           tp,
+                "deviation":    50,
+                "magic":        234000,
+                "comment":      "SMC Bot",
+                "type_time":    mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
             }
             result = mt5.order_send(request)
-            if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
-                return {"error": f"Order failed: {result}"}
-            return {"ticket": result.order, "status": "filled"}
+            if result is None:
+                return {"error": f"order_send None: {mt5.last_error()}"}
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                return {"error": f"Retcode {result.retcode}: {result.comment}"}
+            logger.info(f"MT5 order filled: {symbol} {order_type} #{result.order} @{result.price}")
+            return {"ticket": result.order, "status": "filled", "price": result.price}
         except Exception as e:
             logger.error(f"MT5 place_order error: {e}")
             return {"error": str(e)}

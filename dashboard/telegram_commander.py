@@ -248,40 +248,62 @@ class TelegramCommander:
         )
 
     def _cmd_status(self) -> CommandResult:
+        from core.config import config as cfg
+        from core.score_db import get_stats
+        stats = get_stats()
+        wr = f"{stats['win_rate']:.1f}%" if stats['executed'] > 0 else "N/A"
+
+        # MT5 real balance
+        try:
+            from connectors.metatrader_connector import MT5Connector
+            mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            info = mt5.get_account_info()
+            if info and info.get("balance"):
+                bal    = info["balance"]
+                equity = info.get("equity", bal)
+                profit = info.get("profit", 0.0)
+                gain   = bal - 100000.0
+                mt5_text = (
+                    f"Balance: <code>${bal:,.2f}</code>\n"
+                    f"Equity:  <code>${equity:,.2f}</code>\n"
+                    f"P&amp;L abierto: <code>${profit:+.2f}</code>\n"
+                    f"Ganancia vs inicio: <code>${gain:+.2f}</code>"
+                )
+            else:
+                mt5_text = "Reconectando..."
+        except Exception as e:
+            mt5_text = f"No disponible: {e}"
+
+        # Binance testnet
         try:
             from connectors.binance_connector import BinanceConnector
-            from core.config import config as cfg
-            from core.score_db import get_stats
             b = BinanceConnector(cfg.binance_api_key, cfg.binance_api_secret, True)
             bal_df = b.get_ohlcv("BTCUSDT", "1m", 1)
             btc_price = float(bal_df["close"].iloc[-1]) if not bal_df.empty else 0.0
             bal_usdt = b.get_balance()
             positions = b.get_open_positions()
-            stats = get_stats()
-            wr = f"{stats['win_rate']:.1f}%" if stats['executed'] > 0 else "N/A"
-            text = (
-                f"<b>SMC BOT ESTADO REAL</b>\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"Modo: {cfg.operation_mode.upper()} | ACTIVO\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"<b>BINANCE TESTNET</b>\n"
+            binance_text = (
                 f"USDT: <code>{bal_usdt:,.2f}</code>\n"
-                f"BTC precio: <code>${btc_price:,.2f}</code>\n"
-                f"Posiciones abiertas: {len(positions)}\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"<b>ESTADISTICAS (SQLite)</b>\n"
-                f"Trades ejecutados: {stats['executed']}\n"
-                f"Total scaneados: {stats['total']}\n"
-                f"Win Rate: {wr}\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"<b>BOT</b>\n"
-                f"Tests: 1,003 OK\n"
-                f"Agentes: 24 activos\n"
-                f"Scan: cada 30s\n"
-                f"Forex: yfinance activo"
+                f"BTC: <code>${btc_price:,.2f}</code>\n"
+                f"Posiciones: {len(positions)}"
             )
         except Exception as e:
-            text = f"<b>SMC BOT</b>\nError obteniendo datos reales: {e}\nBot corriendo normalmente."
+            binance_text = f"Error: {e}"
+
+        text = (
+            f"<b>SMC BOT ESTADO REAL</b>\n"
+            f"<b>Modo:</b> {cfg.operation_mode.upper()} | ACTIVO\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>MT5 AXI DEMO (meta: crecer $100K)</b>\n"
+            f"{mt5_text}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>BINANCE TESTNET</b>\n"
+            f"{binance_text}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>ESTADISTICAS</b>\n"
+            f"Trades: {stats['executed']} | Win Rate: {wr}\n"
+            f"Scan: cada 30s"
+        )
         return CommandResult(success=True, message=text, action="status")
 
     def _cmd_positions(self) -> CommandResult:

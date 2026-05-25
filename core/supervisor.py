@@ -18,6 +18,11 @@ from training.historical_agent import HistoricalDataAgent
 
 logger = logging.getLogger(__name__)
 from core.score_db import save_score
+from memory.episodic_db import get_db, record_episode, update_episode_result
+from core.autonomous_learner import AutonomousLearner
+from core.research_agent import ResearchAgent
+from core.goals_manager import GoalsManager
+from core.nightly_reporter import NightlyReporter
 
 # Demo mode: lower score threshold so the bot actually trades while learning
 DEMO_SCORE_THRESHOLD = 30
@@ -110,6 +115,13 @@ class TradingSupervisor:
         self._demo_trades: List[DemoTrade] = []
         self.mode    = config.operation_mode
         self._running = False
+        # Autonomous mode
+        self._episodic_conn = get_db()
+        self._learner   = AutonomousLearner(conn=self._episodic_conn)
+        self._researcher = ResearchAgent(conn=self._episodic_conn)
+        self._goals_mgr  = GoalsManager(conn=self._episodic_conn)
+        self._reporter   = NightlyReporter(conn=self._episodic_conn)
+        self._open_episodes: Dict[int, int] = {}  # ticket -> episode_id
 
     # â”€â”€ Callbacks from TelegramCommander â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -269,6 +281,10 @@ class TradingSupervisor:
             self.commander.start_polling(),
             self.glint.connect(),
             self._market_scan_loop(),
+            self._learning_loop(),
+            self._research_loop(),
+            self._goals_loop(),
+            self._nightly_report_loop(),
         )
 
     @staticmethod
@@ -440,6 +456,50 @@ class TradingSupervisor:
             logger.debug(f"yfinance scan {symbol} error: {exc}")
             return None
 
+    async def _send_mt5_real_order(self, signal: TradeSignal):
+        """Send a real order to MT5 demo account (no slot limit)."""
+        import sys
+        order_type = "BUY" if signal.signal_type == SignalType.LONG else "SELL"
+        sl_val = signal.stop_loss if signal.stop_loss else 0.0
+        tp_val = signal.take_profit if signal.take_profit else 0.0
+        print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
+        try:
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.mt5.place_order(signal.symbol, order_type, 0.01, sl=sl_val, tp=tp_val),
+            )
+        except Exception as exc:
+            print(f"[MT5 ORDER] Excepcion en place_order: {exc}", flush=True)
+            return
+        if "ticket" in result:
+            print(f"[MT5 REAL] {signal.symbol} {order_type} #{result['ticket']} @{result.get('price', 0):.5f} score={signal.decision_score}", flush=True)
+            try:
+                eid = record_episode({
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "symbol": signal.symbol,
+                    "timeframe": signal.timeframe,
+                    "direction": order_type,
+                    "entry": result.get("price", signal.entry),
+                    "score": signal.decision_score,
+                    "setup_type": "SMC",
+                }, conn=self._episodic_conn)
+                self._open_episodes[result["ticket"]] = eid
+            except Exception as _ep_err:
+                print(f"[EPISODIC] record error: {_ep_err}", flush=True)
+            try:
+                await self.telegram.send_glint_alert(
+                    f"<b>MT5 ORDEN REAL EJECUTADA</b>\n"
+                    f"Par: {signal.symbol} | {order_type}\n"
+                    f"Ticket: #{result['ticket']} | @{result.get('price', 0):.5f}\n"
+                    f"SL: {sl_val:.5f} | TP: {tp_val:.5f}\n"
+                    f"Score: {signal.decision_score}/100"
+                )
+            except Exception:
+                pass
+        else:
+            print(f"[MT5 REAL] {signal.symbol} fallida: {result.get('error', '?')}", flush=True)
+
     async def _execute_demo_trade(self, signal: TradeSignal):
         """Record a simulated demo trade, notify via Telegram, log to SQLite."""
         if len(self._demo_trades) >= DEMO_MAX_POSITIONS:
@@ -493,6 +553,46 @@ class TradingSupervisor:
         except Exception:
             pass
 
+
+    # -- Autonomous background loops ----------------------------------------
+
+    async def _learning_loop(self):
+        while self._running:
+            await asyncio.sleep(3600)  # every 1 hour
+            try:
+                self._learner.run_analysis()
+                print("[LEARNER] Weight analysis complete", flush=True)
+            except Exception as exc:
+                print(f"[LEARNER] error: {exc}", flush=True)
+
+    async def _research_loop(self):
+        while self._running:
+            await asyncio.sleep(7200)  # every 2 hours
+            try:
+                self._researcher.run_cycle()
+            except Exception as exc:
+                print(f"[RESEARCH] error: {exc}", flush=True)
+
+    async def _goals_loop(self):
+        while self._running:
+            await asyncio.sleep(1800)  # every 30 min
+            try:
+                self._goals_mgr.evaluate()
+            except Exception as exc:
+                print(f"[GOALS] error: {exc}", flush=True)
+
+    async def _nightly_report_loop(self):
+        while self._running:
+            await asyncio.sleep(60)  # check every 1 min
+            try:
+                now = datetime.now(timezone.utc)
+                if self._reporter.should_fire(now):
+                    date_str = now.strftime("%Y-%m-%d")
+                    self._reporter.mark_fired(date_str)
+                    await self._reporter.send(date_str)
+            except Exception as exc:
+                print(f"[NIGHTLY] error: {exc}", flush=True)
+
     async def _market_scan_loop(self):
         _was_offline = False
         threshold = DEMO_SCORE_THRESHOLD if self.demo_mode else 60
@@ -544,29 +644,52 @@ class TradingSupervisor:
 
                         await asyncio.sleep(1)  # rate limit between symbols
 
-                # yfinance forex scan (always runs)
-                for symbol, tf_yf, tf_label in [
-                    ("EURUSD","1h","1H"), ("GBPUSD","1h","1H"),
-                    ("USDJPY","1h","1H"), ("GBPJPY","1h","1H"),
-                ]:
-                    if not self._running: break
-                    try:
-                        signal = await self._scan_forex_yfinance(symbol, tf_yf, tf_label)
-                        if signal is None:
-                            continue
-                        score = signal.decision_score
-                        bias  = signal.signal_type.value.upper()
-                        print(f"[FOREX][{symbol}][{tf_label}] Score: {score} | {bias}", end="")
-                        if signal.signal_type == SignalType.WAIT or score < threshold:
-                            print(" -- sin setup")
-                        elif self.demo_mode:
-                            print(f" -- DEMO FOREX")
-                            await self._execute_demo_trade(signal)
-                        else:
-                            self._dispatch(signal)
-                    except Exception as exc:
-                        print(f"[FOREX][{symbol}] Error: {exc.__class__.__name__}")
-                    await asyncio.sleep(0.5)
+                # MT5 forex scan (real orders on demo account — bypass demo slot limit)
+                if self._mt5_available:
+                    for symbol in MT5_SYMBOLS:
+                        for tf in MT5_TIMEFRAMES:
+                            if not self._running:
+                                break
+                            try:
+                                signal = await self._scan_mt5_symbol(symbol, tf)
+                                if signal is None:
+                                    continue
+                                score = signal.decision_score
+                                bias  = signal.signal_type.value.upper()
+                                print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="")
+                                if signal.signal_type == SignalType.WAIT or score < threshold:
+                                    print(" -- sin setup")
+                                else:
+                                    print(f" -- ejecutando MT5 REAL")
+                                    await self._send_mt5_real_order(signal)
+                            except Exception as exc:
+                                print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
+                            await asyncio.sleep(0.5)
+
+                # yfinance forex scan (fallback when MT5 unavailable)
+                if not self._mt5_available:
+                    for symbol, tf_yf, tf_label in [
+                        ("EURUSD","1h","1H"), ("GBPUSD","1h","1H"),
+                        ("USDJPY","1h","1H"), ("GBPJPY","1h","1H"),
+                    ]:
+                        if not self._running: break
+                        try:
+                            signal = await self._scan_forex_yfinance(symbol, tf_yf, tf_label)
+                            if signal is None:
+                                continue
+                            score = signal.decision_score
+                            bias  = signal.signal_type.value.upper()
+                            print(f"[FOREX][{symbol}][{tf_label}] Score: {score} | {bias}", end="")
+                            if signal.signal_type == SignalType.WAIT or score < threshold:
+                                print(" -- sin setup")
+                            elif self.demo_mode:
+                                print(f" -- DEMO FOREX")
+                                await self._execute_demo_trade(signal)
+                            else:
+                                self._dispatch(signal)
+                        except Exception as exc:
+                            print(f"[FOREX][{symbol}] Error: {exc.__class__.__name__}")
+                        await asyncio.sleep(0.5)
 
             except asyncio.CancelledError:
                 break
