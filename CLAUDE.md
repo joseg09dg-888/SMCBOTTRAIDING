@@ -39,15 +39,15 @@ pm2 status
 
 ---
 
-## 3. ESTADO ACTUAL (2026-05-20)
+## 3. ESTADO ACTUAL (2026-05-25)
 
 | Componente | Estado | Notas |
 |-----------|--------|-------|
-| Tests | ✅ 1003/1003 pasando | `pytest tests/ -q` |
+| Tests | ✅ 1182/1182 pasando | `pytest tests/ -q` |
 | Binance Testnet | ⚠️ DNS falla en PM2 | datos cacheados funcionan |
 | Scan crypto | ✅ ACTIVO | BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT/ADAUSDT |
 | Scan forex | ✅ MT5 REAL | EURUSD/GBPUSD/XAUUSD/USDJPY/GBPJPY/NAS100/US30 via MT5 |
-| MT5 Axi Demo | ✅ CONECTADO | login=10042896 server=Axi-US50-Demo balance=$100,000 |
+| MT5 Axi Demo | ✅ CONECTADO | login=10042896 server=Axi-US50-Demo balance=$99,955.37 |
 | MT5 ordenes reales | ✅ FUNCIONANDO | Ticket #59708384 USDJPY BUY ejecutado 2026-05-25 |
 | MT5 scan loop | ✅ ACTIVO | _scan_mt5_symbol() H1+H4 para 7 pares forex |
 | MT5 auto-reconexion | ✅ | delay 2s en connect() + loop cada 30s |
@@ -55,7 +55,12 @@ pm2 status
 | PM2 | ✅ smc-bot ONLINE | auto-restart |
 | Windows startup | ✅ | Startup folder + .bat |
 | SQLite scores | ✅ ACTIVO | memory/scores.db |
+| SQLite episodic | ✅ ACTIVO | memory/episodes.db (WAL mode) |
 | Glint | ✅ headless | cookies en memory/glint_session.json |
+| AutonomousLearner | ✅ ACTIVO | loop cada 1h — ajusta pesos por setup_type/regime |
+| ResearchAgent | ✅ ACTIVO | loop cada 2h — arXiv + MQL5 |
+| GoalsManager | ✅ ACTIVO | loop cada 30min — 5 metas autónomas |
+| NightlyReporter | ✅ ACTIVO | 22:00 UTC — reporte diario vía Telegram |
 
 ---
 
@@ -350,13 +355,14 @@ Con $200K fondead al 90% profit split:
 | 4 | 861 | Auditoría completa, 26 comandos Telegram |
 | 5 | 975 | Backtesting, TWAP/VWAP, Pairs, Events, Deployment |
 | 6 | 1003 | FTMOAgent (28 tests) |
+| 7 | 1182 | Modo autónomo 24/7: episodic_db, AutonomousLearner, ResearchAgent, GoalsManager, NightlyReporter, reason_with_context |
 
 ---
 
 ## 14. REGLAS PARA CLAUDE CODE EN ESTE PROYECTO
 
 1. **LEER ESTE ARCHIVO** al inicio de cada sesión
-2. **NUNCA romper** los 1003 tests existentes — verificar con `pytest tests/ -q`
+2. **NUNCA romper** los 1182 tests existentes — verificar con `pytest tests/ -q`
 3. **SIEMPRE verificar** antes de marcar completo (skill: verification-before-completion)
 4. **ENCODING**: usar Write tool, NUNCA PowerShell Out-File para archivos .py con emojis
 5. **ENCODING**: si supervisor.py falla → correr `scripts/deep_fix_supervisor.py`
@@ -374,11 +380,27 @@ Con $200K fondead al 90% profit split:
 
 | Problema | Causa | Fix |
 |---------|-------|-----|
-| MT5 no conecta | MetaQuotes bloqueado + Python crashea terminal | Login manual en ICMarkets MT5 |
-| Telegram /status hardcodeado | _cmd_status usa self.state (no datos reales Binance) | Conectar a BinanceConnector real |
+| Binance DNS falla | testnet.binance.vision no resuelve en PM2 | usa datos cacheados, opera normal |
 | Scores siempre SHORT | Mercado bajista actual | Normal — seguir el mercado |
 | supervisor.py sensible a encoding | PowerShell añade BOM/smart quotes | Siempre usar Write tool o deep_fix_supervisor.py |
+| SMCBotEA no en charts | Acción manual requerida | Usuario debe arrastrar SMCBotEA a charts en MT5 GUI |
+
+## 16. AUDITORÍA DE AGENTES (2026-05-25)
+
+**Activos en el loop principal:**
+- SignalAgent, DecisionFilter, BinanceConnector, MT5Connector, GlintBrowser
+- TelegramCommander, TradingTelegramBot, RiskManager
+- MarketStructure, OrderBlockDetector, FVGDetector (via _run_smc_lite)
+- HistoricalDataAgent (solo via /history)
+- AutonomousLearner, ResearchAgent, GoalsManager, NightlyReporter (loops nuevos)
+
+**Dormant (existen pero NO en el scan loop):**
+- SMCAnalysisAgent (Claude API), LunarAgent, ElliottAgent, InstitutionalFlowAgent
+- AlternativeDataAgent, MicrostructureAgent, FedSentimentAgent, OnchainAgent
+- GeopoliticalAgent, ChaosAgent, RetailPsychologyAgent, EnergyFrequencyAgent
+- ReportAgent, ScreenVisionAgent, FootprintAgent, StatisticalEdgeAgent
+- Todos los módulos Quant* (8), LearningEngine, AgentMemory
 
 ---
 
-*Última actualización: 2026-05-20 | Tests: 1003 | Bot: PM2 ONLINE*
+*Última actualización: 2026-05-25 | Tests: 1182 | Bot: PM2 ONLINE | Balance MT5: $99,955.37*
