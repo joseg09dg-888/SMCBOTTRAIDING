@@ -158,3 +158,90 @@ REGLAS:
             }],
         )
         return response.content[0].text
+
+    # ── Autonomous reasoning ──────────────────────────────────────────────────
+
+    REASONING_PROMPT = """Eres un trader institucional SMC. Analiza este setup y razona paso a paso.
+
+## DATOS TECNICOS
+{smc_summary}
+
+## EPISODIOS HISTORICOS SIMILARES ({n} trades anteriores del bot)
+{episodes_text}
+
+## REGIMEN ACTUAL DE MERCADO
+{regime}
+
+## RAZONAMIENTO REQUERIDO
+1. Que hace el Smart Money en este punto?
+2. Los episodios historicos respaldan o contradicen este setup?
+3. El regimen actual favorece esta estrategia?
+4. Nivel de confianza 0-100 y por que
+
+## RESPONDE SOLO EN JSON VALIDO:
+{{"smart_money_action":"string","historical_support":"supports|contradicts|neutral","regime_fit":"favorable|neutral|unfavorable","lesson_applied":"string or null","decision":"LONG|SHORT|WAIT","confidence":0,"justification":"max 2 lines"}}"""
+
+    def _build_reasoning_prompt(self, smc_summary: str,
+                                 similar_episodes: list,
+                                 regime: str) -> str:
+        ep_lines = []
+        for ep in similar_episodes[:10]:
+            ep_lines.append(
+                f"{ep.get('symbol','')} {ep.get('setup_type','')} "
+                f"{ep.get('direction','')} -> {ep.get('result','')} "
+                f"{ep.get('pnl',0):+.1f}pips ({ep.get('ts','')[:10]})"
+            )
+        episodes_text = "\n".join(ep_lines) if ep_lines else "Sin episodios previos"
+        return self.REASONING_PROMPT.format(
+            smc_summary=smc_summary,
+            n=len(similar_episodes),
+            episodes_text=episodes_text,
+            regime=regime,
+        )
+
+    def reason_with_context(self, symbol: str, timeframe: str,
+                             smc_summary: str, similar_episodes: list,
+                             regime: str, base_score: int) -> dict:
+        import json
+        fallback = {"adjusted_score": base_score, "fallback": True,
+                    "wait_override": False}
+        try:
+            prompt = self._build_reasoning_prompt(smc_summary, similar_episodes, regime)
+            response = self.client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=512,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = response.content[0].text
+            start = raw.find("{")
+            end   = raw.rfind("}") + 1
+            data  = json.loads(raw[start:end])
+        except Exception as e:
+            print(f"[CLAUDE] reason_with_context fallback: {e}", flush=True)
+            return fallback
+
+        confidence = int(data.get("confidence", 50))
+        hist       = data.get("historical_support", "neutral")
+        regime_fit = data.get("regime_fit", "neutral")
+        score      = base_score
+
+        if confidence >= 75 and hist == "supports":
+            score = min(100, score + 10)
+        if regime_fit == "unfavorable":
+            score = max(0, score - 15)
+
+        wait_override = False
+        if confidence < 40:
+            wait_override = True
+        loss_count = sum(1 for ep in similar_episodes if ep.get("result") == "LOSS")
+        if hist == "contradicts" and loss_count >= 3:
+            wait_override = True
+
+        return {
+            "adjusted_score": score,
+            "wait_override":  wait_override,
+            "confidence":     confidence,
+            "decision":       data.get("decision", "WAIT"),
+            "reasoning":      data,
+            "fallback":       False,
+        }
