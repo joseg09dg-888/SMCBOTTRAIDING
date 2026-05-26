@@ -253,21 +253,38 @@ class TelegramCommander:
         stats = get_stats()
         wr = f"{stats['win_rate']:.1f}%" if stats['executed'] > 0 else "N/A"
 
-        # MT5 real balance
+        # MT5 real P&L report
         try:
             from connectors.metatrader_connector import MT5Connector
-            mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
-            info = mt5.get_account_info()
-            if info and info.get("balance"):
-                bal    = info["balance"]
-                equity = info.get("equity", bal)
-                profit = info.get("profit", 0.0)
-                gain   = bal - 100000.0
+            _mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            pnl = _mt5.get_pnl_report(initial_balance=100_000.0)
+            if "error" not in pnl:
+                bal       = pnl["balance"]
+                equity    = pnl["equity"]
+                net       = pnl["net_change"]
+                realized  = pnl["realized_pnl"]
+                open_pnl  = pnl["profit_open"]
+                n_trades  = pnl["n_trades"]
+                net_pct   = net / 100_000.0 * 100
+                sign      = "+" if net >= 0 else ""
+                recent    = pnl.get("recent_trades", [])
+                trades_txt = ""
+                for t in recent[-3:]:
+                    entry_flag = "ABRIO" if t["entry"] == 0 else "CERRO"
+                    pnl_usd = f"{t['profit']:+.2f}" if t["entry"] == 1 else "abierta"
+                    trades_txt += (
+                        f"  {t['dt']} {t['symbol']} {t['direction']} "
+                        f"{t['volume']}lot @{t['price']:.3f} P&amp;L:{pnl_usd}\n"
+                    )
                 mt5_text = (
-                    f"Balance: <code>${bal:,.2f}</code>\n"
-                    f"Equity:  <code>${equity:,.2f}</code>\n"
-                    f"P&amp;L abierto: <code>${profit:+.2f}</code>\n"
-                    f"Ganancia vs inicio: <code>${gain:+.2f}</code>"
+                    f"Capital inicial: <code>$100,000.00 USD</code>\n"
+                    f"Balance actual:  <code>${bal:,.2f} USD</code>\n"
+                    f"Equity:          <code>${equity:,.2f} USD</code>\n"
+                    f"P&amp;L abierto: <code>${open_pnl:+.2f} USD</code>\n"
+                    f"Resultado neto:  <code>{sign}${abs(net):,.2f} USD ({sign}{net_pct:.3f}%)</code>\n"
+                    f"Realizado mes:   <code>${realized:+.2f} USD</code>\n"
+                    f"Operaciones:     {n_trades}\n"
+                    + (f"<b>Ultimas:</b>\n{trades_txt}" if trades_txt else "")
                 )
             else:
                 mt5_text = "Reconectando..."
@@ -294,13 +311,13 @@ class TelegramCommander:
             f"<b>SMC BOT ESTADO REAL</b>\n"
             f"<b>Modo:</b> {cfg.operation_mode.upper()} | ACTIVO\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>MT5 AXI DEMO (meta: crecer $100K)</b>\n"
-            f"{mt5_text}\n"
+            f"<b>MT5 AXI DEMO — Meta: crecer $100,000</b>\n"
+            f"{mt5_text}"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"<b>BINANCE TESTNET</b>\n"
             f"{binance_text}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>ESTADISTICAS</b>\n"
+            f"<b>ESTADISTICAS BOT</b>\n"
             f"Trades: {stats['executed']} | Win Rate: {wr}\n"
             f"Scan: cada 30s"
         )
@@ -480,6 +497,7 @@ class TelegramCommander:
         return CommandResult(success=True, message=summary, action="reporte_mensual")
 
     def _cmd_criterios(self) -> CommandResult:
+        from core.config import config as cfg
         from core.score_db import get_stats
         from strategies.axi_select_agent import AxiSelectAgent
 
@@ -502,13 +520,34 @@ class TelegramCommander:
         except Exception:
             edge_total = 0
 
-        # MT5 connectivity check
+        # MT5 P&L real — connectivity + financial result
+        mt5_ok = False
+        pnl_text = ""
         try:
-            import MetaTrader5 as mt5
-            mt5_info = mt5.terminal_info()
-            mt5_ok = mt5_info is not None
+            from connectors.metatrader_connector import MT5Connector
+            _mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            pnl = _mt5.get_pnl_report(initial_balance=100_000.0)
+            if "error" not in pnl:
+                mt5_ok    = True
+                bal       = pnl["balance"]
+                net       = pnl["net_change"]
+                realized  = pnl["realized_pnl"]
+                open_pnl  = pnl["profit_open"]
+                n_ops     = pnl["n_trades"]
+                sign      = "+" if net >= 0 else ""
+                net_pct   = net / 100_000.0 * 100
+                pnl_text  = (
+                    f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                    f"<b>CUENTA MT5 — RESULTADO REAL</b>\n"
+                    f"Capital invertido: <code>$100,000.00 USD</code>\n"
+                    f"Balance actual:    <code>${bal:,.2f} USD</code>\n"
+                    f"Resultado neto:    <code>{sign}${abs(net):,.2f} USD ({sign}{net_pct:.3f}%)</code>\n"
+                    f"Realizado mes:     <code>${realized:+.2f} USD</code>\n"
+                    f"P&amp;L abierto:  <code>${open_pnl:+.2f} USD</code>\n"
+                    f"Operaciones:       {n_ops}"
+                )
         except Exception:
-            mt5_ok = False
+            pass
 
         cr_wr     = "✅" if wr >= 60    else "❌"
         cr_trades = "✅" if total >= 100 else "❌"
@@ -525,7 +564,7 @@ class TelegramCommander:
         else:
             veredicto = f"🟡 FALTAN {failed} criterios — sigue en demo"
 
-        pf_str = ">" if losses == 0 else f"{pf:.2f}"
+        pf_str  = ">" if losses == 0 else f"{pf:.2f}"
         mt5_str = "Conectado" if mt5_ok else "Desconectado"
 
         text = (
@@ -540,8 +579,8 @@ class TelegramCommander:
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"<b>VEREDICTO:</b>\n"
             f"{veredicto}\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"Trades: {total} | Estimado: {max(0,100-total)} mas\n"
+            + pnl_text +
+            f"\n━━━━━━━━━━━━━━━━━━━━\n"
             f"<b>POTENCIAL AXI SELECT $1M</b>\n"
             f"2%/mes x 80% split = $16,000/mes"
         )

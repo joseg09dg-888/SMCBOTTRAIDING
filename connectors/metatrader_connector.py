@@ -295,6 +295,68 @@ class MT5Connector:
             logger.error(f"MT5 get_positions error: {e}")
             return []
 
+    def get_pnl_report(self, initial_balance: float = 100_000.0) -> dict:
+        """Real P&L report: balance vs initial, monthly deals, per-trade stats."""
+        empty = {"error": "MT5 not available"}
+        if not HAS_MT5:
+            return empty
+        try:
+            from datetime import datetime, timezone
+            # Ensure initialized
+            if not mt5.terminal_info():
+                mt5.initialize()
+            acc = mt5.account_info()
+            if acc is None:
+                return empty
+
+            balance    = acc.balance
+            equity     = acc.equity
+            profit     = acc.profit        # unrealized (open positions)
+            currency   = acc.currency
+
+            # Month-to-date deals
+            now        = datetime.now(timezone.utc)
+            month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+            deals       = mt5.history_deals_get(month_start, now) or []
+
+            # Closing deals (entry=1) carry realized P&L
+            closing    = [d for d in deals if d.entry == 1 and d.symbol != ""]
+            realized   = sum(d.profit + d.swap + d.commission for d in closing)
+            trade_deals = [d for d in deals if d.symbol != ""]
+            n_trades   = len(trade_deals)
+
+            # Net change vs initial deposit
+            net_change = balance - initial_balance
+
+            # Last 5 trades for display
+            recent = []
+            for d in trade_deals[-5:]:
+                dt = datetime.fromtimestamp(d.time, tz=timezone.utc).strftime("%m-%d %H:%M")
+                direction = "BUY" if d.type == 0 else "SELL"
+                notional  = round(d.volume * 100_000 / max(d.price, 1), 2) if d.price > 0 else 0.0
+                recent.append({
+                    "dt": dt, "symbol": d.symbol, "direction": direction,
+                    "volume": d.volume, "price": d.price,
+                    "notional_usd": notional,
+                    "profit": d.profit + d.swap,
+                    "entry": d.entry,
+                })
+
+            return {
+                "initial_balance": initial_balance,
+                "balance":         balance,
+                "equity":          equity,
+                "profit_open":     profit,
+                "net_change":      net_change,
+                "realized_pnl":    realized,
+                "currency":        currency,
+                "n_trades":        n_trades,
+                "recent_trades":   recent,
+            }
+        except Exception as e:
+            logger.error(f"MT5 get_pnl_report error: {e}")
+            return {"error": str(e)}
+
     def close_position(self, ticket: int) -> bool:
         if not HAS_MT5:
             return False
