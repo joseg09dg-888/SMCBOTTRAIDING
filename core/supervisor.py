@@ -281,6 +281,7 @@ class TradingSupervisor:
             self.commander.start_polling(),
             self.glint.connect(),
             self._market_scan_loop(),
+            self._position_monitor_loop(),
             self._learning_loop(),
             self._research_loop(),
             self._goals_loop(),
@@ -457,14 +458,32 @@ class TradingSupervisor:
             return None
 
     async def _send_mt5_real_order(self, signal: TradeSignal):
-        """Send a real order to MT5 demo account (no slot limit)."""
-        import sys
+        """Send a real order to MT5 demo — max 1 open position per symbol."""
         order_type = "BUY" if signal.signal_type == SignalType.LONG else "SELL"
         sl_val = signal.stop_loss if signal.stop_loss else 0.0
         tp_val = signal.take_profit if signal.take_profit else 0.0
+
+        # Require valid SL — a trade without a stop loss has no defined exit
+        if sl_val == 0.0:
+            print(f"[MT5] {signal.symbol}: SL no definido, skip", flush=True)
+            return
+
+        # Guard: max 1 open position per symbol
+        loop = asyncio.get_running_loop()
+        existing = await loop.run_in_executor(None, self.mt5.get_positions)
+        sym_open = [p for p in existing if p["symbol"] == signal.symbol]
+        if sym_open:
+            pos = sym_open[0]
+            pnl_live = pos.get("profit", 0.0)
+            print(
+                f"[MT5] {signal.symbol}: posicion {pos['type']} ya abierta "
+                f"({pnl_live:+.2f} USD) — skip nueva orden",
+                flush=True,
+            )
+            return
+
         print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
         try:
-            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 lambda: self.mt5.place_order(signal.symbol, order_type, 0.01, sl=sl_val, tp=tp_val),
@@ -553,6 +572,29 @@ class TradingSupervisor:
         except Exception:
             pass
 
+
+    # -- Open position P&L monitor ------------------------------------------
+
+    async def _position_monitor_loop(self):
+        """Every 60s: log open MT5 positions with live P&L."""
+        while self._running:
+            await asyncio.sleep(60)
+            if not self._mt5_available:
+                continue
+            try:
+                loop = asyncio.get_running_loop()
+                positions = await loop.run_in_executor(None, self.mt5.get_positions)
+                if positions:
+                    total_pnl = sum(p.get("profit", 0.0) for p in positions)
+                    lines = [f"[POS] {len(positions)} posiciones abiertas | P&L vivo: {total_pnl:+.2f} USD"]
+                    for p in positions:
+                        lines.append(
+                            f"  {p['symbol']} {p['type']} {p['volume']}lot "
+                            f"P&L: {p.get('profit', 0.0):+.2f} USD"
+                        )
+                    print("\n".join(lines), flush=True)
+            except Exception as exc:
+                print(f"[POS MONITOR] error: {exc}", flush=True)
 
     # -- Autonomous background loops ----------------------------------------
 
