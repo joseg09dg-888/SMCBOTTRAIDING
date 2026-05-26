@@ -1,7 +1,7 @@
 # core/goals_manager.py
 import json
 import sqlite3
-from memory.episodic_db import get_db, get_goals, update_goal
+from memory.episodic_db import get_db, get_goals, update_goal, seed_goals
 
 
 class GoalsManager:
@@ -13,6 +13,9 @@ class GoalsManager:
 
     def __init__(self, conn: sqlite3.Connection = None):
         self._conn = conn
+        # Ensure default goals exist
+        c = self._conn or get_db()
+        seed_goals(conn=c)
 
     def _get_conn(self) -> sqlite3.Connection:
         return self._conn or get_db()
