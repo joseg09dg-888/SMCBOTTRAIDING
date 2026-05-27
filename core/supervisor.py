@@ -25,18 +25,29 @@ from core.goals_manager import GoalsManager
 from core.nightly_reporter import NightlyReporter
 from core.volume_calculator import VolumeCalculator
 
-# Demo mode: lower score threshold so the bot actually trades while learning
-DEMO_SCORE_THRESHOLD = 30
-DEMO_MAX_POSITIONS   = 5
-SCAN_INTERVAL_SEC    = 30
+# Score thresholds
+DEMO_SCORE_THRESHOLD     = 75  # simulated crypto demo trades
+MT5_REAL_SCORE_THRESHOLD = 80  # real MT5 orders — high-confidence only
+DEMO_MAX_POSITIONS       = 5
+SCAN_INTERVAL_SEC        = 30
+
+# Conservative mode: active while win_rate < 55%
+CONSERVATIVE_MODE        = True   # disable once win_rate > 55%
+CONSERVATIVE_SCORE_MIN   = 85     # even higher bar in conservative mode
+CONSERVATIVE_PAIRS       = ["EURUSD", "XAUUSD"]   # most liquid only
+MAX_DAILY_TRADES         = 1      # max real MT5 trades per calendar day
+MIN_RR                   = 3.0    # minimum risk:reward ratio
+
+# Dead hours (UTC) — no new orders during low-liquidity windows
+DEAD_HOURS_UTC           = set(range(21, 24)) | {0, 1, 2}  # 21:00-02:59 UTC
 
 # Symbols and timeframes to scan
 SCAN_SYMBOLS    = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT"]
-SCAN_TIMEFRAMES = ["5m", "15m", "1h", "4h"]
+SCAN_TIMEFRAMES = ["1h", "4h"]  # removed 5m/15m — too noisy for quality setups
 
 # MT5 forex/indices symbols
 MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "NAS100", "US30"]
-MT5_TIMEFRAMES   = ["H1", "H4"]
+MT5_TIMEFRAMES   = ["H4"]      # H4 only — more reliable structure
 MT5_MIN_VOLUME   = 0.01
 
 # yfinance forex (fallback when MT5 unavailable)
@@ -123,6 +134,7 @@ class TradingSupervisor:
         self._goals_mgr  = GoalsManager(conn=self._episodic_conn)
         self._reporter   = NightlyReporter(conn=self._episodic_conn)
         self._open_episodes: Dict[int, int] = {}  # ticket -> episode_id
+        self._daily_trades: Dict[str, int]  = {}  # date -> count of real MT5 trades sent
 
     # â”€â”€ Callbacks from TelegramCommander â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -459,17 +471,47 @@ class TradingSupervisor:
             return None
 
     async def _send_mt5_real_order(self, signal: TradeSignal):
-        """Send a real order to MT5 demo — max 1 open position per symbol."""
+        """Send a real order to MT5 demo — strict quality filters applied."""
         order_type = "BUY" if signal.signal_type == SignalType.LONG else "SELL"
         sl_val = signal.stop_loss if signal.stop_loss else 0.0
         tp_val = signal.take_profit if signal.take_profit else 0.0
 
-        # Require valid SL — a trade without a stop loss has no defined exit
+        # ── FILTER 1: SL obligatorio ──────────────────────────────────────
         if sl_val == 0.0:
             print(f"[MT5] {signal.symbol}: SL no definido, skip", flush=True)
             return
 
-        # Guard: max 1 open position per symbol
+        # ── FILTER 2: Pares permitidos en modo conservador ────────────────
+        if CONSERVATIVE_MODE and signal.symbol not in CONSERVATIVE_PAIRS:
+            print(f"[MT5] {signal.symbol}: modo conservador — solo {CONSERVATIVE_PAIRS}", flush=True)
+            return
+
+        # ── FILTER 3: Horario muerto ──────────────────────────────────────
+        now_utc = datetime.now(timezone.utc)
+        if now_utc.hour in DEAD_HOURS_UTC:
+            print(f"[MT5] {signal.symbol}: hora muerta {now_utc.hour}:00 UTC, skip", flush=True)
+            return
+        if now_utc.weekday() == 4 and now_utc.hour >= 16:  # viernes 16:00+ UTC
+            print(f"[MT5] {signal.symbol}: viernes 16:00+ UTC, skip", flush=True)
+            return
+
+        # ── FILTER 4: RR minimo 1:3 ───────────────────────────────────────
+        if tp_val > 0 and sl_val > 0 and signal.entry and signal.entry > 0:
+            sl_dist = abs(signal.entry - sl_val)
+            tp_dist = abs(signal.entry - tp_val)
+            rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
+            if rr < MIN_RR:
+                print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {MIN_RR} minimo, skip", flush=True)
+                return
+
+        # ── FILTER 5: Max 1 trade real por dia ───────────────────────────
+        today_str = now_utc.strftime("%Y-%m-%d")
+        trades_today = self._daily_trades.get(today_str, 0)
+        if trades_today >= MAX_DAILY_TRADES:
+            print(f"[MT5] {signal.symbol}: {trades_today} trades hoy (max={MAX_DAILY_TRADES}), skip", flush=True)
+            return
+
+        # ── FILTER 6: Max 1 posicion por simbolo ─────────────────────────
         loop = asyncio.get_running_loop()
         existing = await loop.run_in_executor(None, self.mt5.get_positions)
         sym_open = [p for p in existing if p["symbol"] == signal.symbol]
@@ -509,6 +551,8 @@ class TradingSupervisor:
                 self._open_episodes[result["ticket"]] = eid
             except Exception as _ep_err:
                 print(f"[EPISODIC] record error: {_ep_err}", flush=True)
+            # Count toward daily limit
+            self._daily_trades[today_str] = trades_today + 1
             try:
                 await self.telegram.send_glint_alert(
                     f"<b>MT5 ORDEN REAL EJECUTADA</b>\n"
@@ -640,7 +684,7 @@ class TradingSupervisor:
 
     async def _market_scan_loop(self):
         _was_offline = False
-        threshold = DEMO_SCORE_THRESHOLD if self.demo_mode else 60
+        threshold = (CONSERVATIVE_SCORE_MIN if CONSERVATIVE_MODE else DEMO_SCORE_THRESHOLD) if self.demo_mode else MT5_REAL_SCORE_THRESHOLD
 
         while self._running:
             try:
@@ -702,10 +746,10 @@ class TradingSupervisor:
                                 score = signal.decision_score
                                 bias  = signal.signal_type.value.upper()
                                 print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="")
-                                if signal.signal_type == SignalType.WAIT or score < threshold:
+                                if signal.signal_type == SignalType.WAIT or score < MT5_REAL_SCORE_THRESHOLD:
                                     print(" -- sin setup")
                                 else:
-                                    print(f" -- ejecutando MT5 REAL")
+                                    print(f" -- ejecutando MT5 REAL (score={score}>={MT5_REAL_SCORE_THRESHOLD})")
                                     await self._send_mt5_real_order(signal)
                             except Exception as exc:
                                 print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
@@ -725,7 +769,7 @@ class TradingSupervisor:
                             score = signal.decision_score
                             bias  = signal.signal_type.value.upper()
                             print(f"[FOREX][{symbol}][{tf_label}] Score: {score} | {bias}", end="")
-                            if signal.signal_type == SignalType.WAIT or score < threshold:
+                            if signal.signal_type == SignalType.WAIT or score < MT5_REAL_SCORE_THRESHOLD:
                                 print(" -- sin setup")
                             elif self.demo_mode:
                                 print(f" -- DEMO FOREX")
