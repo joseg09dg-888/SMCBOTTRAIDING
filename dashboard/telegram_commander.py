@@ -587,10 +587,40 @@ class TelegramCommander:
         return CommandResult(success=True, message=text, action="criterios")
 
     def _cmd_proyeccion(self) -> CommandResult:
-        from agents.report_agent import ReportAgent
-        agent = ReportAgent(capital=self.state.capital)
-        msg = agent.generate_projection_message()
-        return CommandResult(success=True, message=msg, action="proyeccion")
+        from core.volume_calculator import VolumeCalculator
+        vc = VolumeCalculator()
+        lines = [
+            "<b>PROYECCION AXI SELECT — ETAPAS</b>",
+            "<pre>",
+            f"{'Etapa':<12} {'Capital':>10} {'Vol':>6} {'Profit/mes':>12} {'Tu 80%':>10}",
+            "-" * 54,
+        ]
+        stage_names = {
+            "seed": "Seed", "incubation": "Incubacion",
+            "demo": "Demo", "pro": "Pro",
+            "pro_500": "Pro 500K", "pro_m": "Pro 1M",
+        }
+        for key, data in vc.AXI_STAGES.items():
+            cap = data["capital"]
+            proj = vc.project_monthly_profit(cap)
+            lines.append(
+                f"{stage_names.get(key, key):<12} "
+                f"${cap/1000:>7.0f}K "
+                f"{data['volume']:>5.2f}L "
+                f"${proj['net_profit_usd']:>10,.0f} "
+                f"${proj['your_share_80pct']:>8,.0f}"
+            )
+        current_proj = vc.project_monthly_profit(self.state.capital)
+        lines += [
+            "-" * 54,
+            f"{'Actual':<12} ${self.state.capital/1000:>7.0f}K "
+            f"{vc.get_stage_volume(self.state.capital):>5.2f}L "
+            f"${current_proj['net_profit_usd']:>10,.0f} "
+            f"${current_proj['your_share_80pct']:>8,.0f}",
+            "</pre>",
+            f"Win rate asumido: 62% | RR: 2:1 | 40 ops/mes",
+        ]
+        return CommandResult(success=True, message="\n".join(lines), action="proyeccion")
 
     def _cmd_vision(self) -> CommandResult:
         from agents.screen_vision_agent import ScreenVisionAgent
@@ -731,8 +761,40 @@ class TelegramCommander:
         return CommandResult(success=True, message=agent.generate_telegram_summary(stats), action="reporte_mensual")
 
     def _cmd_proyeccion(self) -> CommandResult:
-        from agents.report_agent import ReportAgent
-        return CommandResult(success=True, message=ReportAgent(capital=self.state.capital).generate_projection_message(), action="proyeccion")
+        from core.volume_calculator import VolumeCalculator
+        vc = VolumeCalculator()
+        lines = [
+            "<b>PROYECCION AXI SELECT — ETAPAS</b>",
+            "<pre>",
+            f"{'Etapa':<12} {'Capital':>10} {'Vol':>6} {'Profit/mes':>12} {'Tu 80%':>10}",
+            "-" * 54,
+        ]
+        stage_names = {
+            "seed": "Seed", "incubation": "Incubacion",
+            "demo": "Demo", "pro": "Pro",
+            "pro_500": "Pro 500K", "pro_m": "Pro 1M",
+        }
+        for key, data in vc.AXI_STAGES.items():
+            cap = data["capital"]
+            proj = vc.project_monthly_profit(cap)
+            lines.append(
+                f"{stage_names.get(key, key):<12} "
+                f"${cap/1000:>7.0f}K "
+                f"{data['volume']:>5.2f}L "
+                f"${proj['net_profit_usd']:>10,.0f} "
+                f"${proj['your_share_80pct']:>8,.0f}"
+            )
+        current_proj = vc.project_monthly_profit(self.state.capital)
+        lines += [
+            "-" * 54,
+            f"{'Actual':<12} ${self.state.capital/1000:>7.0f}K "
+            f"{vc.get_stage_volume(self.state.capital):>5.2f}L "
+            f"${current_proj['net_profit_usd']:>10,.0f} "
+            f"${current_proj['your_share_80pct']:>8,.0f}",
+            "</pre>",
+            f"Win rate asumido: 62% | RR: 2:1 | 40 ops/mes",
+        ]
+        return CommandResult(success=True, message="\n".join(lines), action="proyeccion")
 
     def _cmd_vision(self) -> CommandResult:
         from agents.screen_vision_agent import ScreenVisionAgent

@@ -23,6 +23,7 @@ from core.autonomous_learner import AutonomousLearner
 from core.research_agent import ResearchAgent
 from core.goals_manager import GoalsManager
 from core.nightly_reporter import NightlyReporter
+from core.volume_calculator import VolumeCalculator
 
 # Demo mode: lower score threshold so the bot actually trades while learning
 DEMO_SCORE_THRESHOLD = 30
@@ -482,11 +483,13 @@ class TradingSupervisor:
             )
             return
 
-        print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
+        vc = VolumeCalculator()
+        volume = vc.calculate_volume(self.capital, signal.entry or sl_val, sl_val, signal.symbol)
+        print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} vol={volume} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
         try:
             result = await loop.run_in_executor(
                 None,
-                lambda: self.mt5.place_order(signal.symbol, order_type, 0.01, sl=sl_val, tp=tp_val),
+                lambda: self.mt5.place_order(signal.symbol, order_type, volume, sl=sl_val, tp=tp_val),
             )
         except Exception as exc:
             print(f"[MT5 ORDER] Excepcion en place_order: {exc}", flush=True)
