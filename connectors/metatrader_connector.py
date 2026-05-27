@@ -357,6 +357,44 @@ class MT5Connector:
             logger.error(f"MT5 get_pnl_report error: {e}")
             return {"error": str(e)}
 
+    def get_closing_deal(self, position_ticket: int) -> dict:
+        """Return the closing deal for a position (entry=1 in MT5 history)."""
+        if not HAS_MT5:
+            return {}
+        try:
+            from datetime import datetime, timezone, timedelta
+            now  = datetime.now(timezone.utc)
+            from_dt = now - timedelta(days=7)
+            deals = mt5.history_deals_get(from_dt, now) or []
+            for d in deals:
+                if d.position_id == position_ticket and d.entry == 1:
+                    return {
+                        "profit":  round(d.profit + d.swap + d.commission, 2),
+                        "price":   d.price,
+                        "symbol":  d.symbol,
+                        "volume":  d.volume,
+                        "time":    d.time,
+                    }
+        except Exception as e:
+            logger.error(f"MT5 get_closing_deal error: {e}")
+        return {}
+
+    def get_daily_pnl(self) -> float:
+        """Realized P&L for today (UTC)."""
+        if not HAS_MT5:
+            return 0.0
+        try:
+            from datetime import datetime, timezone
+            now   = datetime.now(timezone.utc)
+            today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+            deals = mt5.history_deals_get(today, now) or []
+            return round(sum(
+                d.profit + d.swap + d.commission
+                for d in deals if d.entry == 1 and d.symbol != ""
+            ), 2)
+        except Exception:
+            return 0.0
+
     def close_position(self, ticket: int) -> bool:
         if not HAS_MT5:
             return False

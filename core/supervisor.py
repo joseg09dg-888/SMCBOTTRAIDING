@@ -24,6 +24,7 @@ from core.research_agent import ResearchAgent
 from core.goals_manager import GoalsManager
 from core.nightly_reporter import NightlyReporter
 from core.volume_calculator import VolumeCalculator
+from strategies.ftmo_agent import FTMOAgent, ChallengeType
 
 # Score thresholds
 DEMO_SCORE_THRESHOLD     = 75  # simulated crypto demo trades
@@ -135,6 +136,12 @@ class TradingSupervisor:
         self._reporter   = NightlyReporter(conn=self._episodic_conn)
         self._open_episodes: Dict[int, int] = {}  # ticket -> episode_id
         self._daily_trades: Dict[str, int]  = {}  # date -> count of real MT5 trades sent
+        # FTMO / Axi rules enforcement
+        self._ftmo_agent = FTMOAgent()
+        self._ftmo_state = FTMOAgent.new_challenge(
+            initial_balance=capital,
+            challenge_type=ChallengeType.TWO_STEP,
+        )
 
     # â”€â”€ Callbacks from TelegramCommander â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -511,7 +518,30 @@ class TradingSupervisor:
             print(f"[MT5] {signal.symbol}: {trades_today} trades hoy (max={MAX_DAILY_TRADES}), skip", flush=True)
             return
 
-        # ── FILTER 6: Max 1 posicion por simbolo ─────────────────────────
+        # ── FILTER 6: FTMO / Axi drawdown y perdida diaria ───────────────
+        try:
+            daily_pnl = await asyncio.get_running_loop().run_in_executor(
+                None, self.mt5.get_daily_pnl
+            )
+            self._ftmo_state.daily_pnl_today = daily_pnl
+            acc_info = await asyncio.get_running_loop().run_in_executor(
+                None, self.mt5.get_account_info
+            )
+            self._ftmo_state.current_balance = acc_info.get("balance", self.capital)
+            can_trade, reason = self._ftmo_agent.can_trade(self._ftmo_state)
+            if not can_trade:
+                print(f"[FTMO] {signal.symbol}: BLOQUEADO — {reason}", flush=True)
+                try:
+                    await self.telegram.send_glint_alert(
+                        f"<b>FTMO BLOQUEO</b>\n{signal.symbol}: {reason}"
+                    )
+                except Exception:
+                    pass
+                return
+        except Exception as _fe:
+            print(f"[FTMO] check error: {_fe}", flush=True)
+
+        # ── FILTER 7: Max 1 posicion por simbolo ─────────────────────────
         loop = asyncio.get_running_loop()
         existing = await loop.run_in_executor(None, self.mt5.get_positions)
         sym_open = [p for p in existing if p["symbol"] == signal.symbol]
@@ -623,7 +653,8 @@ class TradingSupervisor:
     # -- Open position P&L monitor ------------------------------------------
 
     async def _position_monitor_loop(self):
-        """Every 60s: log open MT5 positions with live P&L."""
+        """Every 60s: log open positions + detect closures → update learning + FTMO."""
+        _known_tickets: set = set()
         while self._running:
             await asyncio.sleep(60)
             if not self._mt5_available:
@@ -631,9 +662,58 @@ class TradingSupervisor:
             try:
                 loop = asyncio.get_running_loop()
                 positions = await loop.run_in_executor(None, self.mt5.get_positions)
+                current_tickets = {p["ticket"] for p in positions}
+
+                # ── Detect closed positions ───────────────────────────────
+                closed = _known_tickets - current_tickets
+                for ticket in closed:
+                    episode_id = self._open_episodes.pop(ticket, None)
+                    deal = await loop.run_in_executor(
+                        None, lambda t=ticket: self.mt5.get_closing_deal(t)
+                    )
+                    if not deal:
+                        continue
+                    pnl    = deal.get("profit", 0.0)
+                    result = "WIN" if pnl > 0 else "LOSS"
+                    # Update episodic memory
+                    if episode_id:
+                        try:
+                            update_episode_result(
+                                episode_id,
+                                exit_price=deal.get("price", 0.0),
+                                pnl=pnl,
+                                result=result,
+                                lesson=f"Score={self._open_episodes.get(ticket, '?')} -> {result} PnL={pnl:+.2f}",
+                                conn=self._episodic_conn,
+                            )
+                        except Exception as _ue:
+                            print(f"[LEARN] update error: {_ue}", flush=True)
+                    # Update FTMO state
+                    try:
+                        self._ftmo_agent.record_trade(self._ftmo_state, pnl)
+                    except Exception:
+                        pass
+                    print(
+                        f"[LEARN] #{ticket} CERRADO: {result} | PnL={pnl:+.2f} USD"
+                        f" | Balance FTMO: ${self._ftmo_state.current_balance:,.2f}",
+                        flush=True,
+                    )
+                    # Alert on Telegram
+                    try:
+                        await self.telegram.send_glint_alert(
+                            f"<b>TRADE CERRADO</b>\n"
+                            f"Ticket #{ticket} | {'WIN' if pnl > 0 else 'LOSS'}\n"
+                            f"P&L: ${pnl:+.2f} USD"
+                        )
+                    except Exception:
+                        pass
+
+                _known_tickets = current_tickets
+
+                # ── Log open positions ────────────────────────────────────
                 if positions:
                     total_pnl = sum(p.get("profit", 0.0) for p in positions)
-                    lines = [f"[POS] {len(positions)} posiciones abiertas | P&L vivo: {total_pnl:+.2f} USD"]
+                    lines = [f"[POS] {len(positions)} abiertas | P&L vivo: {total_pnl:+.2f} USD"]
                     for p in positions:
                         lines.append(
                             f"  {p['symbol']} {p['type']} {p['volume']}lot "

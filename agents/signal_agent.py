@@ -84,9 +84,23 @@ class SignalAgent:
     with entry, SL, and TP based on structure.
     """
 
+    # Minimum SL distance per symbol — must exceed broker minimum stop distance
+    _MIN_SL_DIST: Dict[str, float] = {
+        "EURUSD": 0.0030, "GBPUSD": 0.0040, "USDCHF": 0.0030,
+        "AUDUSD": 0.0030, "NZDUSD": 0.0030, "EURGBP": 0.0030,
+        "USDJPY": 0.30,   "GBPJPY": 0.50,   "EURJPY": 0.30,
+        "XAUUSD": 50.0,   "NAS100": 30.0,   "US30":   50.0,
+    }
+
     def __init__(self, min_confidence: float = 0.65):
         self.min_confidence = min_confidence
         self.signal_history: List[TradeSignal] = []
+
+    def _sl_distance(self, symbol: str, entry: float) -> float:
+        """Return SL distance: max of 0.5% of price and symbol minimum."""
+        pct_dist = entry * 0.005
+        min_dist = self._MIN_SL_DIST.get(symbol, pct_dist)
+        return max(pct_dist, min_dist)
 
     def evaluate(
         self,
@@ -114,17 +128,20 @@ class SignalAgent:
         if poi_zones:
             poi = poi_zones[0]
             if is_bullish:
-                entry = poi.get("zone_low", current_price)
-                sl    = entry * 0.995
-                tp    = entry + (entry - sl) * 3
+                entry    = poi.get("zone_low", current_price)
+                sl_dist  = self._sl_distance(symbol, entry)
+                sl       = entry - sl_dist
+                tp       = entry + sl_dist * 3
             else:
-                entry = poi.get("zone_high", current_price)
-                sl    = entry * 1.005
-                tp    = entry - (sl - entry) * 3
+                entry    = poi.get("zone_high", current_price)
+                sl_dist  = self._sl_distance(symbol, entry)
+                sl       = entry + sl_dist
+                tp       = entry - sl_dist * 3
         else:
-            entry = current_price
-            sl    = entry * (0.995 if is_bullish else 1.005)
-            tp    = entry + (entry - sl) * 2.5
+            entry   = current_price
+            sl_dist = self._sl_distance(symbol, entry)
+            sl      = (entry - sl_dist) if is_bullish else (entry + sl_dist)
+            tp      = (entry + sl_dist * 3) if is_bullish else (entry - sl_dist * 3)
 
         signal = TradeSignal(
             symbol       = symbol,
