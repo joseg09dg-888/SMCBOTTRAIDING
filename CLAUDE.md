@@ -43,7 +43,7 @@ pm2 status
 
 | Componente | Estado | Notas |
 |-----------|--------|-------|
-| Tests | ✅ 1182/1182 pasando | `pytest tests/ -q` |
+| Tests | ✅ 1204/1204 pasando | `pytest tests/ -q` |
 | Binance Testnet | ⚠️ DNS falla en PM2 | datos cacheados funcionan |
 | Scan crypto | ✅ ACTIVO | BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT/ADAUSDT |
 | Scan forex | ✅ MT5 REAL | EURUSD/GBPUSD/XAUUSD/USDJPY/GBPJPY/NAS100/US30 via MT5 |
@@ -356,6 +356,7 @@ Con $200K fondead al 90% profit split:
 | 5 | 975 | Backtesting, TWAP/VWAP, Pairs, Events, Deployment |
 | 6 | 1003 | FTMOAgent (28 tests) |
 | 7 | 1182 | Modo autónomo 24/7: episodic_db, AutonomousLearner, ResearchAgent, GoalsManager, NightlyReporter, reason_with_context |
+| 8 | 1204 | VolumeCalculator: riesgo dinamico por etapa Axi Select, /proyeccion Telegram, volumen demo 0.10 lots |
 
 ---
 
@@ -403,4 +404,4 @@ Con $200K fondead al 90% profit split:
 
 ---
 
-*Última actualización: 2026-05-25 | Tests: 1182 | Bot: PM2 ONLINE | Balance MT5: $99,955.37*
+*Última actualización: 2026-05-26 | Tests: 1204 | Bot: PM2 ONLINE | Balance MT5: $99,955.37*
