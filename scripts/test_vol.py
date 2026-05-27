@@ -1,0 +1,10 @@
+from core.volume_calculator import VolumeCalculator
+vc = VolumeCalculator()
+v50   = vc.calculate_volume(100_000, 3300.0, 3250.0, "XAUUSD")
+v200  = vc.calculate_volume(100_000, 3300.0, 3100.0, "XAUUSD")
+v2273 = vc.calculate_volume(100_000, 3300.0, 1027.0, "XAUUSD")
+print(f"XAUUSD SL $50:   {v50} lots  | max perdida si SL: ${v50*50*100:.0f}")
+print(f"XAUUSD SL $200:  {v200} lots | max perdida si SL: ${v200*200*100:.0f}")
+print(f"XAUUSD SL $2273: {v2273} lots (cap max 0.05) | antes daba 0.22")
+eu = vc.calculate_volume(100_000, 1.10, 1.095, "EURUSD")
+print(f"EURUSD SL 50pip: {eu} lots | max perdida: ${eu*50*10:.0f}")

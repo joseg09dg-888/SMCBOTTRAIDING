@@ -12,22 +12,31 @@ class VolumeCalculator:
         "pro_m":      {"capital": 1_000_000, "volume": 1.00},
     }
 
+    # Size of 1 pip in price units
     _PIP_SIZE = {
         "EURUSD": 0.0001, "GBPUSD": 0.0001,
         "USDCHF": 0.0001, "AUDUSD": 0.0001,
         "NZDUSD": 0.0001, "EURGBP": 0.0001,
         "USDJPY": 0.01,   "GBPJPY": 0.01,
         "EURJPY": 0.01,
-        "XAUUSD": 1.0,
+        "XAUUSD": 1.0,    # 1 price unit = 1 pip ($1 move)
     }
 
+    # USD value per lot per pip: XAUUSD 1lot=100oz, 1pip=$1 -> $100/lot/pip
     _PIP_VALUE = {
-        "EURUSD": 10.0, "GBPUSD": 10.0,
-        "USDCHF": 10.0, "AUDUSD": 10.0,
-        "NZDUSD": 10.0, "EURGBP": 10.0,
-        "USDJPY": 6.3,  "GBPJPY": 6.3,
+        "EURUSD": 10.0,  "GBPUSD": 10.0,
+        "USDCHF": 10.0,  "AUDUSD": 10.0,
+        "NZDUSD": 10.0,  "EURGBP": 10.0,
+        "USDJPY": 6.3,   "GBPJPY": 6.3,
         "EURJPY": 6.3,
-        "XAUUSD": 1.0,
+        "XAUUSD": 100.0, # 100oz × $1/oz = $100 per lot per $1 move
+    }
+
+    # Hard caps per symbol (lots) — safety net regardless of calculation
+    _MAX_VOL_BY_SYMBOL = {
+        "XAUUSD": 0.05,
+        "NAS100": 0.05,
+        "US30":   0.05,
     }
 
     _MIN_VOL = 0.01
@@ -52,7 +61,8 @@ class VolumeCalculator:
         risk_usd = capital * risk_pct
         volume   = risk_usd / (pips * pip_value)
 
-        volume = max(self._MIN_VOL, min(self._MAX_VOL, volume))
+        max_vol = self._MAX_VOL_BY_SYMBOL.get(symbol, self._MAX_VOL)
+        volume  = max(self._MIN_VOL, min(max_vol, volume))
         return round(volume, 2)
 
     def get_stage_volume(self, capital: float) -> float:
