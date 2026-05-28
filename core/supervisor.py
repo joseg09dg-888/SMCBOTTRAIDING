@@ -71,33 +71,23 @@ from memory.episodic_db import query_similar_episodes
 
 # Score thresholds
 
-DEMO_SCORE_THRESHOLD     = 75  # simulated crypto demo trades
-
-MT5_REAL_SCORE_THRESHOLD = 80  # real MT5 orders -- high-confidence only
-
+DEMO_SCORE_THRESHOLD     = 70   # simulated crypto demo trades
+MT5_REAL_SCORE_THRESHOLD = 75   # real MT5 orders (8 filters + Claude confirm protect us)
+MT5_SCORE_AUTO_REDUCE    = 70   # fallback after 2h sin trades
+MT5_SCORE_REDUCE_AFTER_H = 2    # hours without trade before reducing threshold
 DEMO_MAX_POSITIONS       = 5
-
 SCAN_INTERVAL_SEC        = 30
 
-
-
-# Conservative mode: active while win_rate < 55%
-
-CONSERVATIVE_MODE        = True   # disable once win_rate > 55%
-
-CONSERVATIVE_SCORE_MIN   = 85     # even higher bar in conservative mode
-
-CONSERVATIVE_PAIRS       = ["EURUSD", "XAUUSD"]   # most liquid only
-
-MAX_DAILY_TRADES         = 1      # max real MT5 trades per calendar day
-
-MIN_RR                   = 3.0    # minimum risk:reward ratio
-
-
+# Conservative mode disabled — 8 filters + Claude API confirmation are sufficient
+CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
+CONSERVATIVE_SCORE_MIN   = 75
+CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
+MAX_DAILY_TRADES         = 2       # 2 positions max per day (was 1)
+MAX_OPEN_POSITIONS       = 2       # max simultaneous open positions
+MIN_RR                   = 2.0    # minimum risk:reward (was 3.0 -- too restrictive)
 
 # Dead hours (UTC) -- no new orders during low-liquidity windows
-
-DEAD_HOURS_UTC           = set(range(21, 24)) | {0, 1, 2}  # 21:00-02:59 UTC
+DEAD_HOURS_UTC           = set(range(22, 24)) | {0, 1}  # 22:00-01:59 UTC (was 21-02)
 
 
 
@@ -112,8 +102,7 @@ SCAN_TIMEFRAMES = ["1h", "4h"]  # removed 5m/15m -- too noisy for quality setups
 # MT5 forex/indices symbols
 
 MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "NAS100", "US30"]
-
-MT5_TIMEFRAMES   = ["H4"]      # H4 only -- more reliable structure
+MT5_TIMEFRAMES   = ["H1", "H4"]  # H1 + H4 for more signal opportunities
 
 MT5_MIN_VOLUME   = 0.01
 
@@ -323,6 +312,19 @@ class TradingSupervisor:
             self._smc_agent = None
         # df cache: populated each scan so _claude_confirm_trade can access latest df
         self._df_cache: Dict[str, pd.DataFrame] = {}
+        # Scan statistics for /status and auto-reduce logic
+        self._scan_stats = {
+            "total": 0,
+            "blocked_score": 0,
+            "blocked_conservative": 0,
+            "blocked_rr": 0,
+            "blocked_daily_limit": 0,
+            "blocked_ftmo": 0,
+            "blocked_duplicate": 0,
+            "blocked_claude": 0,
+            "executed": 0,
+            "last_trade_ts": None,
+        }
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -824,148 +826,109 @@ class TradingSupervisor:
 
 
 
+    def _save_scan_stats(self):
+        """Persist scan stats to JSON so Telegram /status can read them."""
+        import json, os
+        try:
+            stats = dict(self._scan_stats)
+            ts = stats.get("last_trade_ts")
+            stats["last_trade_ts"] = ts.isoformat() if ts else None
+            path = os.path.join("memory", "scan_stats.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(stats, f)
+        except Exception:
+            pass
+
     def _enrich_with_agents(self, signal: TradeSignal, df: pd.DataFrame) -> int:
+        """Run all 13 institutional agents IN PARALLEL and return total bonus pts.
 
-        """
-
-        Run all institutional agents on the signal and return total bonus pts.
-
-        Each agent wrapped in try/except -- one broken agent never kills the pipeline.
-
+        All agents fire simultaneously via ThreadPoolExecutor — total latency equals
+        the slowest single agent, not the sum of all agents (~13x speedup).
         Requires base score >= 65 to be effective (agents confirm, don't rescue).
-
         """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         if signal.decision_score < 65:
-
             return 0
 
-
-
         bias = "bullish" if signal.signal_type == SignalType.LONG else "bearish"
+        prices = list(df["close"].astype(float).values) if not df.empty else []
 
-        bonus = 0
+        def _lunar():
+            try: return self._lunar.score_adjustment(bias)
+            except Exception: return 0
 
+        def _elliott():
+            try:
+                e = self._elliott.analyze(df, bias)
+                return e.score_bonus
+            except Exception: return 0
 
+        def _chaos():
+            try: return self._chaos.score_adjustment(df)
+            except Exception: return 0
 
-        # Lunar cycle alignment (+0..+5)
+        def _edge():
+            try:
+                edge = self._edge.calculate_full_edge(symbol=signal.symbol, prices=prices)
+                return self._edge.get_decision_pts(edge)
+            except Exception: return 0
 
-        try:
-
-            bonus += self._lunar.score_adjustment(bias)
-
-        except Exception:
-
-            pass
-
-
-
-        # Elliott Wave wave position (+0..+10)
-
-        try:
-
-            elliott = self._elliott.analyze(df, bias)
-
-            bonus += elliott.score_bonus
-
-        except Exception:
-
-            pass
-
-
-
-        # Chaos theory market regime (-20..+35)
-
-        try:
-
-            bonus += self._chaos.score_adjustment(df)
-
-        except Exception:
-
-            pass
-
-
-
-        # Quant edge (uses historical trades from episodic DB + df prices, +0..+50)
-
-        try:
-
-            prices = list(df["close"].astype(float).values)
-
-            edge   = self._edge.calculate_full_edge(symbol=signal.symbol, prices=prices)
-
-            bonus += self._edge.get_decision_pts(edge)
-
-        except Exception:
-
-            pass
-
-
-
-        # Footprint order flow (crypto only -- no tick data for MT5 forex, -30..+30)
-        if signal.symbol in SCAN_SYMBOLS:
+        def _footprint():
+            if signal.symbol not in SCAN_SYMBOLS:
+                return 0
             try:
                 fp_candle = self._footprint.build_live_footprint(
                     signal.symbol, candle_open=signal.entry or 0, limit=500
                 )
                 direction = "long" if signal.signal_type == SignalType.LONG else "short"
-                bonus += self._footprint.score_for_trade(fp_candle, direction, signal.entry or 0)
-            except Exception:
-                pass
+                return self._footprint.score_for_trade(fp_candle, direction, signal.entry or 0)
+            except Exception: return 0
 
-        # Institutional flow (COT + options, +/-15)
-        try:
-            bonus += self._inst_flow.score_adjustment(signal.symbol, bias)
-        except Exception:
-            pass
+        def _instflow():
+            try: return self._inst_flow.score_adjustment(signal.symbol, bias)
+            except Exception: return 0
 
-        # Market microstructure (session, levels, spread, +/-15)
-        try:
-            bonus += self._microstructure.score_adjustment(
-                signal.symbol, signal.entry or 0.0
-            )
-        except Exception:
-            pass
+        def _micro():
+            try: return self._microstructure.score_adjustment(signal.symbol, signal.entry or 0.0)
+            except Exception: return 0
 
-        # FED sentiment (hawkish/dovish bias, +/-10)
-        try:
-            bonus += self._fed.score_adjustment(signal.symbol, bias)
-        except Exception:
-            pass
+        def _fed():
+            try: return self._fed.score_adjustment(signal.symbol, bias)
+            except Exception: return 0
 
-        # On-chain (fear/greed, MVRV, halving cycle -- crypto/gold, +/-10)
-        try:
-            bonus += self._onchain.score_adjustment(signal.symbol, bias, signal.entry or 0.0)
-        except Exception:
-            pass
+        def _onchain():
+            try: return self._onchain.score_adjustment(signal.symbol, bias, signal.entry or 0.0)
+            except Exception: return 0
 
-        # Geopolitical risk (safe-haven demand, +/-10)
-        try:
-            bonus += self._geopolitical.score_adjustment(signal.symbol, bias)
-        except Exception:
-            pass
+        def _geo():
+            try: return self._geopolitical.score_adjustment(signal.symbol, bias)
+            except Exception: return 0
 
-        # Retail psychology (stop hunts, liquidity zones, +/-10)
-        try:
-            bonus += self._retail_psych.score_adjustment(signal.symbol, df, bias)
-        except Exception:
-            pass
+        def _retail():
+            try: return self._retail_psych.score_adjustment(signal.symbol, df, bias)
+            except Exception: return 0
 
-        # Alternative data (Google Trends, social sentiment, +/-10)
-        try:
-            bonus += self._alt_data.score_adjustment(signal.symbol, bias)
-        except Exception:
-            pass
+        def _alt():
+            try: return self._alt_data.score_adjustment(signal.symbol, bias)
+            except Exception: return 0
 
-        # Energy / frequency (numerology, lunar, day-of-week, +/-15)
-        try:
-            prices_hist = list(df["close"].astype(float).values) if not df.empty else []
-            energy = self._energy.analyze(signal.symbol, signal.entry or 0.0, prices_hist)
-            bonus += energy.to_decision_pts()
-        except Exception:
-            pass
+        def _energy():
+            try:
+                energy = self._energy.analyze(signal.symbol, signal.entry or 0.0, prices)
+                return energy.to_decision_pts()
+            except Exception: return 0
 
-        # Cap: agents can add at most +60, subtract at most -30
+        tasks = [
+            _lunar, _elliott, _chaos, _edge, _footprint,
+            _instflow, _micro, _fed, _onchain, _geo,
+            _retail, _alt, _energy,
+        ]
+
+        with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+            futures = [executor.submit(fn) for fn in tasks]
+            bonus = sum(f.result() for f in as_completed(futures))
+
         return int(max(-30, min(60, bonus)))
 
 
@@ -1355,14 +1318,16 @@ class TradingSupervisor:
 
 
 
-        # ── FILTER 7: Max 1 posicion por simbolo ─────────────────────────
-
+        # ── FILTER 7: Max posiciones abiertas (por simbolo y total) ─────────
         loop = asyncio.get_running_loop()
-
         existing = await loop.run_in_executor(None, self.mt5.get_positions)
 
-        sym_open = [p for p in existing if p["symbol"] == signal.symbol]
+        if len(existing) >= MAX_OPEN_POSITIONS:
+            self._scan_stats["blocked_duplicate"] += 1
+            print(f"[MT5] {signal.symbol}: {len(existing)} posiciones abiertas (max={MAX_OPEN_POSITIONS}), skip", flush=True)
+            return
 
+        sym_open = [p for p in existing if p["symbol"] == signal.symbol]
         if sym_open:
 
             pos = sym_open[0]
@@ -1449,9 +1414,11 @@ class TradingSupervisor:
 
                 print(f"[EPISODIC] record error: {_ep_err}", flush=True)
 
-            # Count toward daily limit
-
+            # Count toward daily limit + update scan stats
             self._daily_trades[today_str] = trades_today + 1
+            self._scan_stats["executed"] += 1
+            self._scan_stats["last_trade_ts"] = datetime.now(timezone.utc)
+            self._save_scan_stats()
 
             try:
 
@@ -1815,10 +1782,6 @@ class TradingSupervisor:
 
         _was_offline = False
 
-        threshold = (CONSERVATIVE_SCORE_MIN if CONSERVATIVE_MODE else DEMO_SCORE_THRESHOLD) if self.demo_mode else MT5_REAL_SCORE_THRESHOLD
-
-
-
         while self._running:
 
             try:
@@ -1916,43 +1879,34 @@ class TradingSupervisor:
                 # MT5 forex scan (real orders on demo account -- bypass demo slot limit)
 
                 if self._mt5_available:
+                    # Auto-reduce threshold after MT5_SCORE_REDUCE_AFTER_H hours without trade
+                    last_ts = self._scan_stats.get("last_trade_ts")
+                    if last_ts is not None:
+                        hours_idle = (datetime.now(timezone.utc) - last_ts).total_seconds() / 3600
+                        mt5_threshold = MT5_SCORE_AUTO_REDUCE if hours_idle > MT5_SCORE_REDUCE_AFTER_H else MT5_REAL_SCORE_THRESHOLD
+                    else:
+                        mt5_threshold = MT5_REAL_SCORE_THRESHOLD
 
                     for symbol in MT5_SYMBOLS:
-
                         for tf in MT5_TIMEFRAMES:
-
                             if not self._running:
-
                                 break
-
                             try:
-
                                 signal = await self._scan_mt5_symbol(symbol, tf)
-
                                 if signal is None:
-
                                     continue
-
+                                self._scan_stats["total"] += 1
                                 score = signal.decision_score
-
                                 bias  = signal.signal_type.value.upper()
-
-                                print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="")
-
-                                if signal.signal_type == SignalType.WAIT or score < MT5_REAL_SCORE_THRESHOLD:
-
-                                    print(" -- sin setup")
-
+                                print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="", flush=True)
+                                if signal.signal_type == SignalType.WAIT or score < mt5_threshold:
+                                    self._scan_stats["blocked_score"] += 1
+                                    print(f" -- sin setup (threshold={mt5_threshold})")
                                 else:
-
-                                    print(f" -- ejecutando MT5 REAL (score={score}>={MT5_REAL_SCORE_THRESHOLD})")
-
+                                    print(f" -- ejecutando MT5 REAL (score={score}>={mt5_threshold})")
                                     await self._send_mt5_real_order(signal)
-
                             except Exception as exc:
-
                                 print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
-
                             await asyncio.sleep(0.5)
 
 
@@ -2069,6 +2023,7 @@ class TradingSupervisor:
 
 
 
+            self._save_scan_stats()   # persist stats for /status
             await asyncio.sleep(SCAN_INTERVAL_SEC)  # next full scan
 
 

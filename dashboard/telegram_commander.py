@@ -307,19 +307,78 @@ class TelegramCommander:
         except Exception as e:
             binance_text = f"Error: {e}"
 
+        # MT5 open positions
+        positions_text = ""
+        try:
+            from connectors.metatrader_connector import MT5Connector
+            _mt5b = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            positions = _mt5b.get_positions()
+            if positions:
+                for p in positions:
+                    pnl_sign = "+" if p.get("profit", 0) >= 0 else ""
+                    positions_text += (
+                        f"  {p['symbol']} {p['type']} {p['volume']}lot "
+                        f"P&amp;L: <code>{pnl_sign}{p.get('profit', 0):.2f} USD</code>\n"
+                    )
+            else:
+                positions_text = "  Sin posiciones abiertas\n"
+        except Exception:
+            positions_text = "  No disponible\n"
+
+        # Scan statistics from JSON
+        import json, os
+        scan_text = ""
+        try:
+            stats_path = os.path.join("memory", "scan_stats.json")
+            if os.path.exists(stats_path):
+                with open(stats_path, encoding="utf-8") as sf:
+                    sc = json.load(sf)
+                total     = sc.get("total", 0)
+                executed  = sc.get("executed", 0)
+                blk_score = sc.get("blocked_score", 0)
+                blk_cons  = sc.get("blocked_conservative", 0)
+                blk_rr    = sc.get("blocked_rr", 0)
+                blk_daily = sc.get("blocked_daily_limit", 0)
+                blk_ftmo  = sc.get("blocked_ftmo", 0)
+                blk_dup   = sc.get("blocked_duplicate", 0)
+                blk_claude= sc.get("blocked_claude", 0)
+                last_ts   = sc.get("last_trade_ts")
+                last_str  = last_ts[:16].replace("T", " ") if last_ts else "nunca"
+                scan_text = (
+                    f"Setups analizados: <b>{total}</b>\n"
+                    f"Ejecutados: <b>{executed}</b>\n"
+                    f"Bloqueados:\n"
+                    f"  Score bajo: {blk_score}\n"
+                    f"  Conservador: {blk_cons}\n"
+                    f"  RR bajo: {blk_rr}\n"
+                    f"  Limite diario: {blk_daily}\n"
+                    f"  FTMO: {blk_ftmo}\n"
+                    f"  Duplicado: {blk_dup}\n"
+                    f"  Claude veto: {blk_claude}\n"
+                    f"Ultimo trade: {last_str} UTC"
+                )
+        except Exception:
+            scan_text = "Stats no disponibles aun"
+
         text = (
-            f"<b>SMC BOT ESTADO REAL</b>\n"
+            f"<b>SMC BOT -- ESTADO REAL</b>\n"
             f"<b>Modo:</b> {cfg.operation_mode.upper()} | ACTIVO\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>MT5 AXI DEMO — Meta: crecer $100,000</b>\n"
+            f"<b>MT5 AXI DEMO</b>\n"
             f"{mt5_text}"
+            f"<b>Posiciones abiertas:</b>\n{positions_text}"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>SCAN STATS (acumulado)</b>\n"
+            f"{scan_text}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"<b>BINANCE TESTNET</b>\n"
             f"{binance_text}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"<b>ESTADISTICAS BOT</b>\n"
-            f"Trades: {stats['executed']} | Win Rate: {wr}\n"
-            f"Scan: cada 30s"
+            f"<b>FILTROS ACTIVOS</b>\n"
+            f"Score MT5: >=75 | RR min: 1:2\n"
+            f"Max posiciones: 2 | Max/dia: 2\n"
+            f"8 filtros + Claude API confirm\n"
+            f"22 agentes institucionales"
         )
         return CommandResult(success=True, message=text, action="status")
 

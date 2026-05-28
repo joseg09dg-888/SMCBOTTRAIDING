@@ -357,6 +357,7 @@ Con $200K fondead al 90% profit split:
 | 6 | 1003 | FTMOAgent (28 tests) |
 | 7 | 1182 | Modo autónomo 24/7: episodic_db, AutonomousLearner, ResearchAgent, GoalsManager, NightlyReporter, reason_with_context |
 | 8 | 1204 | VolumeCalculator: riesgo dinamico por etapa Axi Select, /proyeccion Telegram, volumen demo 0.10 lots |
+| 9 | 1214 | 13 agentes institucionales activados en pipeline: Lunar, Elliott, Chaos, QuantEdge, Footprint, InstFlow, Microstructure, FED, OnChain, Geopolitical, RetailPsych, AltData, Energy |
 
 ---
 
@@ -395,13 +396,16 @@ Con $200K fondead al 90% profit split:
 - HistoricalDataAgent (solo via /history)
 - AutonomousLearner, ResearchAgent, GoalsManager, NightlyReporter (loops nuevos)
 
-**Dormant (existen pero NO en el scan loop):**
-- SMCAnalysisAgent (Claude API), LunarAgent, ElliottAgent, InstitutionalFlowAgent
-- AlternativeDataAgent, MicrostructureAgent, FedSentimentAgent, OnchainAgent
-- GeopoliticalAgent, ChaosAgent, RetailPsychologyAgent, EnergyFrequencyAgent
-- ReportAgent, ScreenVisionAgent, FootprintAgent, StatisticalEdgeAgent
-- Todos los módulos Quant* (8), LearningEngine, AgentMemory
+**Activos en enrichment pipeline (_enrich_with_agents):**
+- LunarCycleAgent, ElliottFibonacciAgent, ChaosTheoryAgent, QuantEdgeAgent
+- FootprintAgent, InstitutionalFlowAgent, MarketMicrostructureAgent
+- FEDSentimentAgent, OnChainAgent, GeopoliticalAgent
+- RetailPsychologyAgent, AlternativeDataAgent, EnergyFrequencyAgent
+
+**Dormant (existen pero NO conectados):**
+- SMCAnalysisAgent (Claude API — pendiente conectar para confirmacion pre-orden real)
+- ReportAgent, ScreenVisionAgent, LearningEngine, AgentMemory
 
 ---
 
-*Última actualización: 2026-05-26 | Tests: 1204 | Bot: PM2 ONLINE | Balance MT5: $99,955.37*
+*Última actualización: 2026-05-26 | Tests: 1214 | Bot: PM2 ONLINE | Agentes activos: 13/19 en pipeline | Balance MT5: $99,955.37*
