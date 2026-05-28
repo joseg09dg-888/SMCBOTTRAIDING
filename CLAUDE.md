@@ -358,6 +358,7 @@ Con $200K fondead al 90% profit split:
 | 7 | 1182 | Modo autónomo 24/7: episodic_db, AutonomousLearner, ResearchAgent, GoalsManager, NightlyReporter, reason_with_context |
 | 8 | 1204 | VolumeCalculator: riesgo dinamico por etapa Axi Select, /proyeccion Telegram, volumen demo 0.10 lots |
 | 9 | 1214 | 13 agentes institucionales activados en pipeline: Lunar, Elliott, Chaos, QuantEdge, Footprint, InstFlow, Microstructure, FED, OnChain, Geopolitical, RetailPsych, AltData, Energy |
+| 10 | 1214 | _enrich_with_agents() parallelizado con ThreadPoolExecutor — 13 agentes simultaneos (~13x speedup). Thresholds: MT5_REAL=75, MIN_RR=2.0, MAX_OPEN=2, CONSERVATIVE_MODE=False, H1+H4, auto-reduce a 70 tras 2h idle |
 
 ---
 
@@ -408,4 +409,4 @@ Con $200K fondead al 90% profit split:
 
 ---
 
-*Última actualización: 2026-05-26 | Tests: 1214 | Bot: PM2 ONLINE | Agentes activos: 13/19 en pipeline | Balance MT5: $99,955.37*
+*Última actualización: 2026-05-28 | Tests: 1214 | Bot: PM2 ONLINE | Agentes: 13 PARALELOS (ThreadPoolExecutor) | MT5_REAL threshold: 75 | MIN_RR: 2.0 | MAX_OPEN: 2 | Balance MT5: $99,843.59*
