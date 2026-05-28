@@ -278,7 +278,7 @@ class MT5Connector:
             logger.info(f"MT5 order filled: {symbol} {order_type} #{result.order} @{result.price}")
 
             # Some brokers (Axi indices) strip SL/TP from the fill request.
-            # Immediately apply SL/TP as a separate SLTP modification request.
+            # Apply SL/TP as a separate SLTP modification and verify it stuck.
             if (sl != 0.0 or tp != 0.0) and result.order:
                 sl_req = {
                     "action":   mt5.TRADE_ACTION_SLTP,
@@ -290,7 +290,13 @@ class MT5Connector:
                 sl_result = mt5.order_send(sl_req)
                 if sl_result is None or sl_result.retcode != mt5.TRADE_RETCODE_DONE:
                     rc = sl_result.retcode if sl_result else "None"
-                    logger.warning(f"MT5 SL/TP post-fill failed retcode={rc} — position #{result.order} has no SL!")
+                    logger.warning(
+                        f"MT5 SL/TP post-fill FAILED retcode={rc} — "
+                        f"#{result.order} {symbol} opened WITHOUT SL. "
+                        f"Bot will auto-close this position when market opens."
+                    )
+                else:
+                    logger.info(f"MT5 SL={sl:.5f} TP={tp:.5f} confirmed on #{result.order}")
 
             return {"ticket": result.order, "status": "filled", "price": result.price}
         except Exception as e:

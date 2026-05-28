@@ -2,7 +2,8 @@ import asyncio
 
 import logging
 
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timezone, timedelta
 
 from typing import Optional, List, Dict
 
@@ -49,6 +50,7 @@ from core.goals_manager import GoalsManager
 from core.nightly_reporter import NightlyReporter
 
 from core.volume_calculator import VolumeCalculator
+from core.market_hours import is_market_open, minutes_until_open
 
 from strategies.ftmo_agent import FTMOAgent, ChallengeType
 
@@ -279,7 +281,8 @@ class TradingSupervisor:
 
         self._open_episodes: Dict[int, int] = {}  # ticket -> episode_id
 
-        self._daily_trades: Dict[str, int]  = {}  # date -> count of real MT5 trades sent
+        # Load daily trade count from disk so pm2 restarts don't reset the limit
+        self._daily_trades: Dict[str, int] = self._load_daily_trades()
 
         # FTMO / Axi rules enforcement
 
@@ -837,6 +840,26 @@ class TradingSupervisor:
 
 
 
+    _DAILY_TRADES_PATH = os.path.join("memory", "daily_trades.json")
+
+    def _load_daily_trades(self) -> Dict[str, int]:
+        """Load daily MT5 trade count from disk — survives pm2 restarts."""
+        import json
+        try:
+            with open(self._DAILY_TRADES_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _save_daily_trades(self):
+        """Persist daily trade count so resets don't bypass MAX_DAILY_TRADES."""
+        import json
+        try:
+            with open(self._DAILY_TRADES_PATH, "w", encoding="utf-8") as f:
+                json.dump(self._daily_trades, f)
+        except Exception:
+            pass
+
     def _save_scan_stats(self):
         """Persist scan stats to JSON so Telegram /status can read them."""
         import json, os
@@ -1213,6 +1236,15 @@ class TradingSupervisor:
 
 
 
+        # ── FILTER 0: Mercado abierto ─────────────────────────────────────
+        if not is_market_open(signal.symbol):
+            mins = minutes_until_open(signal.symbol)
+            print(
+                f"[MT5] {signal.symbol}: mercado cerrado -- abre en ~{mins}min, skip",
+                flush=True,
+            )
+            return
+
         # ── FILTER 1: SL obligatorio ──────────────────────────────────────
 
         if sl_val == 0.0:
@@ -1251,7 +1283,7 @@ class TradingSupervisor:
 
 
 
-        # ── FILTER 4: RR minimo 1:3 ───────────────────────────────────────
+        # ── FILTER 4: RR minimo 1:2 ───────────────────────────────────────
 
         if tp_val > 0 and sl_val > 0 and signal.entry and signal.entry > 0:
 
@@ -1427,6 +1459,7 @@ class TradingSupervisor:
 
             # Count toward daily limit + update scan stats
             self._daily_trades[today_str] = trades_today + 1
+            self._save_daily_trades()
             self._scan_stats["executed"] += 1
             self._scan_stats["last_trade_ts"] = datetime.now(timezone.utc)
             self._save_scan_stats()
@@ -1460,6 +1493,17 @@ class TradingSupervisor:
     async def _execute_demo_trade(self, signal: TradeSignal):
 
         """Record a simulated demo trade, notify via Telegram, log to SQLite."""
+
+        # Expire demo trades older than 8 hours (one full trading session)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=8)
+        self._demo_trades = [
+            d for d in self._demo_trades
+            if getattr(d, "opened_at", datetime.now(timezone.utc)) > cutoff
+        ]
+
+        # One slot per symbol — no duplicate positions on same pair
+        if any(d.signal.symbol == signal.symbol for d in self._demo_trades):
+            return
 
         if len(self._demo_trades) >= DEMO_MAX_POSITIONS:
 
@@ -1574,8 +1618,9 @@ class TradingSupervisor:
         """Every 60s: log open positions + detect closures → update learning + FTMO."""
 
         _known_tickets: set = set()
-        # Tickets flagged for close-on-market-open (e.g. US30 opened while market was closed)
-        _close_when_open: set = {60782139}  # US30 ticket opened without SL
+        # Tickets flagged for close-on-market-open (positions with no SL)
+        # Populated dynamically: any position with SL=0 gets auto-closed on next open
+        _close_when_open: set = set()
 
         while self._running:
 
@@ -1591,26 +1636,35 @@ class TradingSupervisor:
 
                 positions = await loop.run_in_executor(None, self.mt5.get_positions)
 
-                # ── Auto-close positions flagged for close-on-open ────────
+                # ── Flag positions with no SL for auto-close ─────────────
+                current_tickets = {p["ticket"] for p in positions}
+                for p in positions:
+                    if p.get("sl", 0.0) == 0.0:
+                        _close_when_open.add(p["ticket"])
+                # Remove tickets that are no longer open (already closed externally)
+                _close_when_open -= (set(_close_when_open) - current_tickets)
+
+                # ── Auto-close flagged positions (closes when market accepts) ─
                 for p in positions:
                     ticket = p.get("ticket", 0)
                     if ticket in _close_when_open:
-                        pnl = p.get("profit", 0.0)
+                        pnl    = p.get("profit", 0.0)
+                        symbol = p.get("symbol", "?")
                         ok = await loop.run_in_executor(
                             None, lambda t=ticket: self.mt5.close_position(t)
                         )
                         if ok:
                             _close_when_open.discard(ticket)
-                            msg = f"[AUTO-CLOSE] US30 #{ticket} cerrado al abrir mercado | P&L: ${pnl:+.2f}"
+                            msg = f"[AUTO-CLOSE] {symbol} #{ticket} cerrado (sin SL) | P&L: ${pnl:+.2f}"
                             print(msg, flush=True)
                             try:
                                 await self.telegram.send_glint_alert(
-                                    f"<b>CIERRE AUTOMATICO</b>\nUS30 #{ticket} cerrado al abrir mercado\nP&L: ${pnl:+.2f} USD"
+                                    f"<b>CIERRE AUTOMATICO</b>\n{symbol} #{ticket} sin SL -- cerrado\nP&L: ${pnl:+.2f} USD"
                                 )
                             except Exception:
                                 pass
                         else:
-                            print(f"[AUTO-CLOSE] US30 #{ticket} intento fallido (mercado cerrado aun)", flush=True)
+                            print(f"[AUTO-CLOSE] {symbol} #{ticket} sin SL -- mercado cerrado, reintentando", flush=True)
 
                 current_tickets = {p["ticket"] for p in positions}
 
@@ -1850,16 +1904,23 @@ class TradingSupervisor:
 
                 # Auto-close critical positions (> $500 loss)
                 if self._mt5_available:
+                    live_positions = await asyncio.get_event_loop().run_in_executor(
+                        None, self.mt5.get_positions
+                    )
+                    # Build symbol→ticket map from live MT5 data (vision JSON may hallucinate)
+                    sym_to_ticket = {p["symbol"]: p["ticket"] for p in live_positions}
+
                     for pos in analysis.get("posiciones", []):
                         pnl = pos.get("pnl", 0)
                         symbol = pos.get("symbol", "")
-                        if self._vision.should_close_position(symbol, pnl):
+                        ticket = sym_to_ticket.get(symbol)
+                        if ticket and self._vision.should_close_position(symbol, pnl):
                             try:
-                                await asyncio.get_event_loop().run_in_executor(
+                                ok = await asyncio.get_event_loop().run_in_executor(
                                     None,
-                                    lambda s=symbol: self.mt5.close_position(s)
+                                    lambda t=ticket: self.mt5.close_position(t)
                                 )
-                                msg = f"[VISION] Cerrada {symbol} perdida critica ${abs(pnl):.0f}"
+                                msg = f"[VISION] {'Cerrada' if ok else 'Fallo cierre'} {symbol} #{ticket} perdida ${abs(pnl):.0f}"
                                 print(msg, flush=True)
                                 await self.telegram.send_glint_alert(msg)
                             except Exception as e:
@@ -1933,6 +1994,8 @@ class TradingSupervisor:
                             score = signal.decision_score
 
                             bias  = signal.signal_type.value.upper()
+
+                            self._scan_stats["total"] += 1
 
                             print(f"[{symbol}][{tf}] Score: {score} | {bias}", end="")
 
