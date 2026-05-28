@@ -20,6 +20,8 @@ class VolumeCalculator:
         "USDJPY": 0.01,   "GBPJPY": 0.01,
         "EURJPY": 0.01,
         "XAUUSD": 1.0,    # 1 price unit = 1 pip ($1 move)
+        "US30":   1.0,    # 1 point = 1 pip for Dow Jones
+        "NAS100": 1.0,    # 1 point = 1 pip for Nasdaq
     }
 
     # USD value per lot per pip: XAUUSD 1lot=100oz, 1pip=$1 -> $100/lot/pip
@@ -30,13 +32,22 @@ class VolumeCalculator:
         "USDJPY": 6.3,   "GBPJPY": 6.3,
         "EURJPY": 6.3,
         "XAUUSD": 100.0, # 100oz × $1/oz = $100 per lot per $1 move
+        "US30":   1.0,   # Axi: $1 per point per lot
+        "NAS100": 1.0,   # Axi: $1 per point per lot
+    }
+
+    # Minimum volume per symbol (broker requirement)
+    _MIN_VOL_BY_SYMBOL = {
+        "US30":   1.0,   # Axi requires min 1.0 lot for indices
+        "NAS100": 1.0,
+        "XAUUSD": 0.01,
     }
 
     # Hard caps per symbol (lots) — safety net regardless of calculation
     _MAX_VOL_BY_SYMBOL = {
         "XAUUSD": 0.05,
-        "NAS100": 0.05,
-        "US30":   0.05,
+        "NAS100": 3.0,
+        "US30":   3.0,
     }
 
     _MIN_VOL = 0.01
@@ -61,8 +72,9 @@ class VolumeCalculator:
         risk_usd = capital * risk_pct
         volume   = risk_usd / (pips * pip_value)
 
+        min_vol = self._MIN_VOL_BY_SYMBOL.get(symbol, self._MIN_VOL)
         max_vol = self._MAX_VOL_BY_SYMBOL.get(symbol, self._MAX_VOL)
-        volume  = max(self._MIN_VOL, min(max_vol, volume))
+        volume  = max(min_vol, min(max_vol, volume))
         return round(volume, 2)
 
     def get_stage_volume(self, capital: float) -> float:

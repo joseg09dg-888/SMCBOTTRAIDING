@@ -1848,7 +1848,7 @@ class TradingSupervisor:
 
 
 
-                            if signal.signal_type == SignalType.WAIT or score < threshold:
+                            if signal.signal_type == SignalType.WAIT or score < DEMO_SCORE_THRESHOLD:
 
                                 print(" -- sin setup")
 
