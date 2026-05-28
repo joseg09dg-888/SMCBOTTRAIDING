@@ -65,6 +65,7 @@ from agents.geopolitical_agent import GeopoliticalAgent
 from agents.retail_psychology_agent import RetailPsychologyAgent
 from agents.alternative_data_agent import AlternativeDataAgent
 from agents.energy_frequency_agent import EnergyFrequencyAgent
+from agents.axi_vision_agent import AxiVisionAgent
 from memory.episodic_db import query_similar_episodes
 
 
@@ -238,6 +239,8 @@ class TradingSupervisor:
 
         )
 
+        self.commander._supervisor = self  # allow /proteger and /ver_mt5 to toggle supervisor state
+
         self.glint = GlintBrowser(
 
             ws_url=config.glint_ws_url,
@@ -304,6 +307,12 @@ class TradingSupervisor:
         self._retail_psych  = RetailPsychologyAgent()
         self._alt_data      = AlternativeDataAgent()
         self._energy        = EnergyFrequencyAgent()
+        # AxiVisionAgent -- Claude Vision reads MT5 screen every 5 min
+        try:
+            self._vision = AxiVisionAgent()
+        except Exception:
+            self._vision = None
+        self._vision_protect_mode = False  # /proteger activates continuous monitoring
         # SMCAnalysisAgent -- Claude API final confirmation before real orders
         try:
             from agents.analysis_agent import SMCAnalysisAgent
@@ -651,6 +660,8 @@ class TradingSupervisor:
             self._goals_loop(),
 
             self._nightly_report_loop(),
+
+            self._vision_monitor_loop(),
 
         )
 
@@ -1777,6 +1788,62 @@ class TradingSupervisor:
                 print(f"[NIGHTLY] error: {exc}", flush=True)
 
 
+
+    async def _vision_monitor_loop(self):
+        """Every 5 min: capture MT5 screen, alert on losing positions, auto-close if critical.
+        In _vision_protect_mode: runs every 2 min instead."""
+        _BALANCE_AT_START = 100_000.0  # Axi demo seed capital
+
+        while self._running:
+            interval = 120 if self._vision_protect_mode else 300
+            await asyncio.sleep(interval)
+
+            if self._vision is None:
+                continue
+
+            try:
+                loop = asyncio.get_event_loop()
+                report = await loop.run_in_executor(None, self._vision.monitor_and_protect)
+                analysis = report.get("analysis", {})
+                alerts = report.get("alerts", [])
+                balance = report.get("balance", 0)
+
+                # Always check balance growth vs starting capital
+                if balance > 0 and balance < _BALANCE_AT_START:
+                    deficit = _BALANCE_AT_START - balance
+                    alerts.append(
+                        f"CUENTA EN PERDIDA -- balance ${balance:,.0f} "
+                        f"(inicio ${_BALANCE_AT_START:,.0f}, -${deficit:,.0f})"
+                    )
+
+                if alerts:
+                    alert_text = "\n".join(alerts)
+                    try:
+                        await self.telegram.send_glint_alert(
+                            f"[VISION ALERT]\n{alert_text}"
+                        )
+                    except Exception:
+                        pass
+
+                # Auto-close critical positions (> $500 loss)
+                if self._mt5_available:
+                    for pos in analysis.get("posiciones", []):
+                        pnl = pos.get("pnl", 0)
+                        symbol = pos.get("symbol", "")
+                        if self._vision.should_close_position(symbol, pnl):
+                            try:
+                                await asyncio.get_event_loop().run_in_executor(
+                                    None,
+                                    lambda s=symbol: self.mt5.close_position(s)
+                                )
+                                msg = f"[VISION] Cerrada {symbol} perdida critica ${abs(pnl):.0f}"
+                                print(msg, flush=True)
+                                await self.telegram.send_glint_alert(msg)
+                            except Exception as e:
+                                print(f"[VISION] close failed {symbol}: {e}", flush=True)
+
+            except Exception as exc:
+                print(f"[VISION MONITOR] error: {exc}", flush=True)
 
     async def _market_scan_loop(self):
 

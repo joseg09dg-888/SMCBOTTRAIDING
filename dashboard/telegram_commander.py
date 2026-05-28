@@ -134,6 +134,7 @@ class TelegramCommander:
         self.state          = BotStatus()
         self._bot           = None
         self._app           = None
+        self._supervisor    = None  # set by Supervisor after construction
 
     def handle_command(self, command: str) -> CommandResult:
         """Synchronous command handler - used in tests and fallback mode."""
@@ -170,6 +171,8 @@ class TelegramCommander:
             "/footprint":        self._cmd_footprint,
             "/ftmo":             self._cmd_ftmo,
             "/axi":              self._cmd_axi,
+            "/ver_mt5":          self._cmd_ver_mt5,
+            "/proteger":         self._cmd_proteger,
 
             "/history":   self._cmd_history,
             "/memory":           self._cmd_memory,
@@ -188,6 +191,8 @@ class TelegramCommander:
             "/elliott":          self._cmd_elliott,
             "/edge":             self._cmd_edge,
             "/footprint":        self._cmd_footprint,
+            "/ver_mt5":          self._cmd_ver_mt5,
+            "/proteger":         self._cmd_proteger,
         }
 
         handler = handlers.get(cmd)
@@ -695,6 +700,71 @@ class TelegramCommander:
         analysis = agent.analyze_capture(cap)
         msg = agent.build_alert_message(analysis, "full")
         return CommandResult(success=True, message=msg, action="screenshot")
+
+    def _cmd_ver_mt5(self) -> CommandResult:
+        """Capture MT5 screen now and return Claude Vision analysis."""
+        try:
+            from agents.axi_vision_agent import AxiVisionAgent
+            agent = AxiVisionAgent()
+            report = agent.monitor_and_protect()
+            analysis = report.get("analysis", {})
+            alerts = report.get("alerts", [])
+            balance = report.get("balance", 0)
+            equity = analysis.get("patrimonio", 0)
+            positions = analysis.get("posiciones", [])
+            recommendation = analysis.get("accion_recomendada", "")
+
+            _START = 100_000.0
+            growth = balance - _START
+            growth_str = f"+${growth:,.0f}" if growth >= 0 else f"-${abs(growth):,.0f}"
+
+            lines = [
+                "<b>VISION MT5 - Analisis en vivo</b>",
+                f"Balance: ${balance:,.2f} ({growth_str} vs inicio $100,000)",
+                f"Patrimonio: ${equity:,.2f}",
+            ]
+            if positions:
+                lines.append("\nPosiciones:")
+                for p in positions:
+                    pnl = p.get("pnl", 0)
+                    sign = "+" if pnl >= 0 else ""
+                    lines.append(
+                        f"  {p.get('symbol','')} {p.get('direction','')} "
+                        f"{p.get('volume','')}lot  P&L: {sign}${pnl:.2f}"
+                    )
+            else:
+                lines.append("Sin posiciones abiertas")
+
+            if alerts:
+                lines.append("\nAlertas:")
+                for a in alerts:
+                    lines.append(f"  {a}")
+            if recommendation:
+                lines.append(f"\nRecomendacion: {recommendation}")
+
+            return CommandResult(success=True, message="\n".join(lines), action="ver_mt5")
+        except Exception as e:
+            return CommandResult(success=False, message=f"Error vision: {e}", action="ver_mt5")
+
+    def _cmd_proteger(self) -> CommandResult:
+        """Toggle protection mode -- screen checked every 2 min, auto-close on critical loss."""
+        try:
+            sup = self._supervisor  # type: ignore[attr-defined]
+            sup._vision_protect_mode = not sup._vision_protect_mode
+            state = "ACTIVADO" if sup._vision_protect_mode else "DESACTIVADO"
+            msg = (
+                f"Modo proteccion {state}\n"
+                + ("Revision cada 2 min. Cierre automatico si perdida > $500."
+                   if sup._vision_protect_mode
+                   else "Revision cada 5 min (normal).")
+            )
+            return CommandResult(success=True, message=msg, action="proteger")
+        except AttributeError:
+            return CommandResult(
+                success=False,
+                message="Error: supervisor no conectado al commander",
+                action="proteger",
+            )
 
     def _cmd_mirror(self) -> CommandResult:
         from agents.screen_vision_agent import ScreenVisionAgent
