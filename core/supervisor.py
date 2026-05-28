@@ -75,9 +75,9 @@ from memory.episodic_db import query_similar_episodes
 # Score thresholds
 
 DEMO_SCORE_THRESHOLD     = 70   # simulated crypto demo trades
-MT5_REAL_SCORE_THRESHOLD = 75   # real MT5 orders (8 filters + Claude confirm protect us)
-MT5_SCORE_AUTO_REDUCE    = 70   # fallback after 2h sin trades
-MT5_SCORE_REDUCE_AFTER_H = 2    # hours without trade before reducing threshold
+MT5_REAL_SCORE_THRESHOLD = 72   # sprint: 75→72 for 2-day Axi challenge
+MT5_SCORE_AUTO_REDUCE    = 68   # fallback after 1h sin trades (sprint mode)
+MT5_SCORE_REDUCE_AFTER_H = 1    # reduce faster in sprint (was 2h)
 DEMO_MAX_POSITIONS       = 5
 SCAN_INTERVAL_SEC        = 30
 
@@ -85,9 +85,9 @@ SCAN_INTERVAL_SEC        = 30
 CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
-MAX_DAILY_TRADES         = 2       # 2 positions max per day (was 1)
+MAX_DAILY_TRADES         = 3       # sprint: 3/day for 2-day Axi challenge (was 2)
 MAX_OPEN_POSITIONS       = 2       # max simultaneous open positions
-MIN_RR                   = 2.0    # minimum risk:reward (was 3.0 -- too restrictive)
+MIN_RR                   = 2.0    # minimum risk:reward
 
 # Dead hours (UTC) -- no new orders during low-liquidity windows
 DEAD_HOURS_UTC           = set(range(22, 24)) | {0, 1}  # 22:00-01:59 UTC (was 21-02)
