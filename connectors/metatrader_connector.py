@@ -276,6 +276,22 @@ class MT5Connector:
             if result.retcode != mt5.TRADE_RETCODE_DONE:
                 return {"error": f"Retcode {result.retcode}: {result.comment}"}
             logger.info(f"MT5 order filled: {symbol} {order_type} #{result.order} @{result.price}")
+
+            # Some brokers (Axi indices) strip SL/TP from the fill request.
+            # Immediately apply SL/TP as a separate SLTP modification request.
+            if (sl != 0.0 or tp != 0.0) and result.order:
+                sl_req = {
+                    "action":   mt5.TRADE_ACTION_SLTP,
+                    "position": result.order,
+                    "symbol":   symbol,
+                    "sl":       sl,
+                    "tp":       tp,
+                }
+                sl_result = mt5.order_send(sl_req)
+                if sl_result is None or sl_result.retcode != mt5.TRADE_RETCODE_DONE:
+                    rc = sl_result.retcode if sl_result else "None"
+                    logger.warning(f"MT5 SL/TP post-fill failed retcode={rc} — position #{result.order} has no SL!")
+
             return {"ticket": result.order, "status": "filled", "price": result.price}
         except Exception as e:
             logger.error(f"MT5 place_order error: {e}")
@@ -394,6 +410,31 @@ class MT5Connector:
             ), 2)
         except Exception:
             return 0.0
+
+    def modify_position_sl_tp(self, ticket: int, sl: float, tp: float = 0.0) -> bool:
+        """Set or update SL/TP on an existing open position."""
+        if not HAS_MT5:
+            return False
+        try:
+            pos = mt5.positions_get(ticket=ticket)
+            if not pos:
+                return False
+            p = pos[0]
+            request = {
+                "action":   mt5.TRADE_ACTION_SLTP,
+                "position": ticket,
+                "symbol":   p.symbol,
+                "sl":       sl,
+                "tp":       tp if tp != 0.0 else p.tp,
+            }
+            result = mt5.order_send(request)
+            ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+            if not ok and result is not None:
+                logger.warning(f"modify_sl_tp retcode {result.retcode}: {result.comment}")
+            return ok
+        except Exception as e:
+            logger.error(f"MT5 modify_position_sl_tp error: {e}")
+            return False
 
     def close_position(self, ticket: int) -> bool:
         if not HAS_MT5:
