@@ -65,6 +65,7 @@ from agents.geopolitical_agent import GeopoliticalAgent
 from agents.retail_psychology_agent import RetailPsychologyAgent
 from agents.alternative_data_agent import AlternativeDataAgent
 from agents.energy_frequency_agent import EnergyFrequencyAgent
+from memory.episodic_db import query_similar_episodes
 
 
 
@@ -314,10 +315,16 @@ class TradingSupervisor:
         self._retail_psych  = RetailPsychologyAgent()
         self._alt_data      = AlternativeDataAgent()
         self._energy        = EnergyFrequencyAgent()
+        # SMCAnalysisAgent -- Claude API final confirmation before real orders
+        try:
+            from agents.analysis_agent import SMCAnalysisAgent
+            self._smc_agent = SMCAnalysisAgent()
+        except Exception:
+            self._smc_agent = None
+        # df cache: populated each scan so _claude_confirm_trade can access latest df
+        self._df_cache: Dict[str, pd.DataFrame] = {}
 
-
-
-    # â"€â"€ Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 
 
@@ -1057,6 +1064,7 @@ class TradingSupervisor:
 
             return None
 
+        self._df_cache[symbol] = df  # available for _claude_confirm_trade
         smc = self._run_smc_lite(df)
 
         current_price = float(df["close"].iloc[-1])
@@ -1162,6 +1170,62 @@ class TradingSupervisor:
             return None
 
 
+
+    async def _claude_confirm_trade(self, signal: TradeSignal) -> tuple:
+        """
+        FILTER 8 -- Claude API final confirmation before placing a real order.
+        Uses claude-haiku (cheap/fast) + episodic memory to reason about the setup.
+        Returns (can_trade: bool, adjusted_score: int, summary: str).
+        Falls back to (True, original_score) if API unavailable.
+        """
+        if self._smc_agent is None:
+            return True, signal.decision_score, "no-api-key"
+        try:
+            df = self._df_cache.get(signal.symbol, pd.DataFrame())
+            # Regime from chaos agent
+            try:
+                chaos_sig = self._chaos.get_signal(df) if not df.empty else None
+                regime = chaos_sig.hurst.interpretation if chaos_sig else "unknown"
+            except Exception:
+                regime = "unknown"
+
+            smc_summary = (
+                f"{signal.symbol} {signal.timeframe} | Bias: "
+                f"{'bullish' if signal.signal_type == SignalType.LONG else 'bearish'}\n"
+                f"Score: {signal.decision_score} | RR: {signal.risk_reward:.1f}\n"
+                f"Entry: {signal.entry} | SL: {signal.stop_loss} | TP: {signal.take_profit}\n"
+                f"Regime: {regime}"
+            )
+            loop = asyncio.get_running_loop()
+            similar = await loop.run_in_executor(
+                None,
+                lambda: query_similar_episodes(
+                    signal.symbol, "SMC", regime, n=10, conn=self._episodic_conn
+                ),
+            )
+            result = await loop.run_in_executor(
+                None,
+                lambda: self._smc_agent.reason_with_context(
+                    symbol=signal.symbol,
+                    timeframe=signal.timeframe,
+                    smc_summary=smc_summary,
+                    similar_episodes=similar,
+                    regime=regime,
+                    base_score=signal.decision_score,
+                ),
+            )
+            if result.get("fallback"):
+                return True, signal.decision_score, "claude-fallback"
+            can_trade   = not result.get("wait_override", False)
+            adj_score   = result.get("adjusted_score", signal.decision_score)
+            confidence  = result.get("confidence", 50)
+            decision    = result.get("reasoning", {}).get("decision", "?")
+            justif      = result.get("reasoning", {}).get("justification", "")[:80]
+            summary     = f"{decision} conf={confidence} | {justif}"
+            return can_trade, adj_score, summary
+        except Exception as exc:
+            print(f"[CLAUDE] confirm error: {exc}", flush=True)
+            return True, signal.decision_score, "error-fallback"
 
     async def _send_mt5_real_order(self, signal: TradeSignal):
 
@@ -1318,6 +1382,20 @@ class TradingSupervisor:
             return
 
 
+
+        # ── FILTER 8: Claude API final confirmation ───────────────────────
+        can_proceed, adj_score, claude_summary = await self._claude_confirm_trade(signal)
+        signal.decision_score = adj_score
+        if not can_proceed:
+            print(f"[CLAUDE] {signal.symbol}: BLOQUEADO -- {claude_summary}", flush=True)
+            try:
+                await self.telegram.send_glint_alert(
+                    f"<b>CLAUDE VETO</b>\n{signal.symbol}: setup rechazado\n{claude_summary}"
+                )
+            except Exception:
+                pass
+            return
+        print(f"[CLAUDE] {signal.symbol}: CONFIRMADO -- {claude_summary}", flush=True)
 
         vc = VolumeCalculator()
 
