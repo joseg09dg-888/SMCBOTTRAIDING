@@ -1574,6 +1574,8 @@ class TradingSupervisor:
         """Every 60s: log open positions + detect closures → update learning + FTMO."""
 
         _known_tickets: set = set()
+        # Tickets flagged for close-on-market-open (e.g. US30 opened while market was closed)
+        _close_when_open: set = {60782139}  # US30 ticket opened without SL
 
         while self._running:
 
@@ -1588,6 +1590,27 @@ class TradingSupervisor:
                 loop = asyncio.get_running_loop()
 
                 positions = await loop.run_in_executor(None, self.mt5.get_positions)
+
+                # ── Auto-close positions flagged for close-on-open ────────
+                for p in positions:
+                    ticket = p.get("ticket", 0)
+                    if ticket in _close_when_open:
+                        pnl = p.get("profit", 0.0)
+                        ok = await loop.run_in_executor(
+                            None, lambda t=ticket: self.mt5.close_position(t)
+                        )
+                        if ok:
+                            _close_when_open.discard(ticket)
+                            msg = f"[AUTO-CLOSE] US30 #{ticket} cerrado al abrir mercado | P&L: ${pnl:+.2f}"
+                            print(msg, flush=True)
+                            try:
+                                await self.telegram.send_glint_alert(
+                                    f"<b>CIERRE AUTOMATICO</b>\nUS30 #{ticket} cerrado al abrir mercado\nP&L: ${pnl:+.2f} USD"
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            print(f"[AUTO-CLOSE] US30 #{ticket} intento fallido (mercado cerrado aun)", flush=True)
 
                 current_tickets = {p["ticket"] for p in positions}
 
