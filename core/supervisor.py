@@ -898,7 +898,7 @@ class TradingSupervisor:
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        if signal.decision_score < 65:
+        if signal.decision_score < 55:
             return 0
 
         bias = "bullish" if signal.signal_type == SignalType.LONG else "bearish"
@@ -979,7 +979,14 @@ class TradingSupervisor:
             futures = [executor.submit(fn) for fn in tasks]
             bonus = sum(f.result() for f in as_completed(futures))
 
-        return int(max(-30, min(60, bonus)))
+        bonus_clamped = int(max(-30, min(60, bonus)))
+        base = signal.decision_score
+        print(
+            f"[ENRICH] {signal.symbol} base={base} bonus={bonus_clamped:+d} "
+            f"final={base + bonus_clamped} | {signal.signal_type.value.upper()}",
+            flush=True,
+        )
+        return bonus_clamped
 
 
 
