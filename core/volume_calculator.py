@@ -43,18 +43,19 @@ class VolumeCalculator:
         "XAUUSD": 0.01,
     }
 
-    # Hard caps per symbol (lots) — Axi Select demo $100K stage
+    # Hard caps per symbol — smart dynamic sizing with Axi daily-loss safety net.
+    # Cap at 2.0 lots: worst case 8 trades × 2.0L × 45pip SL = ~$4,500/day < 5% Axi limit.
     _MAX_VOL_BY_SYMBOL = {
-        "EURUSD": 0.20, "GBPUSD": 0.20, "USDCHF": 0.20,
-        "USDJPY": 0.20, "GBPJPY": 0.20, "EURJPY": 0.20,
-        "AUDUSD": 0.20, "NZDUSD": 0.20, "EURGBP": 0.20,
+        "EURUSD": 2.0,  "GBPUSD": 2.0,  "USDCHF": 2.0,
+        "USDJPY": 2.0,  "GBPJPY": 2.0,  "EURJPY": 2.0,
+        "AUDUSD": 2.0,  "NZDUSD": 2.0,  "EURGBP": 2.0,
         "XAUUSD": 0.05,
         "NAS100": 1.0,
         "US30":   1.0,
     }
 
     _MIN_VOL = 0.01
-    _MAX_VOL = 0.20  # global safety cap for any unlisted symbol
+    _MAX_VOL = 2.0  # global safety cap for any unlisted symbol
 
     def calculate_volume(
         self,

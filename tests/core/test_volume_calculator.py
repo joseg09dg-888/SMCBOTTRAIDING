@@ -33,9 +33,9 @@ class TestVolumeCalculator:
 
     def test_volume_max_clamped(self):
         vc = VolumeCalculator()
-        # Very small SL -> huge calculated volume -> clamped to max cap (0.20 for EURUSD)
+        # Very small SL -> huge calculated volume -> clamped to 2.0 for EURUSD
         vol = vc.calculate_volume(10_000_000, 1.1000, 1.0999, "EURUSD")
-        assert vol == 0.20
+        assert vol == 2.0
 
     def test_volume_rounds_to_2dp(self):
         vc = VolumeCalculator()
@@ -44,9 +44,8 @@ class TestVolumeCalculator:
 
     def test_risk_pct_applied(self):
         vc = VolumeCalculator()
-        # Both hit the 0.20 cap for EURUSD with large capital — use a symbol without cap
-        vol_half = vc.calculate_volume(10_000, 1.1000, 1.0950, "EURUSD", risk_pct=0.0025)
-        vol_full = vc.calculate_volume(10_000, 1.1000, 1.0950, "EURUSD", risk_pct=0.005)
+        vol_half = vc.calculate_volume(100_000, 1.1000, 1.0950, "EURUSD", risk_pct=0.0025)
+        vol_full = vc.calculate_volume(100_000, 1.1000, 1.0950, "EURUSD", risk_pct=0.005)
         assert vol_full >= vol_half
 
     def test_get_stage_volume_demo(self):
