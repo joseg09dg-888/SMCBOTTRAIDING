@@ -43,15 +43,18 @@ class VolumeCalculator:
         "XAUUSD": 0.01,
     }
 
-    # Hard caps per symbol (lots) — safety net regardless of calculation
+    # Hard caps per symbol (lots) — Axi Select demo $100K stage
     _MAX_VOL_BY_SYMBOL = {
+        "EURUSD": 0.20, "GBPUSD": 0.20, "USDCHF": 0.20,
+        "USDJPY": 0.20, "GBPJPY": 0.20, "EURJPY": 0.20,
+        "AUDUSD": 0.20, "NZDUSD": 0.20, "EURGBP": 0.20,
         "XAUUSD": 0.05,
-        "NAS100": 3.0,
-        "US30":   3.0,
+        "NAS100": 1.0,
+        "US30":   1.0,
     }
 
     _MIN_VOL = 0.01
-    _MAX_VOL = 10.0
+    _MAX_VOL = 0.20  # global safety cap for any unlisted symbol
 
     def calculate_volume(
         self,
@@ -63,18 +66,33 @@ class VolumeCalculator:
     ) -> float:
         sl_distance = abs(entry - stop_loss)
         if sl_distance == 0.0:
-            return self._MIN_VOL
+            return 0.0  # SL invalido — no operar
 
         pip_size  = self._PIP_SIZE.get(symbol, 0.0001)
         pip_value = self._PIP_VALUE.get(symbol, 10.0)
 
+        # Dynamic pip value for JPY pairs: (pip_size * lot_size) / rate
+        if symbol in ("USDJPY", "GBPJPY", "EURJPY") and entry > 0:
+            pip_value = (pip_size * 100_000) / entry
+
+        if pip_size == 0.0:
+            return 0.0
         pips     = sl_distance / pip_size
         risk_usd = capital * risk_pct
+        if pips == 0.0 or pip_value == 0.0:
+            return 0.0
         volume   = risk_usd / (pips * pip_value)
 
         min_vol = self._MIN_VOL_BY_SYMBOL.get(symbol, self._MIN_VOL)
         max_vol = self._MAX_VOL_BY_SYMBOL.get(symbol, self._MAX_VOL)
         volume  = max(min_vol, min(max_vol, volume))
+
+        # Safety check: if broker minimum forces >2.5x allowed risk, skip the trade
+        if min_vol > self._MIN_VOL and capital > 0:
+            actual_risk = volume * pips * pip_value
+            if actual_risk > capital * risk_pct * 2.5:
+                return 0.0
+
         return round(volume, 2)
 
     def get_stage_volume(self, capital: float) -> float:
