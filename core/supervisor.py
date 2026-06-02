@@ -1325,23 +1325,35 @@ class TradingSupervisor:
         except Exception as _te:
             print(f"[TREND-H4] {signal.symbol}: error tendencia ({_te}), continua", flush=True)
 
-        # ── FILTER 4: RR minimo — usa precio mercado si signal.entry == 0 ───
+        # ── FILTER 4: RR minimo — SIEMPRE usa precio actual (signal.entry puede ser H4 stale) ───
         if tp_val > 0 and sl_val > 0:
             try:
                 import MetaTrader5 as _mt5
                 _tick = _mt5.symbol_info_tick(signal.symbol)
-                _market_price = (_tick.ask + _tick.bid) / 2 if _tick else 0.0
+                _market_price = (_tick.ask if order_type == "BUY" else _tick.bid) if _tick else 0.0
             except Exception:
                 _market_price = 0.0
-            _entry_ref = signal.entry if (signal.entry and signal.entry > 0) else _market_price
+            # Always use current market price — H4 signal entry can be hours old
+            _entry_ref = _market_price if _market_price > 0 else (signal.entry if signal.entry and signal.entry > 0 else 0)
             if _entry_ref > 0:
+                # Slippage guard: si mercado movio > 1x SL_dist desde la señal, el setup es stale
+                if signal.entry and signal.entry > 0 and _market_price > 0:
+                    _sl_dist_signal = abs(signal.entry - sl_val)
+                    _slippage = abs(_market_price - signal.entry)
+                    if _sl_dist_signal > 0 and _slippage > _sl_dist_signal:
+                        print(
+                            f"[MT5] {signal.symbol}: SETUP STALE -- mercado movio {_slippage:.4f} "
+                            f"(> SL_dist {_sl_dist_signal:.4f}), skip",
+                            flush=True,
+                        )
+                        return
                 sl_dist = abs(_entry_ref - sl_val)
                 tp_dist = abs(_entry_ref - tp_val)
                 rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
                 if rr < MIN_RR:
-                    print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {MIN_RR} minimo (entry_ref={_entry_ref:.5f}), skip", flush=True)
+                    print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {MIN_RR} minimo (entry={_entry_ref:.5f}), skip", flush=True)
                     return
-                print(f"[RR-OK] {signal.symbol}: RR={rr:.2f} >= {MIN_RR}", flush=True)
+                print(f"[RR-OK] {signal.symbol}: RR={rr:.2f} >= {MIN_RR} (entry={_entry_ref:.5f})", flush=True)
 
 
 
@@ -1481,7 +1493,15 @@ class TradingSupervisor:
             print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 1%", flush=True)
         else:
             risk_pct = 0.005
-        volume = vc.calculate_volume(live_capital, signal.entry or sl_val, sl_val, signal.symbol, risk_pct=risk_pct)
+        # Use current market price for correct lot sizing (signal.entry can be H4 stale)
+        try:
+            import MetaTrader5 as _mt5
+            _tick_vol = _mt5.symbol_info_tick(signal.symbol)
+            _fill_price = (_tick_vol.ask if order_type == "BUY" else _tick_vol.bid) if _tick_vol else 0.0
+        except Exception:
+            _fill_price = 0.0
+        _entry_for_vol = _fill_price if _fill_price > 0 else (signal.entry or sl_val)
+        volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
 
         print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} vol={volume} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
 
