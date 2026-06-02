@@ -74,9 +74,9 @@ from memory.episodic_db import query_similar_episodes
 
 # Score thresholds
 
-DEMO_SCORE_THRESHOLD     = 70   # simulated crypto demo trades
-MT5_REAL_SCORE_THRESHOLD = 72   # sprint: 75→72 for 2-day Axi challenge
-MT5_SCORE_AUTO_REDUCE    = 68   # fallback after 1h sin trades (sprint mode)
+DEMO_SCORE_THRESHOLD     = 60   # simulated crypto demo trades
+MT5_REAL_SCORE_THRESHOLD = 62   # sprint: lowered to get more setups (was 72)
+MT5_SCORE_AUTO_REDUCE    = 55   # fallback after 1h sin trades (was 68)
 MT5_SCORE_REDUCE_AFTER_H = 1    # reduce faster in sprint (was 2h)
 DEMO_MAX_POSITIONS       = 5
 SCAN_INTERVAL_SEC        = 30
@@ -85,12 +85,12 @@ SCAN_INTERVAL_SEC        = 30
 CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
-MAX_DAILY_TRADES         = 3       # sprint: 3/day for 2-day Axi challenge (was 2)
+MAX_DAILY_TRADES         = 8       # sprint: 8/day (was 3, need more trades to grow)
 MAX_OPEN_POSITIONS       = 2       # max simultaneous open positions
-MIN_RR                   = 2.0    # minimum risk:reward
+MIN_RR                   = 2.0    # minimo RR 2:1 — gana mas de lo que arriesga
 
 # Dead hours (UTC) -- no new orders during low-liquidity windows
-DEAD_HOURS_UTC           = set(range(22, 24)) | {0, 1}  # 22:00-01:59 UTC (was 21-02)
+DEAD_HOURS_UTC           = set(range(22, 24)) | {0, 1, 5, 6}  # 22-01 UTC + 05-06 UTC (zona pérdidas historicas)
 
 
 
@@ -279,7 +279,7 @@ class TradingSupervisor:
 
         self._reporter   = NightlyReporter(conn=self._episodic_conn)
 
-        self._open_episodes: Dict[int, int] = {}  # ticket -> episode_id
+        self._open_episodes: Dict[int, int] = self._load_open_episodes()
 
         # Load daily trade count from disk so pm2 restarts don't reset the limit
         self._daily_trades: Dict[str, int] = self._load_daily_trades()
@@ -290,7 +290,7 @@ class TradingSupervisor:
 
         self._ftmo_state = FTMOAgent.new_challenge(
 
-            initial_balance=capital,
+            initial_balance=100_000.0,  # Axi Select account size — NOT startup capital param
 
             challenge_type=ChallengeType.TWO_STEP,
 
@@ -337,6 +337,8 @@ class TradingSupervisor:
             "executed": 0,
             "last_trade_ts": None,
         }
+        # Peak-profit tracker: ticket → max PnL seen this session
+        self._position_peaks: Dict[int, float] = {}
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -610,6 +612,11 @@ class TradingSupervisor:
 
             bal  = info.get("balance", 0)
 
+            # Sync capital with real MT5 balance
+            if bal > 0:
+                self.capital = bal
+                self.risk_manager.update_capital(bal)
+
             print(f"  MT5:           CONECTADO -- Balance ${bal:,.2f}")
 
             print(f"  Forex:         {', '.join(MT5_SYMBOLS)}")
@@ -646,27 +653,32 @@ class TradingSupervisor:
 
 
 
-        await asyncio.gather(
-
-            self.commander.start_polling(),
-
-            self.glint.connect(),
-
-            self._market_scan_loop(),
-
-            self._position_monitor_loop(),
-
-            self._learning_loop(),
-
-            self._research_loop(),
-
-            self._goals_loop(),
-
-            self._nightly_report_loop(),
-
-            self._vision_monitor_loop(),
-
-        )
+        while self._running:
+            try:
+                results = await asyncio.gather(
+                    self.commander.start_polling(),
+                    self.glint.connect(),
+                    self._market_scan_loop(),
+                    self._position_monitor_loop(),
+                    self._learning_loop(),
+                    self._research_loop(),
+                    self._goals_loop(),
+                    self._nightly_report_loop(),
+                    self._vision_monitor_loop(),
+                    return_exceptions=True,
+                )
+                for r in results:
+                    if isinstance(r, Exception) and not isinstance(r, asyncio.CancelledError):
+                        print(f"[RUN] Task excepcion: {r.__class__.__name__}: {r}", flush=True)
+            except asyncio.CancelledError:
+                break
+            except Exception as _run_exc:
+                print(f"[RUN] Gather crasheo: {_run_exc.__class__.__name__}: {_run_exc} -- reiniciando en 10s", flush=True)
+                await asyncio.sleep(10)
+            if not self._running:
+                break
+            print("[RUN] Todos los loops completaron -- reiniciando en 5s", flush=True)
+            await asyncio.sleep(5)
 
 
 
@@ -845,9 +857,13 @@ class TradingSupervisor:
     def _load_daily_trades(self) -> Dict[str, int]:
         """Load daily MT5 trade count from disk — survives pm2 restarts."""
         import json
+        from datetime import date, timedelta
         try:
             with open(self._DAILY_TRADES_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+                loaded = json.load(f)
+            # Purge entries older than 7 days to prevent indefinite growth
+            cutoff = (date.today() - timedelta(days=7)).isoformat()
+            return {k: v for k, v in loaded.items() if k >= cutoff}
         except Exception:
             return {}
 
@@ -1275,29 +1291,50 @@ class TradingSupervisor:
 
             return
 
-        if now_utc.weekday() == 4 and now_utc.hour >= 16:  # viernes 16:00+ UTC
-
-            print(f"[MT5] {signal.symbol}: viernes 16:00+ UTC, skip", flush=True)
-
+        if now_utc.weekday() == 4 and now_utc.hour >= 20:  # viernes 20:00+ UTC (Axi cierra 21:00)
+            print(f"[MT5] {signal.symbol}: viernes 20:00+ UTC, skip", flush=True)
             return
 
 
 
-        # ── FILTER 4: RR minimo 1:2 ───────────────────────────────────────
+        # ── FILTER 3b: Tendencia H4 — solo entrar a favor del trend ─────────
+        try:
+            df_h4 = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: self.mt5.get_ohlcv(signal.symbol, "H4", 12)
+            )
+            if df_h4 is not None and len(df_h4) >= 8:
+                avg_fast = df_h4["close"].iloc[-3:].mean()    # 3 velas recientes
+                avg_slow = df_h4["close"].iloc[-11:-3].mean() # 8 velas anteriores sin solapamiento
+                h4_bias = "LONG" if avg_fast > avg_slow else "SHORT"
+                sig_dir  = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
+                if sig_dir != h4_bias:
+                    print(
+                        f"[TREND-H4] {signal.symbol}: {sig_dir} contra tendencia H4 ({h4_bias})"
+                        f" avg_fast={avg_fast:.4f} avg_slow={avg_slow:.4f} -- skip",
+                        flush=True,
+                    )
+                    return
+                print(f"[TREND-H4] {signal.symbol}: {sig_dir} a favor H4 ({h4_bias}) OK", flush=True)
+        except Exception as _te:
+            print(f"[TREND-H4] {signal.symbol}: error tendencia ({_te}), continua", flush=True)
 
-        if tp_val > 0 and sl_val > 0 and signal.entry and signal.entry > 0:
-
-            sl_dist = abs(signal.entry - sl_val)
-
-            tp_dist = abs(signal.entry - tp_val)
-
-            rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
-
-            if rr < MIN_RR:
-
-                print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {MIN_RR} minimo, skip", flush=True)
-
-                return
+        # ── FILTER 4: RR minimo — usa precio mercado si signal.entry == 0 ───
+        if tp_val > 0 and sl_val > 0:
+            try:
+                import MetaTrader5 as _mt5
+                _tick = _mt5.symbol_info_tick(signal.symbol)
+                _market_price = (_tick.ask + _tick.bid) / 2 if _tick else 0.0
+            except Exception:
+                _market_price = 0.0
+            _entry_ref = signal.entry if (signal.entry and signal.entry > 0) else _market_price
+            if _entry_ref > 0:
+                sl_dist = abs(_entry_ref - sl_val)
+                tp_dist = abs(_entry_ref - tp_val)
+                rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
+                if rr < MIN_RR:
+                    print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {MIN_RR} minimo (entry_ref={_entry_ref:.5f}), skip", flush=True)
+                    return
+                print(f"[RR-OK] {signal.symbol}: RR={rr:.2f} >= {MIN_RR}", flush=True)
 
 
 
@@ -1335,7 +1372,8 @@ class TradingSupervisor:
 
             self._ftmo_state.current_balance = acc_info.get("balance", self.capital)
 
-            can_trade, reason = self._ftmo_agent.can_trade(self._ftmo_state)
+            _equity = acc_info.get("equity", self._ftmo_state.current_balance)
+            can_trade, reason = self._ftmo_agent.can_trade(self._ftmo_state, equity=_equity)
 
             if not can_trade:
 
@@ -1391,6 +1429,24 @@ class TradingSupervisor:
 
 
 
+        # ── FILTER 7c: Posiciones abiertas perdiendo ─────────────────────────
+        if existing:
+            _bal = self._ftmo_state.current_balance or self.capital
+            _total_pnl = sum(p.get("profit", 0.0) for p in existing)
+            _loss_limit = _bal * 0.01  # bloquear nuevas entradas si portfolio pierde >1%
+            for p in existing:
+                _pnl  = p.get("profit", 0.0)
+                _pct  = abs(_pnl) / _bal * 100 if _bal > 0 else 0
+                _tag  = f"perdiendo ${abs(_pnl):.2f} ({_pct:.2f}%)" if _pnl < 0 else f"ganando ${_pnl:.2f} ({_pct:.2f}%)"
+                print(f"[LIVE-POS] {p.get('symbol','?')} {p.get('type','?')} {_tag}", flush=True)
+            if _total_pnl < -_loss_limit:
+                print(
+                    f"[FILTER-LOSS] {signal.symbol}: skip -- "
+                    f"portfolio perdiendo ${abs(_total_pnl):.2f} (limite=${_loss_limit:.0f} = 1% balance)",
+                    flush=True,
+                )
+                return
+
         # ── FILTER 8: Claude API final confirmation ───────────────────────
         can_proceed, adj_score, claude_summary = await self._claude_confirm_trade(signal)
         signal.decision_score = adj_score
@@ -1407,7 +1463,18 @@ class TradingSupervisor:
 
         vc = VolumeCalculator()
 
-        volume = vc.calculate_volume(self.capital, signal.entry or sl_val, sl_val, signal.symbol)
+        # Use real MT5 balance (not startup capital=1000) for correct lot sizing
+        live_capital = self._ftmo_state.current_balance if self._ftmo_state.current_balance > 1000 else self.capital
+        # Dynamic risk: 2% for very high confidence (score>=90), 1% for high (>=75), 0.5% normal
+        if signal.decision_score >= 90:
+            risk_pct = 0.02
+            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 2% (alta confianza)", flush=True)
+        elif signal.decision_score >= 75:
+            risk_pct = 0.01
+            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 1%", flush=True)
+        else:
+            risk_pct = 0.005
+        volume = vc.calculate_volume(live_capital, signal.entry or sl_val, sl_val, signal.symbol, risk_pct=risk_pct)
 
         print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} vol={volume} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
 
@@ -1445,6 +1512,12 @@ class TradingSupervisor:
 
                     "entry": result.get("price", signal.entry),
 
+                    "sl": sl_val,
+
+                    "tp": tp_val,
+
+                    "ticket": result["ticket"],
+
                     "score": signal.decision_score,
 
                     "setup_type": "SMC",
@@ -1452,6 +1525,7 @@ class TradingSupervisor:
                 }, conn=self._episodic_conn)
 
                 self._open_episodes[result["ticket"]] = eid
+                self._save_open_episodes()
 
             except Exception as _ep_err:
 
@@ -1503,10 +1577,11 @@ class TradingSupervisor:
 
         # One slot per symbol — no duplicate positions on same pair
         if any(d.signal.symbol == signal.symbol for d in self._demo_trades):
+            print(f"[DEMO SKIP] {signal.symbol}: par ya tiene posicion demo abierta (score={signal.decision_score})", flush=True)
             return
 
         if len(self._demo_trades) >= DEMO_MAX_POSITIONS:
-
+            print(f"[DEMO SKIP] {signal.symbol}: limite {DEMO_MAX_POSITIONS} posiciones demo alcanzado (score={signal.decision_score})", flush=True)
             return
 
 
@@ -1637,9 +1712,12 @@ class TradingSupervisor:
                 positions = await loop.run_in_executor(None, self.mt5.get_positions)
 
                 # ── Flag positions with no SL for auto-close ─────────────
+                # Only auto-close INDEX positions (US30/NAS100) without SL.
+                # Forex/gold SL can fail to stick on first check — give them time to retry.
+                _INDEX_SYMBOLS = {"US30", "NAS100"}
                 current_tickets = {p["ticket"] for p in positions}
                 for p in positions:
-                    if p.get("sl", 0.0) == 0.0:
+                    if p.get("sl", 0.0) == 0.0 and p.get("symbol", "") in _INDEX_SYMBOLS:
                         _close_when_open.add(p["ticket"])
                 # Remove tickets that are no longer open (already closed externally)
                 _close_when_open -= (set(_close_when_open) - current_tickets)
@@ -1677,6 +1755,7 @@ class TradingSupervisor:
                 for ticket in closed:
 
                     episode_id = self._open_episodes.pop(ticket, None)
+                    self._save_open_episodes()
 
                     deal = await loop.run_in_executor(
 
@@ -1693,29 +1772,28 @@ class TradingSupervisor:
                     result = "WIN" if pnl > 0 else "LOSS"
 
                     # Update episodic memory
-
-                    if episode_id:
-
+                    if not episode_id:
+                        # Bot reiniciado — buscar episode por ticket
                         try:
-
+                            row = self._episodic_conn.execute(
+                                "SELECT id FROM episodes WHERE ticket=? ORDER BY id DESC LIMIT 1",
+                                (ticket,)
+                            ).fetchone()
+                            if row:
+                                episode_id = row["id"]
+                        except Exception:
+                            pass
+                    if episode_id:
+                        try:
                             update_episode_result(
-
                                 episode_id,
-
                                 exit_price=deal.get("price", 0.0),
-
                                 pnl=pnl,
-
                                 result=result,
-
-                                lesson=f"Score={self._open_episodes.get(ticket, '?')} -> {result} PnL={pnl:+.2f}",
-
+                                lesson=f"Score → {result} PnL={pnl:+.2f}",
                                 conn=self._episodic_conn,
-
                             )
-
                         except Exception as _ue:
-
                             print(f"[LEARN] update error: {_ue}", flush=True)
 
                     # Update FTMO state
@@ -1726,6 +1804,17 @@ class TradingSupervisor:
 
                     except Exception:
 
+                        pass
+
+                    # Sync capital with real MT5 balance after each trade close
+                    try:
+                        _loop_cap = asyncio.get_running_loop()
+                        _acc = await _loop_cap.run_in_executor(None, self.mt5.get_account_info)
+                        _new_bal = _acc.get("balance", 0)
+                        if _new_bal > 0:
+                            self.capital = _new_bal
+                            self.risk_manager.update_capital(_new_bal)
+                    except Exception:
                         pass
 
                     print(
@@ -1767,26 +1856,342 @@ class TradingSupervisor:
                 if positions:
 
                     total_pnl = sum(p.get("profit", 0.0) for p in positions)
+                    _bal_ref  = self._ftmo_state.current_balance or self.capital
+                    _total_tag = "GANANDO" if total_pnl >= 0 else "PERDIENDO"
 
-                    lines = [f"[POS] {len(positions)} abiertas | P&L vivo: {total_pnl:+.2f} USD"]
+                    lines = [f"[POS] {len(positions)} abiertas | {_total_tag} ${abs(total_pnl):.2f} vivo"]
 
                     for p in positions:
 
+                        _pnl  = p.get("profit", 0.0)
+                        _pct  = abs(_pnl) / _bal_ref * 100 if _bal_ref > 0 else 0
+                        _tag  = f"GANANDO  ${_pnl:.2f} (+{_pct:.2f}%)" if _pnl >= 0 else f"PERDIENDO ${abs(_pnl):.2f} (-{_pct:.2f}%)"
                         lines.append(
-
-                            f"  {p['symbol']} {p['type']} {p['volume']}lot "
-
-                            f"P&L: {p.get('profit', 0.0):+.2f} USD"
-
+                            f"  {p['symbol']} {p['type']} {p['volume']}lot → {_tag}"
                         )
 
                     print("\n".join(lines), flush=True)
+
+                    # Persist positions for wakeup recovery
+                    try:
+                        from core.wakeup_recovery import save_positions as _save_pos
+                        _save_pos([{
+                            "symbol": p.get("symbol", "?"),
+                            "entry": p.get("price_open", 0.0),
+                            "direction": "long" if p.get("type") == "BUY" else "short",
+                            "size": p.get("volume", 0.0),
+                            "ticket": p.get("ticket", 0),
+                            "sl": p.get("sl", 0.0),
+                            "tp": p.get("tp", 0.0),
+                        } for p in positions])
+                    except Exception:
+                        pass
+
+                # Auto-cierre si alguna posicion supera limite de perdida
+                await self._manage_open_positions()
 
             except Exception as exc:
 
                 print(f"[POS MONITOR] error: {exc}", flush=True)
 
 
+
+    # -- Adaptive threshold & autonomous position management ----------------
+
+    def _load_open_episodes(self) -> dict:
+        import json
+        path = "memory/open_episodes.json"
+        try:
+            if os.path.exists(path):
+                raw = json.loads(open(path).read())
+                return {int(k): v for k, v in raw.items()}
+        except Exception:
+            pass
+        return {}
+
+    def _save_open_episodes(self) -> None:
+        import json
+        path = "memory/open_episodes.json"
+        try:
+            with open(path, "w", encoding="utf-8") as _f:
+                _f.write(json.dumps(self._open_episodes))
+        except Exception:
+            pass
+
+    def _adaptive_threshold(self) -> int:
+        """
+        Calcula threshold dinamico basado en win rate de ultimos 10 trades reales.
+        Cuanto peor el rendimiento reciente, mas selectivo se vuelve el bot.
+        """
+        try:
+            from datetime import timedelta
+            desde = datetime.now(timezone.utc) - timedelta(days=14)
+            hasta = datetime.now(timezone.utc)
+            import MetaTrader5 as _mt5
+            deals = _mt5.history_deals_get(desde, hasta)
+            closed = [d for d in (deals or []) if d.type in (0, 1) and d.entry == 1]
+            recent = sorted(closed, key=lambda d: d.time)[-10:]
+            if len(recent) < 3:
+                # Pocos datos → threshold moderado pero no paralizar
+                thr = MT5_SCORE_AUTO_REDUCE
+                print(f"[ADAPT-THR] datos insuficientes ({len(recent)} trades) → threshold={thr}", flush=True)
+                return thr
+            wins = sum(1 for d in recent if d.profit > 0)
+            wr   = wins / len(recent)
+            if wr >= 0.60:
+                thr = 62   # ganando bien → mas trades
+            elif wr >= 0.45:
+                thr = 68   # rendimiento OK
+            elif wr >= 0.30:
+                thr = 75   # rendimiento malo → mas selectivo
+            else:
+                thr = 75   # perdiendo — cap 75, no paralizar el bot aunque WR sea bajo
+            print(f"[ADAPT-THR] ultimos {len(recent)} trades WR={wr*100:.0f}% → threshold={thr}", flush=True)
+            # Aplicar ajuste del learner si hay datos suficientes
+            try:
+                thr = int(self._learner.effective_threshold(thr, "SMC", "unknown", "unknown"))
+                print(f"[ADAPT-THR] learner ajuste → threshold final={thr}", flush=True)
+            except Exception:
+                pass
+            return thr
+        except Exception as _e:
+            return MT5_REAL_SCORE_THRESHOLD  # fallback al default
+
+    async def _manage_open_positions(self):
+        """
+        Active position management:
+        0. Anti-drag: close worst loser when net P&L is negative and loser > winner
+        1. Auto-close on loss > 0.8% balance
+        1b. Peak-profit retracement: close when profit falls 25% from peak (peak >= $20)
+        2. Move SL to breakeven when profit >= 1R (SL distance)
+        3. Trail SL at 1R below/above price when profit >= 2R
+        4. Hard-close profitable positions after MAX_HOLD_HOURS (lock in gains)
+        """
+        MAX_HOLD_HOURS = 8  # close winning positions after 8h to avoid reversal
+        try:
+            loop = asyncio.get_running_loop()
+            positions = await loop.run_in_executor(None, self.mt5.get_positions)
+            if not positions:
+                return
+            bal = self._ftmo_state.current_balance or self.capital
+            limit_usd = bal * 0.008  # 0.8% = early stop
+            import MetaTrader5 as _mt5
+            from datetime import timezone as _tz
+
+            # ── 0. Anti-drag: close worst loser when it cancels out winners ───
+            # If net P&L is negative AND worst loser has lost more than total winners,
+            # close the loser immediately to protect gains.
+            NET_DRAG_THRESHOLD = -20.0   # trigger when net open P&L < -$20
+            MIN_DRAG_LOSS_USD  = -35.0   # only act if the losing position has lost >= $35
+            all_pnls   = [p.get("profit", 0.0) for p in positions]
+            net_pnl    = sum(all_pnls)
+            total_wins = sum(x for x in all_pnls if x > 0)
+            worst_loss = min(all_pnls) if all_pnls else 0.0
+
+            if (net_pnl < NET_DRAG_THRESHOLD
+                    and worst_loss < MIN_DRAG_LOSS_USD
+                    and abs(worst_loss) > total_wins):
+                # Find the position with the worst loss
+                drag_pos = min(positions, key=lambda p: p.get("profit", 0.0))
+                drag_ticket = drag_pos["ticket"]
+                drag_sym    = drag_pos.get("symbol", "?")
+                drag_pnl    = drag_pos.get("profit", 0.0)
+                print(
+                    f"[ANTI-DRAG] Neto abierto=${net_pnl:+.2f} | "
+                    f"{drag_sym} #{drag_ticket} perdiendo ${drag_pnl:.2f} > ganadores ${total_wins:.2f} "
+                    f"→ cerrando perdedora para proteger ganancias",
+                    flush=True,
+                )
+                ok = await loop.run_in_executor(
+                    None, lambda t=drag_ticket: self.mt5.close_position(t)
+                )
+                if ok:
+                    self._position_peaks.pop(drag_ticket, None)
+                    try:
+                        await self.telegram.send_glint_alert(
+                            f"<b>ANTI-DRAG CLOSE</b>\n{drag_sym} #{drag_ticket}\n"
+                            f"Perdida ${abs(drag_pnl):.2f} cancelaba ganancias (neto ${net_pnl:+.2f})\n"
+                            f"→ Perdedora cerrada. Ganadoras protegidas."
+                        )
+                    except Exception:
+                        pass
+                    # Reload positions after close
+                    positions = await loop.run_in_executor(None, self.mt5.get_positions)
+                    if not positions:
+                        return
+
+            for p in positions:
+                pnl    = p.get("profit", 0.0)
+                ticket = p["ticket"]
+                sym    = p.get("symbol", "?")
+                entry  = p.get("price_open", 0.0)
+                sl_cur = p.get("sl", 0.0)
+                tp_cur = p.get("tp", 0.0)
+                pos_type = p.get("type", "BUY")
+                is_buy = pos_type == "BUY"
+                open_time = p.get("time", 0)  # Unix timestamp
+
+                # ── 0b. No SL protection: retry setting SL if it's missing ───
+                if sl_cur == 0.0 and tp_cur > 0 and entry > 0:
+                    import time as _t
+                    _t.sleep(1.0)
+                    ok = await loop.run_in_executor(
+                        None,
+                        lambda t=ticket, e=entry, tp=tp_cur, ib=is_buy:
+                            self.mt5.modify_position_sl_tp(
+                                t,
+                                round(e * (0.995 if ib else 1.005), 5),
+                                tp,
+                            )
+                    )
+                    if ok:
+                        print(
+                            f"[SL-RETRY] {sym} #{ticket} SL aplicado en diferido",
+                            flush=True,
+                        )
+                    else:
+                        # If SL still can't be set, close the position to protect capital
+                        if pnl < -limit_usd * 0.3:  # at 30% of normal limit
+                            print(
+                                f"[NO-SL CLOSE] {sym} #{ticket} sin SL y perdiendo ${abs(pnl):.2f} → cerrando",
+                                flush=True,
+                            )
+                            await loop.run_in_executor(
+                                None, lambda t=ticket: self.mt5.close_position(t)
+                            )
+                            self._position_peaks.pop(ticket, None)
+                            continue
+
+                # ── 1. Loss protection ─────────────────────────────────────
+                if pnl < -limit_usd:
+                    print(
+                        f"[AUTO-CLOSE] {sym} #{ticket} perdiendo ${abs(pnl):.2f}"
+                        f" > limite ${limit_usd:.0f} → cerrando",
+                        flush=True,
+                    )
+                    ok = await loop.run_in_executor(
+                        None, lambda t=ticket: self.mt5.close_position(t)
+                    )
+                    if ok:
+                        self._position_peaks.pop(ticket, None)
+                        try:
+                            await self.telegram.send_glint_alert(
+                                f"<b>AUTO-CIERRE PERDIDA</b>\n{sym} #{ticket}\n"
+                                f"Perdida ${abs(pnl):.2f} > limite → cerrado"
+                            )
+                        except Exception:
+                            pass
+                    continue
+
+                # ── 1b. Peak-profit retracement close ─────────────────────
+                # Track session peak; close when profit drops 25% from peak
+                # (minimum peak $20 to avoid closing tiny moves)
+                MIN_PEAK_USD    = 20.0
+                RETRACE_FACTOR  = 0.25   # close if PnL < peak * (1 - 0.25)
+                if pnl > 0:
+                    prev_peak = self._position_peaks.get(ticket, 0.0)
+                    if pnl > prev_peak:
+                        self._position_peaks[ticket] = pnl
+                        prev_peak = pnl
+                    if prev_peak >= MIN_PEAK_USD:
+                        retrace_threshold = prev_peak * (1.0 - RETRACE_FACTOR)
+                        if pnl <= retrace_threshold:
+                            print(
+                                f"[PEAK-CLOSE] {sym} #{ticket} peak=${prev_peak:.2f} "
+                                f"actual=${pnl:.2f} retroceso {RETRACE_FACTOR*100:.0f}% → cerrando",
+                                flush=True,
+                            )
+                            ok = await loop.run_in_executor(
+                                None, lambda t=ticket: self.mt5.close_position(t)
+                            )
+                            if ok:
+                                self._position_peaks.pop(ticket, None)
+                                try:
+                                    await self.telegram.send_glint_alert(
+                                        f"<b>CIERRE PICO GANANCIA</b>\n{sym} #{ticket}\n"
+                                        f"Pico: ${prev_peak:.2f} → actual: ${pnl:.2f}\n"
+                                        f"Retroceso {RETRACE_FACTOR*100:.0f}% → asegurado ${pnl:.2f}"
+                                    )
+                                except Exception:
+                                    pass
+                            continue
+                else:
+                    # Reset peak when position is not profitable
+                    self._position_peaks.pop(ticket, None)
+
+                # ── 2-3. Trailing stop (only for winning positions) ────────
+                if entry > 0 and sl_cur > 0:
+                    sl_dist = abs(entry - sl_cur)  # 1R distance
+                    if sl_dist > 0:
+                        tick = _mt5.symbol_info_tick(sym)
+                        if tick is not None:
+                            cur_price = tick.ask if is_buy else tick.bid
+                            profit_r  = (cur_price - entry) / sl_dist if is_buy else (entry - cur_price) / sl_dist
+
+                            new_sl = None
+                            if profit_r >= 2.0:
+                                # At 2R+: trail SL at 1R below/above current price
+                                trail_sl = (cur_price - sl_dist) if is_buy else (cur_price + sl_dist)
+                                trail_sl = round(trail_sl, 5)
+                                if (is_buy and trail_sl > sl_cur) or (not is_buy and trail_sl < sl_cur):
+                                    new_sl = trail_sl
+                                    print(
+                                        f"[TRAIL] {sym} #{ticket} profit_R={profit_r:.1f} "
+                                        f"trail SL {sl_cur:.5f}→{new_sl:.5f}",
+                                        flush=True,
+                                    )
+                            elif profit_r >= 1.0 and sl_cur != entry:
+                                # At 1R+: move SL to breakeven
+                                new_sl = round(entry, 5)
+                                if (is_buy and new_sl > sl_cur) or (not is_buy and new_sl < sl_cur):
+                                    print(
+                                        f"[TRAIL] {sym} #{ticket} profit_R={profit_r:.1f} "
+                                        f"→ breakeven SL {sl_cur:.5f}→{new_sl:.5f}",
+                                        flush=True,
+                                    )
+                                else:
+                                    new_sl = None
+
+                            if new_sl is not None:
+                                ok = await loop.run_in_executor(
+                                    None,
+                                    lambda t=ticket, s=new_sl, tp=tp_cur:
+                                        self.mt5.modify_position_sl_tp(t, s, tp)
+                                )
+                                if ok:
+                                    try:
+                                        await self.telegram.send_glint_alert(
+                                            f"<b>TRAILING STOP</b>\n{sym} #{ticket}\n"
+                                            f"SL movido a {new_sl:.5f} | P&L: ${pnl:+.2f}"
+                                        )
+                                    except Exception:
+                                        pass
+
+                # ── 4. Hard close winning position after MAX_HOLD_HOURS ────
+                if pnl > 0 and open_time > 0:
+                    import time as _time
+                    age_h = (_time.time() - open_time) / 3600
+                    if age_h >= MAX_HOLD_HOURS:
+                        print(
+                            f"[TIME-CLOSE] {sym} #{ticket} abierta {age_h:.1f}h "
+                            f"ganando ${pnl:.2f} → cerrando (limite {MAX_HOLD_HOURS}h)",
+                            flush=True,
+                        )
+                        ok = await loop.run_in_executor(
+                            None, lambda t=ticket: self.mt5.close_position(t)
+                        )
+                        if ok:
+                            self._position_peaks.pop(ticket, None)
+                            try:
+                                await self.telegram.send_glint_alert(
+                                    f"<b>CIERRE POR TIEMPO</b>\n{sym} #{ticket}\n"
+                                    f"Abierta {age_h:.1f}h → cerrada con ${pnl:+.2f}"
+                                )
+                            except Exception:
+                                pass
+
+        except Exception as _me:
+            print(f"[AUTO-CLOSE] error monitor: {_me}", flush=True)
 
     # -- Autonomous background loops ----------------------------------------
 
@@ -1795,8 +2200,6 @@ class TradingSupervisor:
     async def _learning_loop(self):
 
         while self._running:
-
-            await asyncio.sleep(3600)  # every 1 hour
 
             try:
 
@@ -1808,13 +2211,13 @@ class TradingSupervisor:
 
                 print(f"[LEARNER] error: {exc}", flush=True)
 
+            await asyncio.sleep(3600)  # every 1 hour
+
 
 
     async def _research_loop(self):
 
         while self._running:
-
-            await asyncio.sleep(7200)  # every 2 hours
 
             try:
 
@@ -1824,13 +2227,13 @@ class TradingSupervisor:
 
                 print(f"[RESEARCH] error: {exc}", flush=True)
 
+            await asyncio.sleep(7200)  # every 2 hours
+
 
 
     async def _goals_loop(self):
 
         while self._running:
-
-            await asyncio.sleep(1800)  # every 30 min
 
             try:
 
@@ -1839,6 +2242,8 @@ class TradingSupervisor:
             except Exception as exc:
 
                 print(f"[GOALS] error: {exc}", flush=True)
+
+            await asyncio.sleep(1800)  # every 30 min
 
 
 
@@ -1867,12 +2272,11 @@ class TradingSupervisor:
 
 
     async def _vision_monitor_loop(self):
-        """Every 5 min: capture MT5 screen, alert on losing positions, auto-close if critical.
-        In _vision_protect_mode: runs every 2 min instead."""
+        """Every 2h: capture MT5 screen (interval extended to preserve API credits)."""
         _BALANCE_AT_START = 100_000.0  # Axi demo seed capital
 
         while self._running:
-            interval = 120 if self._vision_protect_mode else 300
+            interval = 7200  # 2h — preservar creditos API (era 5min)
             await asyncio.sleep(interval)
 
             if self._vision is None:
@@ -1971,6 +2375,20 @@ class TradingSupervisor:
 
                 # â"€â"€ Full market scan â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
+                # ── Reset FTMO diario + refresh daily_pnl ─────────────────
+                _today_utc = datetime.now(timezone.utc).date()
+                if not hasattr(self, '_last_ftmo_day') or self._last_ftmo_day != _today_utc:
+                    self._ftmo_agent.new_trading_day(self._ftmo_state)
+                    self._last_ftmo_day = _today_utc
+                    print(f"[FTMO] Nuevo dia {_today_utc} -- daily_pnl reseteado (streak preservado)", flush=True)
+                    try:
+                        _loop_ref = asyncio.get_running_loop()
+                        self._ftmo_state.daily_pnl_today = await _loop_ref.run_in_executor(
+                            None, self.mt5.get_daily_pnl
+                        )
+                    except Exception:
+                        pass
+
                 for symbol in SCAN_SYMBOLS:
 
                     for tf in SCAN_TIMEFRAMES:
@@ -2032,13 +2450,8 @@ class TradingSupervisor:
                 # MT5 forex scan (real orders on demo account -- bypass demo slot limit)
 
                 if self._mt5_available:
-                    # Auto-reduce threshold after MT5_SCORE_REDUCE_AFTER_H hours without trade
-                    last_ts = self._scan_stats.get("last_trade_ts")
-                    if last_ts is not None:
-                        hours_idle = (datetime.now(timezone.utc) - last_ts).total_seconds() / 3600
-                        mt5_threshold = MT5_SCORE_AUTO_REDUCE if hours_idle > MT5_SCORE_REDUCE_AFTER_H else MT5_REAL_SCORE_THRESHOLD
-                    else:
-                        mt5_threshold = MT5_REAL_SCORE_THRESHOLD
+                    # ── Threshold adaptativo basado en win rate reciente ──────
+                    mt5_threshold = self._adaptive_threshold()
 
                     for symbol in MT5_SYMBOLS:
                         for tf in MT5_TIMEFRAMES:
@@ -2159,6 +2572,10 @@ class TradingSupervisor:
                     info = await loop2.run_in_executor(None, self.mt5.get_account_info)
 
                     bal = info.get("balance", 0)
+
+                    if bal > 0:
+                        self.capital = bal
+                        self.risk_manager.update_capital(bal)
 
                     print(f"[MT5] Reconectado! Balance ${bal:,.2f}")
 
