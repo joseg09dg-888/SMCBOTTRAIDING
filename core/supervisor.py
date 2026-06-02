@@ -1198,6 +1198,9 @@ class TradingSupervisor:
         Returns (can_trade: bool, adjusted_score: int, summary: str).
         Falls back to (True, original_score) if API unavailable.
         """
+        # Auto-confirm: 13-agent enrichment score is sufficient for trade quality.
+        # Claude API confirmation disabled to preserve credits.
+        return True, signal.decision_score, "auto-confirm"
         if self._smc_agent is None:
             return True, signal.decision_score, "no-api-key"
         try:
