@@ -1042,25 +1042,19 @@ class TradingSupervisor:
 
             return signal   # still return so we can log the score=0
 
-
+        original_direction = signal.signal_type
 
         signal = self.route_signal(signal, df)
 
-
-
-        # Institutional agent enrichment
-
-        if signal.signal_type != SignalType.WAIT:
-
+        # Same rescue logic as MT5: agents can unlock borderline signals
+        if original_direction != SignalType.WAIT and signal.decision_score >= 50:
             agent_bonus = self._enrich_with_agents(signal, df)
-
             if agent_bonus != 0:
-
-                signal.decision_score = max(0, min(150, signal.decision_score + agent_bonus))
-
+                new_score = max(0, min(150, signal.decision_score + agent_bonus))
+                signal.decision_score = new_score
                 signal.score_breakdown["agents"] = agent_bonus
-
-
+                if signal.signal_type == SignalType.WAIT and new_score >= 75:
+                    signal.signal_type = original_direction
 
         return signal
 
@@ -1103,21 +1097,21 @@ class TradingSupervisor:
 
             return signal
 
+        original_direction = signal.signal_type  # preserve before route_signal may override to WAIT
+
         signal = self.route_signal(signal, df)
 
-
-
-        # Institutional agent enrichment (Elliott + Chaos + Quant edge)
-
-        if signal.signal_type != SignalType.WAIT:
-
+        # Enrichment runs based on ORIGINAL direction so agents can rescue borderline scores.
+        # If route_signal gated the signal (score 50-74 → WAIT) but agents boost above 75,
+        # restore the original direction so the trade can proceed.
+        if original_direction != SignalType.WAIT and signal.decision_score >= 50:
             agent_bonus = self._enrich_with_agents(signal, df)
-
             if agent_bonus != 0:
-
-                signal.decision_score = max(0, min(150, signal.decision_score + agent_bonus))
-
+                new_score = max(0, min(150, signal.decision_score + agent_bonus))
+                signal.decision_score = new_score
                 signal.score_breakdown["agents"] = agent_bonus
+                if signal.signal_type == SignalType.WAIT and new_score >= 75:
+                    signal.signal_type = original_direction  # agents unlocked this setup
 
 
 
