@@ -898,7 +898,7 @@ class TradingSupervisor:
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        if signal.decision_score < 55:
+        if signal.decision_score < 50:
             return 0
 
         bias = "bullish" if signal.signal_type == SignalType.LONG else "bearish"
