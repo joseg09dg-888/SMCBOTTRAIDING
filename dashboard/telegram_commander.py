@@ -79,24 +79,7 @@ COMMANDS = {
     "/edge":             "Statistical edge y winrate historico",
     "/footprint":        "Analisis footprint (delta, absorcion). Ej: /footprint BTC",
     "/ftmo":             "Estado FTMO challenge y potencial de ingresos",
-
-    "/history":          "Análisis histórico de un símbolo. Ej: /history BTC",
-    "/memory":           "Estado de memoria y accuracy de todos los agentes",
-    "/health":           "Health check de los 21 agentes del bot",
-    "/energy":           "Lectura energetica del mercado. Ej: /energy BTC",
-    "/reporte_semanal":  "Genera reporte semanal ahora",
-    "/reporte_mensual":  "Genera reporte mensual ahora",
-    "/criterios":        "Muestra criterios para ir a cuenta real",
-    "/proyeccion":       "Proyeccion de la proxima semana",
-    "/vision":           "Activa/desactiva vision de pantalla",
-    "/screenshot":       "Captura y analiza pantalla ahora",
-    "/mirror":           "Activa/desactiva modo espejo",
-    "/analysis":         "Análisis SMC completo del mercado. Ej: /analysis BTC",
-    "/onchain":          "Métricas on-chain actuales (flujos ballenas, exchange netflow)",
-    "/lunar":            "Análisis de ciclos lunares y su correlación con el mercado",
-    "/elliott":          "Conteo de ondas de Elliott en el símbolo activo",
-    "/edge":             "Statistical edge y winrate historico del sistema",
-    "/footprint":        "Analisis footprint (delta, absorcion, imbalances). Ej: /footprint BTC",
+    "/demo":             "Posiciones demo Binance crypto con P&L en vivo",
 }
 
 
@@ -138,7 +121,9 @@ class TelegramCommander:
 
     def handle_command(self, command: str) -> CommandResult:
         """Synchronous command handler - used in tests and fallback mode."""
-        cmd = command.strip().lower().split()[0]
+        parts = command.strip().split()
+        cmd = parts[0].lower()
+        self._current_args = parts[1:]  # stored for handlers that accept symbol args
 
         handlers: Dict[str, Callable] = {
             "/auto":      self._cmd_auto,
@@ -173,26 +158,7 @@ class TelegramCommander:
             "/axi":              self._cmd_axi,
             "/ver_mt5":          self._cmd_ver_mt5,
             "/proteger":         self._cmd_proteger,
-
-            "/history":   self._cmd_history,
-            "/memory":           self._cmd_memory,
-            "/health":           self._cmd_health,
-            "/energy":           self._cmd_energy,
-            "/reporte_semanal":  self._cmd_reporte_semanal,
-            "/reporte_mensual":  self._cmd_reporte_mensual,
-            "/criterios":        self._cmd_criterios,
-            "/proyeccion":       self._cmd_proyeccion,
-            "/vision":           self._cmd_vision,
-            "/screenshot":       self._cmd_screenshot,
-            "/mirror":           self._cmd_mirror,
-            "/analysis":         self._cmd_analysis,
-            "/onchain":          self._cmd_onchain,
-            "/lunar":            self._cmd_lunar,
-            "/elliott":          self._cmd_elliott,
-            "/edge":             self._cmd_edge,
-            "/footprint":        self._cmd_footprint,
-            "/ver_mt5":          self._cmd_ver_mt5,
-            "/proteger":         self._cmd_proteger,
+            "/demo":             self._cmd_demo,
         }
 
         handler = handlers.get(cmd)
@@ -388,13 +354,104 @@ class TelegramCommander:
         return CommandResult(success=True, message=text, action="status")
 
     def _cmd_positions(self) -> CommandResult:
-        if self.state.open_positions == 0:
-            return CommandResult(success=True, message="Sin posiciones abiertas actualmente.", action="positions")
-        return CommandResult(
-            success=True,
-            message=f"Posiciones abiertas: {self.state.open_positions}\n(Conecta Market Connector para ver detalle)",
-            action="positions",
-        )
+        try:
+            from connectors.metatrader_connector import MT5Connector
+            from core.config import config as cfg
+            mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            positions = mt5.get_open_positions()
+            if not positions:
+                return CommandResult(success=True, message="Sin posiciones abiertas en MT5.", action="positions")
+            lines = ["<b>POSICIONES ABIERTAS MT5</b>", "━━━━━━━━━━━━━━━━━━━━"]
+            for p in positions:
+                pnl = p.get("profit", 0.0)
+                sign = "+" if pnl >= 0 else ""
+                estado = "GANANDO" if pnl >= 0 else "PERDIENDO"
+                lines.append(
+                    f"{p.get('symbol','?')} {p.get('type','').upper()} "
+                    f"{p.get('volume',0):.2f}L @ {p.get('price_open',0):.4f}\n"
+                    f"  P&amp;L: <b>{sign}${pnl:.2f}</b> ({estado})"
+                )
+            return CommandResult(success=True, message="\n".join(lines), action="positions")
+        except Exception as e:
+            if self.state.open_positions == 0:
+                return CommandResult(success=True, message="Sin posiciones abiertas actualmente.", action="positions")
+            return CommandResult(
+                success=True,
+                message=f"Posiciones: {self.state.open_positions} abiertas (MT5 no disponible: {e})",
+                action="positions",
+            )
+
+    def _cmd_demo(self) -> CommandResult:
+        """Show open Binance crypto demo positions with live P&L."""
+        try:
+            sup = self._supervisor
+            demo_trades = getattr(sup, "_demo_trades", []) if sup else []
+            open_trades = [d for d in demo_trades if getattr(d, "status", "") == "open"]
+
+            if not open_trades:
+                return CommandResult(
+                    success=True,
+                    message="<b>DEMO BINANCE</b>\nSin posiciones demo abiertas ahora.",
+                    action="demo",
+                )
+
+            import yfinance as yf
+            from datetime import datetime, timezone
+
+            lines = [
+                "<b>DEMO BINANCE — POSICIONES ABIERTAS</b>",
+                "━━━━━━━━━━━━━━━━━━━━",
+            ]
+            wins = losses = 0
+            for d in open_trades:
+                symbol    = d.signal.symbol
+                entry     = d.signal.entry or 0.0
+                sl        = d.signal.stop_loss or 0.0
+                tp        = d.signal.take_profit or 0.0
+                score     = d.score
+                dir_str   = "LONG" if d.signal.signal_type.value == "long" else "SHORT"
+                opened_ago = int((datetime.now(timezone.utc) - d.opened_at).total_seconds() / 60)
+
+                # Current price via yfinance
+                current = entry
+                try:
+                    yf_sym = symbol.replace("USDT", "-USD")
+                    current = float(yf.Ticker(yf_sym).fast_info.last_price)
+                except Exception:
+                    pass
+
+                if d.signal.signal_type.value == "long":
+                    pnl_pct = (current - entry) / entry * 100 if entry > 0 else 0.0
+                else:
+                    pnl_pct = (entry - current) / entry * 100 if entry > 0 else 0.0
+
+                sign   = "+" if pnl_pct >= 0 else ""
+                estado = "GANANDO" if pnl_pct >= 0 else "PERDIENDO"
+                if pnl_pct >= 0:
+                    wins += 1
+                else:
+                    losses += 1
+
+                lines.append(
+                    f"<b>{symbol}</b> {dir_str} | Score: {score}\n"
+                    f"  Entrada: <code>{entry:.4f}</code>  Actual: <code>{current:.4f}</code>\n"
+                    f"  P&amp;L: <b>{sign}{pnl_pct:.2f}%</b> ({estado})\n"
+                    f"  SL: <code>{sl:.4f}</code>  TP: <code>{tp:.4f}</code>  [{opened_ago}min]"
+                )
+
+            total = len(open_trades)
+            lines.append(
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"Total: {total} | Ganando: {wins} | Perdiendo: {losses}"
+            )
+            return CommandResult(success=True, message="\n".join(lines), action="demo")
+
+        except Exception as e:
+            return CommandResult(
+                success=True,
+                message=f"<b>DEMO BINANCE</b>\nError: {e}",
+                action="demo",
+            )
 
     def _cmd_close_all(self) -> CommandResult:
         if self.on_close_all:
@@ -440,15 +497,34 @@ class TelegramCommander:
         return CommandResult(success=True, message=text, action="scores")
 
     def _cmd_risk(self) -> CommandResult:
-        s = self.state
+        daily = self.state.daily_pnl
+        balance = float(getattr(self.state, 'balance', self.state.capital))
+        drawdown_pct = float(self.state.drawdown)
+        equity = balance
+        try:
+            from connectors.metatrader_connector import MT5Connector
+            from core.config import config as cfg
+            mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            pnl = mt5.get_pnl_report(initial_balance=100_000.0)
+            if "error" not in pnl:
+                daily       = pnl.get("daily_pnl", daily)
+                balance     = pnl.get("balance", balance)
+                equity      = pnl.get("equity", balance)
+                drawdown_pct = (100_000.0 - equity) / 100_000.0 * 100
+        except Exception:
+            pass
+        sign = "+" if daily >= 0 else ""
         return CommandResult(
             success=True,
             message=(
-                f"Estado de Riesgo:\n"
-                f"  Drawdown actual: {s.drawdown:.1f}%\n"
-                f"  Posiciones abiertas: {s.open_positions}\n"
-                f"  P&L del dia: {'+' if s.daily_pnl >= 0 else ''}${s.daily_pnl:.2f}\n"
-                f"  Estado: {'OK' if s.drawdown < 3 else 'ELEVADO'}"
+                f"<b>ESTADO DE RIESGO</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"Balance: <code>${balance:,.2f}</code>\n"
+                f"Equity:  <code>${equity:,.2f}</code>\n"
+                f"Drawdown: <code>{drawdown_pct:.2f}%</code>\n"
+                f"P&amp;L dia: <code>{sign}${daily:.2f}</code>\n"
+                f"Posiciones abiertas: {self.state.open_positions}\n"
+                f"Estado: {'OK' if drawdown_pct < 3 else 'ELEVADO'}"
             ),
             action="risk",
         )
@@ -714,13 +790,13 @@ class TelegramCommander:
             positions = analysis.get("posiciones", [])
             recommendation = analysis.get("accion_recomendada", "")
 
-            _START = 100_000.0
-            growth = balance - _START
+            _start = self.status.capital if self.status.capital > 0 else balance
+            growth = balance - _start
             growth_str = f"+${growth:,.0f}" if growth >= 0 else f"-${abs(growth):,.0f}"
 
             lines = [
                 "<b>VISION MT5 - Analisis en vivo</b>",
-                f"Balance: ${balance:,.2f} ({growth_str} vs inicio $100,000)",
+                f"Balance: ${balance:,.2f} ({growth_str} vs inicio ${_start:,.0f})",
                 f"Patrimonio: ${equity:,.2f}",
             ]
             if positions:
@@ -779,178 +855,6 @@ class TelegramCommander:
         return CommandResult(success=True, message=msg, action="mirror")
 
     def _cmd_analysis(self) -> CommandResult:
-        return CommandResult(
-            success=True,
-            message=(
-                "Análisis SMC: Para análisis completo pasa un símbolo.\n"
-                "Ej: /analysis BTC\n"
-                "(Agente de análisis no conectado en modo standalone)"
-            ),
-            action="analysis",
-        )
-
-    def _cmd_onchain(self) -> CommandResult:
-        return CommandResult(
-            success=True,
-            message=(
-                "On-Chain Metrics:\n"
-                "  Exchange Netflow: sin datos en tiempo real\n"
-                "  Whale Flows: sin datos en tiempo real\n"
-                "Conecta OnchainAgent para métricas en vivo."
-            ),
-            action="onchain",
-        )
-
-    def _cmd_lunar(self) -> CommandResult:
-        return CommandResult(
-            success=True,
-            message=(
-                "Análisis Lunar:\n"
-                "  Ciclo lunar: disponible vía LunarAgent\n"
-                "  Correlación histórica: sin datos cargados\n"
-                "Conecta LunarAgent para lectura completa."
-            ),
-            action="lunar",
-        )
-
-    def _cmd_elliott(self) -> CommandResult:
-        return CommandResult(
-            success=True,
-            message=(
-                "Ondas de Elliott:\n"
-                "  Conteo activo: sin datos de mercado en tiempo real\n"
-                "  Pasa un símbolo al supervisor para análisis completo.\n"
-                "Conecta ElliottAgent para conteo en vivo."
-            ),
-            action="elliott",
-        )
-
-    def _cmd_edge(self) -> CommandResult:
-        return CommandResult(
-            success=True,
-            message=(
-                "Statistical Edge del Sistema:\n"
-                "  Winrate histórico: sin trades registrados aún\n"
-                "  Expectancy: N/A\n"
-                "  Sharpe Ratio: N/A\n"
-                "Ejecuta /history para ver datos por símbolo."
-            ),
-            action="edge",
-        )
-
-    def _cmd_footprint(self) -> CommandResult:
-        from agents.footprint_agent import FootprintAgent
-        from core.config import config
-        agent = FootprintAgent(
-            api_key=config.binance_api_key,
-            api_secret=config.binance_api_secret,
-            testnet=config.binance_testnet,
-        )
-        candle = agent.build_live_footprint("BTCUSDT")
-        if candle is None:
-            return CommandResult(
-                success=True,
-                message="No hay datos de footprint disponibles. Verifica conexion Binance.",
-                action="footprint",
-            )
-        msg = agent.format_telegram(candle, "BTCUSDT")
-        return CommandResult(success=True, message=msg, action="footprint")
-
-    # ── Helpers ───────────────────────────────────────────────────────────
-
-
-    def _cmd_history(self) -> CommandResult:
-        if self.on_history:
-            try: text = self.on_history("BTC")
-            except Exception as e: text = f"Error: {e}"
-        else:
-            text = "Agente historico no disponible. Conecta el bot con datos en vivo."
-        return CommandResult(success=True, message=text, action="history")
-
-    def _cmd_energy(self) -> CommandResult:
-        from agents.energy_frequency_agent import EnergyFrequencyAgent
-        reading = EnergyFrequencyAgent().analyze("BTC", price=0.0)
-        return CommandResult(success=True, message=reading.format_telegram(), action="energy")
-
-    def _cmd_reporte_semanal(self) -> CommandResult:
-        from agents.report_agent import ReportAgent
-        from datetime import date, timedelta
-        agent = ReportAgent(capital=self.state.capital)
-        today = date.today()
-        week_start = today - timedelta(days=today.weekday())
-        stats = agent.calculate_weekly_stats(week_start)
-        return CommandResult(success=True, message=agent.generate_telegram_summary(stats), action="reporte_semanal")
-
-    def _cmd_reporte_mensual(self) -> CommandResult:
-        from agents.report_agent import ReportAgent
-        from datetime import date
-        agent = ReportAgent(capital=self.state.capital)
-        today = date.today()
-        stats = agent.calculate_monthly_stats(today.year, today.month)
-        return CommandResult(success=True, message=agent.generate_telegram_summary(stats), action="reporte_mensual")
-
-    def _cmd_proyeccion(self) -> CommandResult:
-        from core.volume_calculator import VolumeCalculator
-        vc = VolumeCalculator()
-        lines = [
-            "<b>PROYECCION AXI SELECT — ETAPAS</b>",
-            "<pre>",
-            f"{'Etapa':<12} {'Capital':>10} {'Vol':>6} {'Profit/mes':>12} {'Tu 80%':>10}",
-            "-" * 54,
-        ]
-        stage_names = {
-            "seed": "Seed", "incubation": "Incubacion",
-            "demo": "Demo", "pro": "Pro",
-            "pro_500": "Pro 500K", "pro_m": "Pro 1M",
-        }
-        for key, data in vc.AXI_STAGES.items():
-            cap = data["capital"]
-            proj = vc.project_monthly_profit(cap)
-            lines.append(
-                f"{stage_names.get(key, key):<12} "
-                f"${cap/1000:>7.0f}K "
-                f"{data['volume']:>5.2f}L "
-                f"${proj['net_profit_usd']:>10,.0f} "
-                f"${proj['your_share_80pct']:>8,.0f}"
-            )
-        current_proj = vc.project_monthly_profit(self.state.capital)
-        lines += [
-            "-" * 54,
-            f"{'Actual':<12} ${self.state.capital/1000:>7.0f}K "
-            f"{vc.get_stage_volume(self.state.capital):>5.2f}L "
-            f"${current_proj['net_profit_usd']:>10,.0f} "
-            f"${current_proj['your_share_80pct']:>8,.0f}",
-            "</pre>",
-            f"Win rate asumido: 62% | RR: 2:1 | 40 ops/mes",
-        ]
-        return CommandResult(success=True, message="\n".join(lines), action="proyeccion")
-
-    def _cmd_vision(self) -> CommandResult:
-        from agents.screen_vision_agent import ScreenVisionAgent
-        agent = ScreenVisionAgent()
-        state = agent.toggle()
-        return CommandResult(success=True, message=f"Vision {'activada' if state else 'desactivada'}.", action="vision")
-
-    def _cmd_screenshot(self) -> CommandResult:
-        from agents.screen_vision_agent import ScreenVisionAgent
-        agent = ScreenVisionAgent()
-        cap = agent.capture_full_screen() or agent.create_mock_capture()
-        analysis = agent.analyze_capture(cap)
-        return CommandResult(success=True, message=agent.build_alert_message(analysis, "full"), action="screenshot")
-
-    def _cmd_mirror(self) -> CommandResult:
-        from agents.screen_vision_agent import ScreenVisionAgent
-        agent = ScreenVisionAgent()
-        if not agent._mirror_active:
-            agent.start_mirror_mode()
-            msg = "Modo espejo ACTIVADO. El bot aprende de tus operaciones."
-        else:
-            session = agent.stop_mirror_mode()
-            actions = session.actions_recorded if session else 0
-            msg = f"Modo espejo DESACTIVADO. Acciones: {actions}"
-        return CommandResult(success=True, message=msg, action="mirror")
-
-    def _cmd_analysis(self) -> CommandResult:
         return CommandResult(success=True, message="Analisis SMC: conecate con datos en vivo para analisis completo.", action="analysis")
 
     def _cmd_onchain(self) -> CommandResult:
@@ -985,11 +889,14 @@ class TelegramCommander:
     def _cmd_footprint(self) -> CommandResult:
         from agents.footprint_agent import FootprintAgent
         from core.config import config
+        args = getattr(self, '_current_args', [])
+        raw = args[0] if args else "BTC"
+        symbol = raw.upper() if raw.upper().endswith("USDT") else raw.upper() + "USDT"
         agent = FootprintAgent(api_key=config.binance_api_key, api_secret=config.binance_api_secret, testnet=config.binance_testnet)
-        candle = agent.build_live_footprint("BTCUSDT")
+        candle = agent.build_live_footprint(symbol)
         if candle is None:
-            return CommandResult(success=True, message="No hay datos de footprint disponibles.", action="footprint")
-        return CommandResult(success=True, message=agent.format_telegram(candle, "BTCUSDT"), action="footprint")
+            return CommandResult(success=True, message=f"No hay datos de footprint para {symbol}.", action="footprint")
+        return CommandResult(success=True, message=agent.format_telegram(candle, symbol), action="footprint")
 
     def _cmd_ftmo(self) -> CommandResult:
         from strategies.ftmo_agent import FTMOAgent, ChallengeType
@@ -1042,7 +949,7 @@ class TelegramCommander:
             return
         try:
             bot = Bot(token=self.bot_token)
-            await bot.send_message(chat_id=self.chat_id, text=text, parse_mode="Markdown")
+            await bot.send_message(chat_id=self.chat_id, text=text, parse_mode="HTML")
         except Exception as e:
             logger.error(f"Telegram send error: {e}")
 
@@ -1107,12 +1014,16 @@ class TelegramCommander:
         async def handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not update.message:
                 return
-            result = self.handle_command(cmd)
-            parse = "Markdown" if any(c in result.message for c in ("*", "_", "`")) else None
+            args = context.args or []
+            full_cmd = cmd if not args else f"{cmd} {args[0]}"
+            result = self.handle_command(full_cmd)
             try:
-                await update.message.reply_text(result.message, parse_mode=parse)
-            except Exception as e:
-                logger.error(f"Reply error for {cmd}: {e}")
+                await update.message.reply_text(result.message, parse_mode="HTML")
+            except Exception:
+                try:
+                    await update.message.reply_text(result.message)
+                except Exception as e:
+                    logger.error(f"Reply error for {cmd}: {e}")
         return handler
 
     def _make_history_handler(self):

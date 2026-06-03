@@ -1708,6 +1708,83 @@ class TradingSupervisor:
 
 
 
+    # -- Demo trade TP/SL monitor -------------------------------------------
+
+    async def _monitor_demo_trades(self) -> None:
+        """Check open demo trades vs current price. Close at TP or SL and notify Telegram."""
+        if not self._demo_trades:
+            return
+
+        import yfinance as yf
+
+        loop = asyncio.get_running_loop()
+        still_open: List["DemoTrade"] = []
+
+        for demo in self._demo_trades:
+            if demo.status != "open":
+                continue
+
+            symbol    = demo.signal.symbol
+            entry     = demo.signal.entry or 0.0
+            sl        = demo.signal.stop_loss or 0.0
+            tp        = demo.signal.take_profit or 0.0
+            direction = demo.signal.signal_type
+
+            # --- get current price (yfinance for crypto) ---
+            current = 0.0
+            try:
+                yf_sym = symbol.replace("USDT", "-USD")
+                ticker = yf.Ticker(yf_sym)
+                current = float(ticker.fast_info.last_price)
+            except Exception:
+                still_open.append(demo)
+                continue
+
+            if current <= 0.0 or entry <= 0.0:
+                still_open.append(demo)
+                continue
+
+            # --- check TP / SL ---
+            hit_tp = hit_sl = False
+            if direction == SignalType.LONG:
+                hit_tp = tp > 0 and current >= tp
+                hit_sl = sl > 0 and current <= sl
+            else:
+                hit_tp = tp > 0 and current <= tp
+                hit_sl = sl > 0 and current >= sl
+
+            if not (hit_tp or hit_sl):
+                still_open.append(demo)
+                continue
+
+            demo.close(current)
+            result   = "TP" if hit_tp else "SL"
+            pnl_pct  = demo.pnl * 100.0
+            sign     = "+" if pnl_pct >= 0 else ""
+            dir_str  = "LONG" if direction == SignalType.LONG else "SHORT"
+
+            print(
+                f"[DEMO {result}] {symbol} {dir_str} | entrada={entry:.4f} "
+                f"cierre={current:.4f} | P&L: {sign}{pnl_pct:.2f}%",
+                flush=True,
+            )
+
+            msg = (
+                f"<b>DEMO CERRADO — {'GANADO ✅' if hit_tp else 'SL ❌'}</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"Par: <b>{symbol}</b> {dir_str}\n"
+                f"Entrada: <code>{entry:.4f}</code>  Cierre: <code>{current:.4f}</code>\n"
+                f"P&amp;L: <b>{sign}{pnl_pct:.2f}%</b>\n"
+                f"Score: {demo.score} | TF: {demo.signal.timeframe}"
+            )
+            try:
+                await self.telegram.send_glint_alert(msg)
+            except Exception:
+                pass
+
+        self._demo_trades = still_open
+
+
     # -- Open position P&L monitor ------------------------------------------
 
 
@@ -2469,7 +2546,11 @@ class TradingSupervisor:
 
                         await asyncio.sleep(1)  # rate limit between symbols
 
-
+                # Monitor demo TP/SL after each full crypto scan cycle
+                try:
+                    await self._monitor_demo_trades()
+                except Exception as _e:
+                    print(f"[DEMO-MONITOR] Error: {_e}", flush=True)
 
                 # MT5 forex scan (real orders on demo account -- bypass demo slot limit)
 

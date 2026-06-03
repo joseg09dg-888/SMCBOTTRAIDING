@@ -111,3 +111,53 @@ def test_status_contains_mode(commander):
     assert result.success is True
     # Message contains either mode info or bot status info
     assert len(result.message) > 5
+
+
+def test_demo_command_no_supervisor(commander):
+    """Without supervisor, /demo returns graceful empty message."""
+    commander._supervisor = None
+    result = commander.handle_command("/demo")
+    assert result.success is True
+    assert "demo" in result.message.lower() or "DEMO" in result.message
+
+
+def test_demo_command_empty_trades(commander):
+    """Supervisor with no open demo trades."""
+    sup = MagicMock()
+    sup._demo_trades = []
+    commander._supervisor = sup
+    result = commander.handle_command("/demo")
+    assert result.success is True
+    assert "Sin posiciones" in result.message or "demo" in result.message.lower()
+
+
+def test_demo_command_with_open_trade(commander):
+    """Supervisor with one open demo trade returns position info."""
+    from unittest.mock import patch as _patch
+    from agents.signal_agent import SignalType, TradeSignal
+    from datetime import datetime, timezone
+
+    sig = TradeSignal(
+        symbol="BTCUSDT", signal_type=SignalType.SHORT,
+        entry=65000.0, stop_loss=66000.0, take_profit=62000.0,
+        timeframe="1h", trigger="CHoCH", confidence=0.8,
+    )
+    sig.decision_score = 110
+
+    class _FakeDemo:
+        status   = "open"
+        signal   = sig
+        score    = 110
+        opened_at = datetime.now(timezone.utc)
+
+    sup = MagicMock()
+    sup._demo_trades = [_FakeDemo()]
+    commander._supervisor = sup
+
+    with _patch("yfinance.Ticker") as mock_ticker:
+        mock_ticker.return_value.fast_info.last_price = 64000.0
+        result = commander.handle_command("/demo")
+
+    assert result.success is True
+    assert "BTCUSDT" in result.message
+    assert "SHORT" in result.message
