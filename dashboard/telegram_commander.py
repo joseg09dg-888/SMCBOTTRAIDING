@@ -985,18 +985,112 @@ class TelegramCommander:
         )
         return CommandResult(success=True, message=msg, action="ftmo")
     def _cmd_axi(self) -> CommandResult:
-        from strategies.axi_select_agent import AxiSelectAgent
+        """Detailed Axi Select progress: edge score, stage, what's needed next."""
+        from strategies.axi_select_agent import AxiSelectAgent, AxiStage
         from core.score_db import get_stats
-        agent = AxiSelectAgent()
-        state = AxiSelectAgent.new_state(initial_balance=500.0)
-        stats = get_stats()
-        if stats["executed"] > 0:
+        from connectors.metatrader_connector import MT5Connector
+        from core.config import config as cfg
+
+        agent  = AxiSelectAgent()
+        state  = AxiSelectAgent.new_state(initial_balance=100_000.0)
+        stats  = get_stats()
+
+        # Use real outcomes when available
+        if stats["has_real_outcomes"]:
+            state.wins   = stats["wins"]
+            state.losses = stats["losses"]
+            state.trades_closed = stats["wins"] + stats["losses"]
+        else:
+            # Fallback: approximate
             state.trades_closed = stats["executed"]
-            state.wins   = stats["high_score"]
-            state.losses = max(0, stats["executed"] - stats["high_score"])
-            state.edge_score = agent.calculate_edge_score(state)
-            state.stage = agent.get_current_stage(state)
-        return CommandResult(success=True, message=agent.format_telegram(state), action="axi")
+            state.wins   = int(stats["executed"] * (stats["win_rate"] / 100))
+            state.losses = state.trades_closed - state.wins
+
+        # MT5 balance for drawdown calculation
+        try:
+            mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            acc = mt5.get_account_info()
+            if acc and acc.get("balance", 0) > 0:
+                state.current_balance = acc["balance"]
+                dd = max(0, (100_000.0 - state.current_balance) / 100_000.0)
+                state.max_drawdown_pct = dd
+        except Exception:
+            pass
+
+        state.edge_score = agent.calculate_edge_score(state)
+        state.stage = agent.get_current_stage(state)
+
+        sc  = state.edge_score
+        bal = state.current_balance
+        net = bal - 100_000.0
+        dd  = state.max_drawdown_pct * 100
+        wr  = state.win_rate * 100
+        pf  = state.profit_factor
+
+        STAGE_LABELS = {
+            AxiStage.PRE_SEED:     "PRE-SEED",
+            AxiStage.SEED:         "SEED ($5K)",
+            AxiStage.INCUBATION:   "INCUBACION ($25K)",
+            AxiStage.ACCELERATION: "ACELERACION ($100K)",
+            AxiStage.PRO:          "PRO ($300K)",
+            AxiStage.PRO_500:      "PRO 500 ($500K)",
+            AxiStage.PRO_M:        "PRO M ($1M)",
+        }
+
+        # Next stage target
+        next_cfg = agent.get_next_stage(state.stage)
+        if next_cfg:
+            pts_needed = next_cfg.edge_score_required - sc.total
+            next_label = STAGE_LABELS.get(next_cfg.stage, "?")
+            next_txt = (
+                f"Siguiente: <b>{next_label}</b>\n"
+                f"Necesitas: Edge Score {next_cfg.edge_score_required} "
+                f"(faltan {max(0,pts_needed)} pts)\n"
+                f"Min trades: {next_cfg.min_trades} (tienes {state.trades_closed})\n"
+            )
+        else:
+            next_txt = "MAXIMO NIVEL ALCANZADO — $1M fondeo\n"
+
+        # Monthly income projection per stage
+        income_map = {
+            AxiStage.SEED:         (5_000,   "  $100 - $250"),
+            AxiStage.INCUBATION:   (25_000,  "  $500 - $1,250"),
+            AxiStage.ACCELERATION: (100_000, "  $2,000 - $5,000"),
+            AxiStage.PRO:          (300_000, "  $6,000 - $15,000"),
+            AxiStage.PRO_500:      (500_000, "  $10,000 - $25,000"),
+            AxiStage.PRO_M:        (1_000_000,"$20,000 - $50,000"),
+        }
+        current_income = income_map.get(state.stage, (0, "—"))
+        next_income = income_map.get(next_cfg.stage if next_cfg else AxiStage.PRE_SEED, (0, "—"))
+
+        text = (
+            f"<b>AXI SELECT — PROGRESO REAL</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Etapa actual: <b>{STAGE_LABELS.get(state.stage,'PRE-SEED')}</b>\n"
+            f"Income mensual actual: <b>{current_income[1]}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>EDGE SCORE: {sc.total}/100</b>\n"
+            f"  Habilidad:    {sc.habilidad}/40\n"
+            f"  Consistencia: {sc.consistencia}/30\n"
+            f"  Riesgo:       {sc.riesgo}/30\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>METRICAS REALES:</b>\n"
+            f"  Trades cerrados: {state.trades_closed}\n"
+            f"  Win Rate: {wr:.1f}% {'✅' if wr >= 60 else '⚠️ necesitas >=60%'}\n"
+            f"  Profit Factor: {pf:.2f}\n"
+            f"  Drawdown: {dd:.2f}% {'✅' if dd < 5 else '⚠️'}\n"
+            f"  Balance: ${bal:,.2f} ({net:+.2f})\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>SIGUIENTE META:</b>\n"
+            f"{next_txt}"
+            f"Income mensual siguiente: <b>{next_income[1]}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>PARA LLEGAR A $1M ({STAGE_LABELS[AxiStage.PRO_M]}):</b>\n"
+            f"  Edge Score 90/100 requerido\n"
+            f"  Win Rate sostenida >= 75%\n"
+            f"  Income: $20,000-$50,000/mes\n"
+        )
+        return CommandResult(success=True, message=text, action="axi")
 
     def _log_mode_change(self, mode: str, reason: str):
         self.state.mode_history.append({

@@ -85,12 +85,13 @@ SCAN_INTERVAL_SEC        = 30
 CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
-MAX_DAILY_TRADES         = 8       # sprint: 8/day (was 3, need more trades to grow)
-MAX_OPEN_POSITIONS       = 2       # max simultaneous open positions
-MIN_RR                   = 2.0    # minimo RR 2:1 — gana mas de lo que arriesga
+MAX_DAILY_TRADES         = 10      # Axi sprint: 10/day for faster data accumulation
+MAX_OPEN_POSITIONS       = 3       # allow 3 simultaneous to capture more setups
+MIN_RR                   = 1.8    # slightly more permissive (was 2.0) — still good RR
 
 # Dead hours (UTC) -- no new orders during low-liquidity windows
-DEAD_HOURS_UTC           = set(range(22, 24)) | {0, 1, 5, 6}  # 22-01 UTC + 05-06 UTC (zona pérdidas historicas)
+# Reduced from 8h to 5h: only block midnight-03 UTC (lowest liquidity) + 22-23 UTC
+DEAD_HOURS_UTC           = {22, 23, 0, 1, 2}  # 22-02 UTC only (was 22-01 + 05-06)
 
 
 
@@ -102,9 +103,13 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 
 
 
-# MT5 forex/indices symbols
+# MT5 forex/indices symbols — expanded for more opportunities
+# Asian pairs (AUDUSD, USDJPY, GBPJPY) active 00-09 UTC
+# European pairs (EURUSD, GBPUSD) active 07-16 UTC
+# US indices (NAS100, US30) active 13-20 UTC
+# Gold (XAUUSD) active 07-20 UTC
 
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "NAS100", "US30"]
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "AUDUSD", "NAS100", "US30"]
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 first: cache trend before H1 dual-confirm filter
 
 MT5_MIN_VOLUME   = 0.01
