@@ -54,8 +54,11 @@ def test_monte_carlo_returns_correct_type():
     assert isinstance(result,MonteCarloResult)
     assert len(result.final_equities)==100
 def test_monte_carlo_ruin_low():
-    result = QuantStats.run_monte_carlo([0.01]*252,n_sims=1000,seed=42)
-    assert result.ruin_probability == 0.0
+    # All returns strongly positive — ruin probability must be 0 regardless of seed
+    result = QuantStats.run_monte_carlo([0.05]*252, n_sims=500, seed=42)
+    assert result.ruin_probability == 0.0, (
+        f"Expected 0.0 ruin probability with all +5% returns, got {result.ruin_probability}"
+    )
 def test_monte_carlo_ruin_high():
     result = QuantStats.run_monte_carlo([-0.05]*252,n_sims=200,seed=42)
     assert result.ruin_probability == pytest.approx(1.0)

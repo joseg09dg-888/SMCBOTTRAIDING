@@ -167,7 +167,8 @@ def get_setup_stats(conn: sqlite3.Connection = None) -> dict:
         if r["result"] == "WIN":
             data[st]["wins"] += 1
     return {
-        k: {"win_rate": v["wins"] / v["total"] * 100, "sample_size": v["total"]}
+        k: {"win_rate": v["wins"] / v["total"] * 100 if v["total"] else 0.0,
+            "sample_size": v["total"]}
         for k, v in data.items()
     }
 
@@ -186,20 +187,31 @@ def get_session_stats(conn: sqlite3.Connection = None) -> dict:
         if r["result"] == "WIN":
             data[sess]["wins"] += 1
     return {
-        k: {"win_rate": v["wins"] / v["total"] * 100, "sample_size": v["total"]}
+        k: {"win_rate": v["wins"] / v["total"] * 100 if v["total"] else 0.0,
+            "sample_size": v["total"]}
         for k, v in data.items()
     }
 
 
 def save_lesson(lesson: dict, conn: sqlite3.Connection = None):
     c = conn or get_db()
-    c.execute(
-        """INSERT INTO lessons (ts, setup_type, regime, session, win_rate,
-           sample_size, weight_adj, notes) VALUES (?,?,?,?,?,?,?,?)""",
-        (_now(), lesson.get("setup_type", ""), lesson.get("regime"),
-         lesson.get("session"), lesson.get("win_rate"), lesson.get("sample_size"),
-         lesson.get("weight_adj"), lesson.get("notes")),
-    )
+    try:
+        c.execute(
+            """INSERT INTO lessons (ts, setup_type, regime, session, win_rate,
+               sample_size, weight_adj, notes) VALUES (?,?,?,?,?,?,?,?)""",
+            (_now(), lesson.get("setup_type", ""), lesson.get("regime"),
+             lesson.get("session"), lesson.get("win_rate"), lesson.get("sample_size"),
+             lesson.get("weight_adj"), lesson.get("notes")),
+        )
+    except sqlite3.IntegrityError:
+        # Old DB schema has UNIQUE(setup_type, regime, session) — update instead
+        c.execute(
+            """UPDATE lessons SET ts=?, win_rate=?, sample_size=?, weight_adj=?, notes=?
+               WHERE setup_type=? AND regime=? AND session=?""",
+            (_now(), lesson.get("win_rate"), lesson.get("sample_size"),
+             lesson.get("weight_adj"), lesson.get("notes"),
+             lesson.get("setup_type", ""), lesson.get("regime"), lesson.get("session")),
+        )
     c.commit()
 
 

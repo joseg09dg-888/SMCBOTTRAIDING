@@ -39,24 +39,30 @@ pm2 status
 
 ---
 
-## 3. ESTADO ACTUAL (2026-05-25)
+## 3. ESTADO ACTUAL (2026-06-03)
 
 | Componente | Estado | Notas |
 |-----------|--------|-------|
-| Tests | ✅ 1204/1204 pasando | `pytest tests/ -q` |
+| Tests | ✅ 1288/1288 pasando | `pytest tests/ -q` |
 | Binance Testnet | ⚠️ DNS falla en PM2 | datos cacheados funcionan |
 | Scan crypto | ✅ ACTIVO | BTCUSDT/ETHUSDT/SOLUSDT/BNBUSDT/XRPUSDT/ADAUSDT |
 | Scan forex | ✅ MT5 REAL | EURUSD/GBPUSD/XAUUSD/USDJPY/GBPJPY/NAS100/US30 via MT5 |
-| MT5 Axi Demo | ✅ CONECTADO | login=10042896 server=Axi-US50-Demo balance=$99,955.37 |
-| MT5 ordenes reales | ✅ FUNCIONANDO | Ticket #59708384 USDJPY BUY ejecutado 2026-05-25 |
+| MT5 Axi Demo | ✅ CONECTADO | login=10042896 server=Axi-US50-Demo balance=$99,470.20 |
+| MT5 ordenes reales | ✅ FUNCIONANDO | Ticket #61754943 USDJPY BUY entry=159.937 TP=162.611 |
 | MT5 scan loop | ✅ ACTIVO | _scan_mt5_symbol() H1+H4 para 7 pares forex |
 | MT5 auto-reconexion | ✅ | delay 2s en connect() + loop cada 30s |
-| Telegram polling | ✅ ACTIVO | parse_mode=HTML, 27 comandos |
+| Telegram polling | ✅ ACTIVO | parse_mode=HTML, 29 comandos |
 | PM2 | ✅ smc-bot ONLINE | auto-restart |
 | Windows startup | ✅ | Startup folder + .bat |
-| SQLite scores | ✅ ACTIVO | memory/scores.db |
+| SQLite scores | ✅ ACTIVO | memory/scores.db + outcome/pnl_pct columns |
 | SQLite episodic | ✅ ACTIVO | memory/episodes.db (WAL mode) |
 | Glint | ✅ headless | cookies en memory/glint_session.json |
+| Demo TP/SL monitor | ✅ ACTIVO | _monitor_demo_trades() via yfinance cada ciclo |
+| Demo persistencia | ✅ ACTIVO | memory/demo_trades_state.json — sobrevive reinicios |
+| H4 trend filter | ✅ ACTIVO | crypto 1h trades bloqueados si van contra H4 trend |
+| POI zone filter | ✅ ACTIVO | solo OBs dentro del 5% del precio actual |
+| ATR SL | ✅ ACTIVO | SL = ATR(14) × 1.5 (era 0.5% fijo) |
+| Trailing SL | ✅ ACTIVO | mueve SL a breakeven cuando profit >= 1×SL |
 | AutonomousLearner | ✅ ACTIVO | loop cada 1h — ajusta pesos por setup_type/regime |
 | ResearchAgent | ✅ ACTIVO | loop cada 2h — arXiv + MQL5 |
 | GoalsManager | ✅ ACTIVO | loop cada 30min — 5 metas autónomas |
@@ -359,13 +365,15 @@ Con $200K fondead al 90% profit split:
 | 8 | 1204 | VolumeCalculator: riesgo dinamico por etapa Axi Select, /proyeccion Telegram, volumen demo 0.10 lots |
 | 9 | 1214 | 13 agentes institucionales activados en pipeline: Lunar, Elliott, Chaos, QuantEdge, Footprint, InstFlow, Microstructure, FED, OnChain, Geopolitical, RetailPsych, AltData, Energy |
 | 10 | 1214 | _enrich_with_agents() parallelizado con ThreadPoolExecutor — 13 agentes simultaneos (~13x speedup). Thresholds: MT5_REAL=75, MIN_RR=2.0, MAX_OPEN=2, CONSERVATIVE_MODE=False, H1+H4, auto-reduce a 70 tras 2h idle |
+| 11 | 1277 | 6 bugs críticos corregidos: crash loop, enrichment gate, demo skip log, threshold cap, stale H4 entry, Claude API auto-confirm |
+| 12 | 1288 | H4 trend filter crypto, ATR SL, POI proximity filter, demo TP/SL monitor, demo persistence, real outcome tracking, /demo /performance commands, trailing SL MT5 |
 
 ---
 
 ## 14. REGLAS PARA CLAUDE CODE EN ESTE PROYECTO
 
 1. **LEER ESTE ARCHIVO** al inicio de cada sesión
-2. **NUNCA romper** los 1182 tests existentes — verificar con `pytest tests/ -q`
+2. **NUNCA romper** los 1288 tests existentes — verificar con `pytest tests/ -q`
 3. **SIEMPRE verificar** antes de marcar completo (skill: verification-before-completion)
 4. **ENCODING**: usar Write tool, NUNCA PowerShell Out-File para archivos .py con emojis
 5. **ENCODING**: si supervisor.py falla → correr `scripts/deep_fix_supervisor.py`
@@ -384,9 +392,10 @@ Con $200K fondead al 90% profit split:
 | Problema | Causa | Fix |
 |---------|-------|-----|
 | Binance DNS falla | testnet.binance.vision no resuelve en PM2 | usa datos cacheados, opera normal |
-| Scores siempre SHORT | Mercado bajista actual | Normal — seguir el mercado |
 | supervisor.py sensible a encoding | PowerShell añade BOM/smart quotes | Siempre usar Write tool o deep_fix_supervisor.py |
 | SMCBotEA no en charts | Acción manual requerida | Usuario debe arrastrar SMCBotEA a charts en MT5 GUI |
+| FED "sin texto analizado" | FED agent necesita texto FOMC para analizar | Normal — retorna neutral=0 cuando no hay texto |
+| USDJPY BUY en drawdown | Entrada 159.937, mercado oscilando | TP 162.611 (+267 pips), SL 159.407, trailing SL activo |
 
 ## 16. AUDITORÍA DE AGENTES (2026-05-25)
 
@@ -409,4 +418,4 @@ Con $200K fondead al 90% profit split:
 
 ---
 
-*Última actualización: 2026-05-28 | Tests: 1214 | Bot: PM2 ONLINE | Agentes: 13 PARALELOS (ThreadPoolExecutor) | MT5_REAL threshold: 75 | MIN_RR: 2.0 | MAX_OPEN: 2 | Balance MT5: $99,843.59*
+*Última actualización: 2026-06-03 | Tests: 1288 | Bot: PM2 ONLINE | Agentes: 13 PARALELOS | MT5_REAL threshold: 75 | MIN_RR: 2.0 | MAX_OPEN: 2 | Balance MT5: $99,470.20 | H4 trend filter: ACTIVO | ATR SL: ACTIVO | Demo monitor: ACTIVO*

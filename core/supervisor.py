@@ -105,7 +105,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # MT5 forex/indices symbols
 
 MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "NAS100", "US30"]
-MT5_TIMEFRAMES   = ["H1", "H4"]  # H1 + H4 for more signal opportunities
+MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 first: cache trend before H1 dual-confirm filter
 
 MT5_MIN_VOLUME   = 0.01
 
@@ -263,6 +263,7 @@ class TradingSupervisor:
 
         self._demo_trades: List[DemoTrade] = self._load_demo_trades()
         self._crypto_h4_trend: Dict[str, str] = {}  # symbol → "LONG" | "SHORT"
+        self._mt5_h4_direction: Dict[str, str] = {}  # symbol → "LONG" | "SHORT" | "WAIT"
 
         self.mode    = config.operation_mode
 
@@ -1946,6 +1947,64 @@ class TradingSupervisor:
 
                 current_tickets = {p["ticket"] for p in positions}
 
+                # ── Partial close 50% at 1:1 RR to lock profit ─────────────
+                # When profit >= 1×SL distance: close half the position,
+                # so even if the trade reverses, we keep at least some gain.
+                for p in positions:
+                    try:
+                        ticket  = p.get("ticket", 0)
+                        symbol  = p.get("symbol", "")
+                        ptype   = p.get("type", "").upper()
+                        entry   = p.get("price_open", 0.0)
+                        cur_sl  = p.get("sl", 0.0)
+                        cur_tp  = p.get("tp", 0.0)
+                        volume  = p.get("volume", 0.0)
+                        partial_done_key = f"partial_{ticket}"
+                        # Skip if already partially closed this trade
+                        if not (ticket and entry > 0 and cur_sl > 0 and volume > 0):
+                            continue
+                        if getattr(self, "_partial_closed", None) is None:
+                            self._partial_closed: set = set()
+                        if ticket in self._partial_closed:
+                            continue
+                        sl_dist  = abs(entry - cur_sl)
+                        if sl_dist <= 0:
+                            continue
+                        import MetaTrader5 as _mt5_mod2
+                        tick2 = _mt5_mod2.symbol_info_tick(symbol)
+                        if not tick2:
+                            continue
+                        cur_price = tick2.bid if ptype == "BUY" else tick2.ask
+                        if ptype == "BUY":
+                            profit_units = (cur_price - entry) / sl_dist
+                        else:
+                            profit_units = (entry - cur_price) / sl_dist
+                        if profit_units >= 1.0:
+                            half_vol = round(volume / 2, 2)
+                            ok = await loop.run_in_executor(
+                                None,
+                                lambda t=ticket, v=half_vol: self.mt5.partial_close_position(t, v)
+                            )
+                            if ok:
+                                self._partial_closed.add(ticket)
+                                pnl_now = p.get("profit", 0.0)
+                                print(
+                                    f"[PARTIAL] {symbol} #{ticket} — cerrado 50% ({half_vol}L) "
+                                    f"al 1:1 RR | P&L parcial ${pnl_now/2:.2f}",
+                                    flush=True,
+                                )
+                                try:
+                                    await self.telegram.send_glint_alert(
+                                        f"<b>CIERRE PARCIAL 50% ✅</b>\n"
+                                        f"{symbol} #{ticket} — 1:1 RR alcanzado\n"
+                                        f"Cerrado {half_vol}L | P&amp;L asegurado: ${pnl_now/2:.2f}\n"
+                                        f"Resto del trade: corriendo libre con SL en breakeven"
+                                    )
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
                 # ── Trailing SL: move to breakeven when 1×SL in profit ─────
                 for p in positions:
                     try:
@@ -2727,6 +2786,18 @@ class TradingSupervisor:
                                 score = signal.decision_score
                                 bias  = signal.signal_type.value.upper()
                                 print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="", flush=True)
+
+                                # Cache H4 direction for dual-confirm filter
+                                if tf == "H4" and signal.signal_type != SignalType.WAIT:
+                                    self._mt5_h4_direction[symbol] = bias
+
+                                # Dual confirm: H1 trade only if H4 agrees
+                                if tf == "H1" and signal.signal_type != SignalType.WAIT:
+                                    h4_dir = self._mt5_h4_direction.get(symbol)
+                                    if h4_dir and h4_dir != bias:
+                                        print(f" -- [DUAL-CONFIRM] H1={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
+                                        continue
+
                                 if signal.signal_type == SignalType.WAIT or score < mt5_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={mt5_threshold})")

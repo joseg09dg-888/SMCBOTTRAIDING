@@ -492,3 +492,46 @@ class MT5Connector:
         except Exception as e:
             logger.error(f"MT5 close_position error: {e}")
             return False
+
+    def partial_close_position(self, ticket: int, close_volume: float) -> bool:
+        """Close *close_volume* lots of an open position (partial close).
+        Used to lock in 50% profit at 1:1 RR milestone."""
+        if not HAS_MT5:
+            return False
+        try:
+            pos = mt5.positions_get(ticket=ticket)
+            if not pos:
+                return False
+            p = pos[0]
+            sym_info = mt5.symbol_info(p.symbol)
+            if sym_info is None:
+                return False
+            min_vol  = sym_info.volume_min
+            vol_step = sym_info.volume_step
+            # Round close_volume to broker step, floor to min_vol
+            vol = max(min_vol, round(round(close_volume / vol_step) * vol_step, 8))
+            if vol >= p.volume:
+                return self.close_position(ticket)  # full close
+            close_type = mt5.ORDER_TYPE_SELL if p.type == 0 else mt5.ORDER_TYPE_BUY
+            tick = mt5.symbol_info_tick(p.symbol)
+            if tick is None:
+                return False
+            price = tick.bid if close_type == mt5.ORDER_TYPE_SELL else tick.ask
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol,
+                "volume": vol, "type": close_type,
+                "position": ticket, "price": price,
+                "deviation": 20, "comment": "SMC PartialClose 50%",
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+            result = mt5.order_send(request)
+            ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+            if ok:
+                logger.info(f"MT5 partial close: #{ticket} {p.symbol} -{vol}L @ {price}")
+            else:
+                rc = result.retcode if result else "None"
+                logger.warning(f"MT5 partial close failed: #{ticket} retcode={rc}")
+            return ok
+        except Exception as e:
+            logger.error(f"MT5 partial_close error: {e}")
+            return False
