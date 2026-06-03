@@ -129,6 +129,42 @@ class SignalAgent:
         min_dist = self._MIN_SL_DIST.get(symbol, pct_dist)
         return max(pct_dist, min_dist)
 
+    def _nearest_swing(
+        self,
+        entry: float,
+        sl_dist: float,
+        is_bullish: bool,
+        tp_raw: float,
+        df=None,
+    ) -> float:
+        """Return TP price: nearest swing high (LONG) or swing low (SHORT) in the chart,
+        constrained between 1×SL and 3×SL from entry. Falls back to tp_raw."""
+        try:
+            _df = df if df is not None else self._last_df
+            if _df is None or getattr(_df, 'empty', True) or len(_df) < 20:
+                return tp_raw
+            highs = _df["high"].astype(float).values[-50:]
+            lows  = _df["low"].astype(float).values[-50:]
+            min_tp_dist = sl_dist * 1.5   # at least 1.5:1 RR
+            max_tp_dist = sl_dist * 3.5   # cap at 3.5:1 RR
+            if is_bullish:
+                # Nearest swing high above entry + min_tp_dist
+                candidates = [h for h in highs if h > entry + min_tp_dist]
+                if candidates:
+                    nearest = min(candidates)
+                    if nearest <= entry + max_tp_dist:
+                        return round(nearest, 5)
+            else:
+                # Nearest swing low below entry - min_tp_dist
+                candidates = [lo for lo in lows if lo < entry - min_tp_dist]
+                if candidates:
+                    nearest = max(candidates)
+                    if nearest >= entry - max_tp_dist:
+                        return round(nearest, 5)
+        except Exception:
+            pass
+        return tp_raw
+
     def evaluate(
         self,
         analysis_text: str,
@@ -168,23 +204,37 @@ class SignalAgent:
 
         _df = df if df is not None else self._last_df
 
+        # Count confluence factors to set TP multiplier (more confluence = bolder target)
+        n_confluence = sum([
+            "BOS" in analysis_text,
+            "CHoCH" in analysis_text,
+            "order block" in analysis_text,
+            "FVG" in analysis_text,
+        ])
+        tp_mult = 3.0 if n_confluence >= 3 else (2.5 if n_confluence == 2 else 2.0)
+
         if poi_zones:
             poi = poi_zones[0]
             if is_bullish:
                 entry    = poi.get("zone_low", current_price)
                 sl_dist  = self._sl_distance(symbol, entry, _df)
                 sl       = entry - sl_dist
-                tp       = entry + sl_dist * 3
+                tp_raw   = entry + sl_dist * tp_mult
+                # Use nearest swing high if available and closer than tp_raw
+                tp = self._nearest_swing(entry, sl_dist, is_bullish=True, tp_raw=tp_raw, df=_df)
+                sl       = entry - sl_dist
             else:
                 entry    = poi.get("zone_high", current_price)
                 sl_dist  = self._sl_distance(symbol, entry, _df)
                 sl       = entry + sl_dist
-                tp       = entry - sl_dist * 3
+                tp_raw   = entry - sl_dist * tp_mult
+                tp = self._nearest_swing(entry, sl_dist, is_bullish=False, tp_raw=tp_raw, df=_df)
         else:
             entry   = current_price
             sl_dist = self._sl_distance(symbol, entry, _df)
             sl      = (entry - sl_dist) if is_bullish else (entry + sl_dist)
-            tp      = (entry + sl_dist * 3) if is_bullish else (entry - sl_dist * 3)
+            tp_raw  = (entry + sl_dist * tp_mult) if is_bullish else (entry - sl_dist * tp_mult)
+            tp = self._nearest_swing(entry, sl_dist, is_bullish=is_bullish, tp_raw=tp_raw, df=_df)
 
         signal = TradeSignal(
             symbol       = symbol,
