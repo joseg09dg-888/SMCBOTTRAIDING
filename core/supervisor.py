@@ -98,7 +98,7 @@ DEAD_HOURS_UTC           = set(range(22, 24)) | {0, 1, 5, 6}  # 22-01 UTC + 05-0
 
 SCAN_SYMBOLS    = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT"]
 
-SCAN_TIMEFRAMES = ["1h", "4h"]  # removed 5m/15m -- too noisy for quality setups
+SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filter runs
 
 
 
@@ -757,11 +757,16 @@ class TradingSupervisor:
 
 
 
+        # Only keep POI zones within 5% of current price — discard stale historical blocks
+        current_close = float(df["close"].iloc[-1]) if len(df) > 0 else 0.0
+        _max_poi_dist  = current_close * 0.05 if current_close > 0 else float("inf")
         poi_zones = []
-
-        for ob in (bull_obs + bear_obs)[:3]:
-
-            poi_zones.append(ob)
+        for ob in (bull_obs + bear_obs)[:5]:
+            zone_mid = (ob.get("zone_high", 0) + ob.get("zone_low", 0)) / 2.0
+            if zone_mid > 0 and abs(zone_mid - current_close) <= _max_poi_dist:
+                poi_zones.append(ob)
+            if len(poi_zones) >= 3:
+                break
 
 
 
@@ -1941,6 +1946,53 @@ class TradingSupervisor:
 
                 current_tickets = {p["ticket"] for p in positions}
 
+                # ── Trailing SL: move to breakeven when 1×SL in profit ─────
+                for p in positions:
+                    try:
+                        ticket   = p.get("ticket", 0)
+                        symbol   = p.get("symbol", "")
+                        ptype    = p.get("type", "").upper()  # "BUY" / "SELL"
+                        entry    = p.get("price_open", 0.0)
+                        cur_sl   = p.get("sl", 0.0)
+                        cur_tp   = p.get("tp", 0.0)
+                        cur_pnl  = p.get("profit", 0.0)
+                        volume   = p.get("volume", 0.0)
+                        if not (ticket and entry > 0 and cur_sl > 0 and cur_tp > 0):
+                            continue
+                        sl_dist  = abs(entry - cur_sl)
+                        if sl_dist <= 0:
+                            continue
+                        # Get current price from MT5 tick
+                        import MetaTrader5 as _mt5_mod
+                        tick = _mt5_mod.symbol_info_tick(symbol)
+                        if not tick:
+                            continue
+                        cur_price = tick.bid if ptype == "BUY" else tick.ask
+                        # Profit in SL units
+                        if ptype == "BUY":
+                            profit_in_sl = (cur_price - entry) / sl_dist
+                            be_sl = entry + 0.0001 * sl_dist  # slightly above breakeven
+                        else:
+                            profit_in_sl = (entry - cur_price) / sl_dist
+                            be_sl = entry - 0.0001 * sl_dist
+                        # Move SL to breakeven once trade is 1x SL in profit
+                        if profit_in_sl >= 1.0:
+                            if ptype == "BUY" and cur_sl < be_sl:
+                                ok = await loop.run_in_executor(
+                                    None, lambda t=ticket, s=round(be_sl, 5), tp=cur_tp:
+                                    self.mt5.modify_position_sl_tp(t, s, tp)
+                                )
+                                if ok:
+                                    print(f"[TRAIL] {symbol} #{ticket} SL → breakeven {be_sl:.5f}", flush=True)
+                            elif ptype == "SELL" and cur_sl > be_sl:
+                                ok = await loop.run_in_executor(
+                                    None, lambda t=ticket, s=round(be_sl, 5), tp=cur_tp:
+                                    self.mt5.modify_position_sl_tp(t, s, tp)
+                                )
+                                if ok:
+                                    print(f"[TRAIL] {symbol} #{ticket} SL → breakeven {be_sl:.5f}", flush=True)
+                    except Exception:
+                        pass
 
 
                 # ── Detect closed positions ───────────────────────────────
