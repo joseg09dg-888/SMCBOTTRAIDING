@@ -418,4 +418,4 @@ Con $200K fondead al 90% profit split:
 
 ---
 
-*Última actualización: 2026-06-03 | Tests: 1288 | Bot: PM2 ONLINE | Agentes: 13 PARALELOS | MT5_REAL threshold: 75 | MIN_RR: 2.0 | MAX_OPEN: 2 | Balance MT5: $99,470.20 | H4 trend filter: ACTIVO | ATR SL: ACTIVO | Demo monitor: ACTIVO*
+*Última actualización: 2026-06-03 | Tests: 1295 | Bot: PM2 ONLINE | MT5 pairs: 8 | Dead hours: 22-02 UTC | MAX_DAILY: 10 | MAX_OPEN: 3 | MIN_RR: 1.8 | H4+H1 dual confirm | ATR SL | Partial close 50% | Demo monitor ACTIVO*
