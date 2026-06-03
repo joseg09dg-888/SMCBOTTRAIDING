@@ -84,12 +84,21 @@ class SignalAgent:
     with entry, SL, and TP based on structure.
     """
 
-    # Minimum SL distance per symbol — must exceed broker minimum stop distance
+    # Minimum SL distance per symbol — realistic minimums based on typical daily range
+    # Forex pairs: ~20-30 pips minimum to avoid being stopped by normal noise
     _MIN_SL_DIST: Dict[str, float] = {
-        "EURUSD": 0.0030, "GBPUSD": 0.0040, "USDCHF": 0.0030,
-        "AUDUSD": 0.0030, "NZDUSD": 0.0030, "EURGBP": 0.0030,
-        "USDJPY": 0.30,   "GBPJPY": 0.50,   "EURJPY": 0.30,
-        "XAUUSD": 50.0,   "NAS100": 30.0,   "US30":   50.0,
+        "EURUSD": 0.0020,   # 20 pips min
+        "GBPUSD": 0.0025,   # 25 pips min
+        "AUDUSD": 0.0020,   # 20 pips min
+        "USDCHF": 0.0020,   # 20 pips min
+        "NZDUSD": 0.0020,   # 20 pips min
+        "EURGBP": 0.0020,   # 20 pips min
+        "USDJPY": 0.20,     # 20 pips min
+        "GBPJPY": 0.30,     # 30 pips min
+        "EURJPY": 0.25,     # 25 pips min
+        "XAUUSD": 200.0,    # $200 min (gold moves $50+ in minutes)
+        "NAS100": 50.0,     # 50 pts min
+        "US30":   80.0,     # 80 pts min
     }
 
     def __init__(self, min_confidence: float = 0.65):
@@ -119,8 +128,8 @@ class SignalAgent:
                 ], axis=1).max(axis=1)
                 atr14 = float(tr.rolling(14).mean().iloc[-1])
                 if atr14 > 0:
-                    atr_sl = atr14 * 1.5
-                    min_dist = self._MIN_SL_DIST.get(symbol, entry * 0.005)
+                    atr_sl = atr14 * 2.0  # 2x ATR: more room to breathe, fewer premature stops
+                    min_dist = self._MIN_SL_DIST.get(symbol, entry * 0.008)
                     return max(atr_sl, min_dist)
             except Exception:
                 pass
