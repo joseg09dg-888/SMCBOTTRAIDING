@@ -21,12 +21,14 @@ class NightlyReporter:
         self._fired_dates: set = set()
 
     def _get_conn(self) -> sqlite3.Connection:
-        return self._conn or get_db()
+        conn = self._conn or get_db()
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def should_fire(self, now: datetime = None) -> bool:
         dt  = now or datetime.now(timezone.utc)
         key = dt.strftime("%Y-%m-%d")
-        return dt.hour == 22 and dt.minute < 2 and key not in self._fired_dates
+        return dt.hour == 22 and dt.minute < 5 and key not in self._fired_dates
 
     def mark_fired(self, date_str: str):
         self._fired_dates.add(date_str)
@@ -63,10 +65,16 @@ class NightlyReporter:
         lesson1 = lessons[0] if lessons else "Continuar en demo"
         lesson2 = lessons[1] if len(lessons) > 1 else "Monitorear regimen"
 
-        gm      = GoalsManager(conn=conn)
-        metrics = gm.evaluate()
-        wr_prog = min(metrics.get("win_rate_pct_100", 0), 100)
-        edge    = metrics.get("axi_edge_score", 0)
+        try:
+            gm      = GoalsManager(conn=conn)
+            metrics = gm.evaluate()
+            wr_prog = min(metrics.get("win_rate_pct_100", 0), 100)
+            edge    = metrics.get("axi_edge_score", 0)
+        except Exception as e:
+            print(f"[NIGHTLY] GoalsManager error: {e}", flush=True)
+            gm      = None
+            wr_prog = 0
+            edge    = 0.0
 
         research_row = conn.execute(
             "SELECT title FROM research ORDER BY id DESC LIMIT 1"
@@ -98,7 +106,7 @@ class NightlyReporter:
             "best_setup": best_setup, "worst_setup": worst_setup,
             "lessons_text": " | ".join(lessons[:3]),
             "plan_tomorrow": f"Focus {best_setup}",
-            "goals_snapshot": gm.get_goals_snapshot(),
+            "goals_snapshot": gm.get_goals_snapshot() if gm else "",
             "report_text": text,
         }, conn=conn)
         return text

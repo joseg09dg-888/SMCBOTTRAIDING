@@ -16,7 +16,7 @@ class Config:
     binance_testnet: bool = os.getenv("BINANCE_TESTNET", "true").lower() == "true"
 
     # MetaTrader
-    mt5_login: int = int(os.getenv("MT5_LOGIN", "0")) if os.getenv("MT5_LOGIN", "0").isdigit() else 0
+    mt5_login: int = int(os.getenv("MT5_LOGIN", "0").strip()) if os.getenv("MT5_LOGIN", "0").strip().lstrip("-").isdigit() else 0
     mt5_password: str = os.getenv("MT5_PASSWORD", "")
     mt5_server: str = os.getenv("MT5_SERVER", "MetaQuotes-Demo")
     mt5_demo: bool = os.getenv("MT5_DEMO", "true").lower() == "true"
@@ -31,7 +31,7 @@ class Config:
     telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
 
     # Riesgo
-    max_risk_per_trade: float = float(os.getenv("MAX_RISK_PER_TRADE", "0.005"))
+    max_risk_per_trade: float = float(os.getenv("MAX_RISK_PER_TRADE", "0.005").replace(",", "."))
     max_daily_loss: float = float(os.getenv("MAX_DAILY_LOSS", "0.05"))
     max_monthly_loss: float = float(os.getenv("MAX_MONTHLY_LOSS", "0.15"))
     max_open_positions: int = int(os.getenv("MAX_OPEN_POSITIONS", "3"))

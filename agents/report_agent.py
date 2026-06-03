@@ -222,7 +222,7 @@ class ReportAgent:
         if total > 1:
             pnls = [t.pnl for t in trades]
             mean_pnl = sum(pnls) / len(pnls)
-            variance = sum((p - mean_pnl) ** 2 for p in pnls) / len(pnls)
+            variance = sum((p - mean_pnl) ** 2 for p in pnls) / (len(pnls) - 1)
             std_pnl = math.sqrt(variance)
             sharpe = (mean_pnl / std_pnl * math.sqrt(252)) if std_pnl > 0 else 0.0
         else:

@@ -59,3 +59,13 @@ def test_record_trade_updates_pnl(rm):
     rm.record_trade(pnl=10.0)
     assert rm.daily_pnl == 10.0
     assert rm.monthly_pnl == 10.0
+
+
+def test_zero_pip_value_returns_zero(rm):
+    size = rm.calculate_position_size(entry=1.1000, stop_loss=1.0950, pip_value=0.0)
+    assert size == 0.0
+
+
+def test_negative_pip_value_returns_zero(rm):
+    size = rm.calculate_position_size(entry=1.1000, stop_loss=1.0950, pip_value=-0.0001)
+    assert size == 0.0

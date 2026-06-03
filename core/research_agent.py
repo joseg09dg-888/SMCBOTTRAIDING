@@ -51,16 +51,21 @@ class ResearchAgent:
             resp = httpx.get(ARXIV_URL, timeout=10)
             if resp.status_code != 200:
                 return []
-            entries = re.findall(
-                r"<entry>.*?<title>(.*?)</title>.*?<summary>(.*?)</summary>"
-                r".*?<id>(http[^<]+)</id>",
-                resp.text,
-                re.DOTALL,
-            )
+            # Use xml.etree for robust parsing (arXiv Atom: id before title)
+            try:
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(resp.text)
+                ns = {"atom": "http://www.w3.org/2005/Atom"}
+                entries = root.findall("atom:entry", ns)
+            except Exception:
+                entries = []
             items = []
-            for title, summary, url in entries[:5]:
-                title   = re.sub(r"\s+", " ", title.strip())
-                summary = re.sub(r"\s+", " ", summary.strip())[:500]
+            for entry in entries[:5]:
+                title   = (entry.findtext("atom:title", "", ns) or "").strip()
+                summary = (entry.findtext("atom:summary", "", ns) or "").strip()[:500]
+                url     = (entry.findtext("atom:id", "", ns) or "").strip()
+                title   = re.sub(r"\s+", " ", title)
+                summary = re.sub(r"\s+", " ", summary)
                 score   = _score_relevance(f"{title} {summary}")
                 if score >= self.RELEVANCE_THRESHOLD:
                     items.append({"source": "arxiv", "title": title,

@@ -208,7 +208,7 @@ REGLAS:
         try:
             prompt = self._build_reasoning_prompt(smc_summary, similar_episodes, regime)
             response = self.client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-haiku-4-5",
                 max_tokens=512,
                 messages=[{"role": "user", "content": prompt}],
             )

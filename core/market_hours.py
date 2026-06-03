@@ -60,16 +60,13 @@ def is_market_open(symbol: str, dt: datetime | None = None) -> bool:
         return False
 
     # Friday close: Axi closes forex/gold/indices at 21:00 UTC Friday
-    if weekday == 4 and mtype != "crypto" and (hour > 21 or (hour == 21 and minute >= 0)):
+    if weekday == 4 and mtype != "crypto" and hour >= 21:
         return False
 
     if mtype == "crypto":
         return True
 
     if mtype == "forex":
-        # Monday opens 00:00 UTC, continuous until Friday 21:00 UTC
-        if weekday == 0 and hour < 0:
-            return False
         return True
 
     if mtype == "gold":
@@ -116,5 +113,21 @@ def minutes_until_open(symbol: str, dt: datetime | None = None) -> int:
 
     if mtype == "gold" and dt.hour == 21:
         return 60 - dt.minute  # break lasts until 22:00
+
+    if mtype in ("forex", "gold"):
+        from datetime import timedelta
+        # Weekend: calculate minutes until Monday 00:00 UTC (forex) or 01:00 UTC (gold)
+        open_hour = 1 if mtype == "gold" else 0
+        if dt.weekday() >= 5:  # Saturday=5, Sunday=6
+            days_to_monday = 7 - dt.weekday()
+            next_open = (dt + timedelta(days=days_to_monday)).replace(
+                hour=open_hour, minute=0, second=0, microsecond=0
+            )
+        else:
+            # Weekday but past Friday 21:00 close → next Monday
+            next_open = (dt + timedelta(days=(7 - dt.weekday()))).replace(
+                hour=open_hour, minute=0, second=0, microsecond=0
+            )
+        return int((next_open - dt).total_seconds() // 60)
 
     return 60  # generic fallback

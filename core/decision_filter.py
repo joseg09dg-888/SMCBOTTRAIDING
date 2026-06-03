@@ -102,8 +102,9 @@ class DecisionFilter:
                 )
                 hist_score  = bonus.points
                 hist_detail = bonus.breakdown_str()
-            except Exception:
-                pass
+            except Exception as e:
+                hist_detail = f"error agente historico: {e}"
+                print(f"[DECISION] HistoricalAgent error: {e}", flush=True)
 
         total = smc_score + ml_score + sentiment_score + risk_score + hist_score
         total = min(max(total, 0), 100)
@@ -268,14 +269,18 @@ class DecisionFilter:
         else:
             # Build specific rejection reason from weakest components
             if breakdown:
-                weakest = min(breakdown, key=breakdown.get)
-                max_pts = {"smc": 30, "ml": 25, "sentiment": 20, "risk": 25}
-                pct = breakdown[weakest] / max_pts.get(weakest, 25) * 100
-                reason = (
-                    f"Score insuficiente ({score}/100). "
-                    f"Componente más débil: {weakest.upper()} ({breakdown[weakest]}/{max_pts.get(weakest,25)} pts, {pct:.0f}%). "
-                    "Si no hay setup claro, no se opera."
-                )
+                numeric = {k: v for k, v in breakdown.items() if isinstance(v, (int, float))}
+                weakest = min(numeric, key=numeric.get) if numeric else None
+                max_pts = {"smc": 30, "ml": 25, "sentiment": 20, "risk": 25, "historical": 20}
+                pct = numeric[weakest] / max_pts.get(weakest, 25) * 100 if weakest else 0
+                if weakest:
+                    reason = (
+                        f"Score insuficiente ({score}/100). "
+                        f"Componente más débil: {weakest.upper()} ({numeric[weakest]}/{max_pts.get(weakest,25)} pts, {pct:.0f}%). "
+                        "Si no hay setup claro, no se opera."
+                    )
+                else:
+                    reason = f"Score insuficiente ({score}/100) — no se opera."
             else:
                 reason = f"Score insuficiente ({score}/100) — no se opera."
 

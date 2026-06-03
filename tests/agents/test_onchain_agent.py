@@ -36,11 +36,11 @@ def _mock_extreme_fear_response():
 
 
 def _mock_greed_response():
-    """Returns a mock httpx response simulating greed (value=80)."""
+    """Returns a mock httpx response simulating greed (value=65, not extreme)."""
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
     mock_resp.json.return_value = {
-        "data": [{"value": "80", "value_classification": "Greed", "timestamp": "1700000000"}]
+        "data": [{"value": "65", "value_classification": "Greed", "timestamp": "1700000000"}]
     }
     return mock_resp
 

@@ -161,3 +161,25 @@ def test_demo_command_with_open_trade(commander):
     assert result.success is True
     assert "BTCUSDT" in result.message
     assert "SHORT" in result.message
+
+
+def test_performance_command_no_supervisor(commander):
+    commander._supervisor = None
+    result = commander.handle_command("/performance")
+    assert result.success is True
+    assert "performance" in result.action.lower() or "Performance" in result.message or "WIN" in result.message.upper() or "Win" in result.message
+
+
+def test_performance_command_returns_stats(commander):
+    from unittest.mock import patch as _patch
+    with _patch("core.score_db.get_stats") as mock_stats, \
+         _patch("core.score_db.get_recent_scores") as mock_recent:
+        mock_stats.return_value = {
+            "total": 20, "executed": 15, "wins": 10, "losses": 5,
+            "win_rate": 66.7, "high_score": 10, "profit_factor": 2.0,
+            "avg_pnl_pct": 1.5, "has_real_outcomes": True,
+        }
+        mock_recent.return_value = []
+        result = commander.handle_command("/performance")
+    assert result.success is True
+    assert "66" in result.message or "Win" in result.message

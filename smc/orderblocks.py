@@ -22,6 +22,8 @@ class OrderBlockDetector:
 
         for i in range(1, n - 1):
             is_bearish = closes[i] < opens[i]
+            if closes[i] == 0:
+                continue
             next_move  = (closes[i + 1] - closes[i]) / closes[i]
             if is_bearish and next_move > self.threshold:
                 obs.append({
@@ -45,6 +47,8 @@ class OrderBlockDetector:
 
         for i in range(1, n - 1):
             is_bullish = closes[i] > opens[i]
+            if closes[i] == 0:
+                continue
             next_move  = (closes[i] - closes[i + 1]) / closes[i]
             if is_bullish and next_move > self.threshold:
                 obs.append({

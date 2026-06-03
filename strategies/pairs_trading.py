@@ -118,7 +118,7 @@ class PairsTrader:
         Using lookback window.
         """
         rolling_mean = spread.rolling(window=lookback).mean()
-        rolling_std = spread.rolling(window=lookback).std()
+        rolling_std  = spread.rolling(window=lookback).std().replace(0, float('nan'))
         zscore = (spread - rolling_mean) / rolling_std
         return zscore
 

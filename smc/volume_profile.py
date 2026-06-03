@@ -33,6 +33,8 @@ class VolumeProfile:
         poc_idx = int(np.argmax(vol_at_price))
         poc = float(price_levels[poc_idx])
         total_volume = vol_at_price.sum()
+        if total_volume == 0:
+            return {"poc": 0.0, "vah": 0.0, "val": 0.0, "value_area_pct": 0.0, "poc_volume": 0.0}
         target_volume = total_volume * 0.70
 
         upper = lower = poc_idx
@@ -86,8 +88,8 @@ class AnchoredVWAP:
         sub = self.df.iloc[self.anchor:].copy()
         typical = (sub["high"] + sub["low"] + sub["close"]) / 3
         cum_tp_vol = (typical * sub["volume"]).cumsum()
-        cum_vol    = sub["volume"].cumsum()
-        vwap_series = (cum_tp_vol / cum_vol).tolist()
+        cum_vol    = sub["volume"].cumsum().replace(0, float('nan'))
+        vwap_series = (cum_tp_vol / cum_vol).ffill().tolist()
         return vwap_series
 
     def is_price_above_vwap(self, current_price: float) -> bool:

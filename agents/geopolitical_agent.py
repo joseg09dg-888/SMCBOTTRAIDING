@@ -146,7 +146,7 @@ class GeopoliticalAgent:
         # Return the bias with the highest weighted score
         return max(votes, key=lambda k: votes[k])
 
-    def get_signal(self, symbol: str = "") -> GeopoliticalSignal:
+    def get_signal(self, symbol: str = "", bias: str = "bullish") -> GeopoliticalSignal:
         """Returns full geopolitical signal; handles empty events list gracefully."""
         events = self.fetch_events()
         risk_score = self.calculate_risk_score(events)
@@ -165,7 +165,7 @@ class GeopoliticalAgent:
             market_impact[sym] = self.get_market_impact(sym, events)
 
         # score_bonus: +10 if geopolitical favors direction, -15 if risk > 7
-        score_bonus = self.score_adjustment(symbol, "bullish") if symbol else 0
+        score_bonus = self.score_adjustment(symbol, bias) if symbol else 0
         if trade_blocked:
             score_bonus = -15
 

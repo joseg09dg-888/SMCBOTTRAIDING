@@ -174,6 +174,28 @@ class TestSaveReport:
         assert row["pnl_day"] == 120.0
 
 
+class TestDivisionProtection:
+    def test_get_setup_stats_empty_table_no_crash(self, conn):
+        stats = get_setup_stats(conn=conn)
+        assert stats == {}
+
+    def test_get_session_stats_empty_table_no_crash(self, conn):
+        stats = get_session_stats(conn=conn)
+        assert stats == {}
+
+    def test_get_setup_stats_win_rate_never_divides_by_zero(self, conn):
+        eid = record_episode(_ep(setup="X"), conn=conn)
+        update_episode_result(eid, 156.0, 50.0, "WIN", None, conn=conn)
+        stats = get_setup_stats(conn=conn)
+        assert stats["X"]["win_rate"] == 100.0
+
+    def test_get_session_stats_win_rate_never_divides_by_zero(self, conn):
+        eid = record_episode(_ep(session="tokyo"), conn=conn)
+        update_episode_result(eid, 156.0, 50.0, "LOSS", None, conn=conn)
+        stats = get_session_stats(conn=conn)
+        assert stats["tokyo"]["win_rate"] == 0.0
+
+
 class TestGoals:
     def test_seed_goals_inserts_5_defaults(self, conn):
         seed_goals(conn=conn)

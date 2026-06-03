@@ -98,6 +98,8 @@ class SmartExecutor:
         buy : (avg - target) / target   (positive → paid more)
         sell: (target - avg) / target   (positive → received less)
         """
+        if target_price == 0:
+            return 0.0
         if side == "buy":
             return (avg_executed_price - target_price) / target_price
         return (target_price - avg_executed_price) / target_price
@@ -142,6 +144,8 @@ class SmartExecutor:
         """
         vp = np.array(volume_profile, dtype=float)
         total_vol = vp.sum()
+        if total_vol == 0:
+            return self.split_twap(symbol, side, total_quantity, current_price)
         weights = vp / total_vol
         quantities = weights * total_quantity
 

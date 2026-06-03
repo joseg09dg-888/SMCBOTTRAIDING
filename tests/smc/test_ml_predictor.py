@@ -60,3 +60,32 @@ def test_features_dict_has_keys(ohlcv_trend):
     assert "momentum" in result.features
     assert "trend_consistency" in result.features
     assert "volume_confirmation" in result.features
+
+
+def test_zero_closes_no_division_error():
+    data = {
+        "open":   [0] * 10,
+        "high":   [0] * 10,
+        "low":    [0] * 10,
+        "close":  [0] * 10,
+        "volume": [0] * 10,
+    }
+    df = pd.DataFrame(data)
+    pred = MLPredictor()
+    result = pred.predict(df, bias="neutral")
+    assert isinstance(result, PredictionResult)
+    assert 0 <= result.score <= 25
+
+
+def test_last_close_zero_no_htf_division_error():
+    data = {
+        "open":   [100, 101, 102, 103, 104, 0],
+        "high":   [101, 102, 103, 104, 105, 0],
+        "low":    [99,  100, 101, 102, 103, 0],
+        "close":  [100, 101, 102, 103, 104, 0],
+        "volume": [1000] * 6,
+    }
+    df = pd.DataFrame(data)
+    pred = MLPredictor()
+    result = pred.predict(df, bias="bullish")
+    assert isinstance(result, PredictionResult)

@@ -88,4 +88,4 @@ class AutonomousLearner:
         adj = self.get_weight_adj(setup_type, regime, session)
         if adj == 1.0:
             return base_threshold
-        return max(0, int(base_threshold / adj))
+        return max(25, min(95, int(base_threshold / adj)))

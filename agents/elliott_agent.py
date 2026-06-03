@@ -86,7 +86,7 @@ class ElliottFibonacciAgent:
         elif position > 0.80:
             wave_count   = 5
             current_wave = "wave_5"
-            bonus        = 5
+            bonus        = -5  # fin de impulso, riesgo de reversal inminente
             confidence   = 0.60
             w_type       = "impulse"
         elif position < 0.20:

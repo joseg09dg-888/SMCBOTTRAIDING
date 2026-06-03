@@ -51,3 +51,31 @@ def test_price_in_ob(sample_ohlc):
         mid = (b["zone_high"] + b["zone_low"]) / 2
         assert ob.is_price_in_ob(mid, b)
         assert not ob.is_price_in_ob(b["zone_high"] + 10, b)
+
+
+def test_zero_close_bullish_no_crash():
+    data = {
+        "open":   [0.0, 0.0, 1.0, 1.0],
+        "high":   [0.0, 0.0, 1.1, 1.1],
+        "low":    [0.0, 0.0, 0.9, 0.9],
+        "close":  [0.0, 0.0, 1.0, 1.0],
+        "volume": [0, 0, 100, 100],
+    }
+    df = pd.DataFrame(data)
+    ob = OrderBlockDetector(df)
+    blocks = ob.find_bullish_obs()
+    assert isinstance(blocks, list)
+
+
+def test_zero_close_bearish_no_crash():
+    data = {
+        "open":   [0.0, 0.0, 1.0, 0.9],
+        "high":   [0.0, 0.0, 1.1, 1.0],
+        "low":    [0.0, 0.0, 0.8, 0.7],
+        "close":  [0.0, 0.0, 0.9, 0.8],
+        "volume": [0, 0, 100, 100],
+    }
+    df = pd.DataFrame(data)
+    ob = OrderBlockDetector(df)
+    blocks = ob.find_bearish_obs()
+    assert isinstance(blocks, list)

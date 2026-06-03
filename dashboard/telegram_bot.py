@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 from typing import Optional, Callable
 from core.config import config
 from agents.signal_agent import TradeSignal, SignalType
@@ -41,13 +41,13 @@ class TradingTelegramBot:
             try:
                 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                 keyboard = InlineKeyboardMarkup([[
-                    InlineKeyboardButton("âœ… EJECUTAR", callback_data=f"approve:{id(signal)}"),
-                    InlineKeyboardButton("âŒ RECHAZAR", callback_data=f"reject:{id(signal)}"),
+                    InlineKeyboardButton("EJECUTAR", callback_data=f"approve:{id(signal)}"),
+                    InlineKeyboardButton("RECHAZAR", callback_data=f"reject:{id(signal)}"),
                 ]])
                 self._pending[str(id(signal))] = signal
                 await bot.send_message(
                     chat_id=config.telegram_chat_id,
-                    text=f"â³ *SEÃ‘AL PENDIENTE DE APROBACIÃ“N*\n\n{text}",
+                    text=f"<b>SENAL PENDIENTE DE APROBACION</b>\n\n{text}",
                     parse_mode="HTML",
                     reply_markup=keyboard,
                 )
@@ -78,11 +78,13 @@ class TradingTelegramBot:
             print(f"[Telegram] glint alert failed: {e}")
 
     async def send_trade_result(self, symbol: str, pnl: float, direction: str):
-        emoji = "ðŸŸ¢" if pnl > 0 else "ðŸ”´"
+        sign = "+" if pnl > 0 else ""
+        result_label = "WIN" if pnl > 0 else "LOSS"
         msg = (
-            f"{emoji} *TRADE CERRADO â€” {symbol}*\n"
-            f"DirecciÃ³n: {direction}\n"
-            f"P&L: `{'+'if pnl>0 else ''}{pnl:.2f} USD`"
+            f"<b>TRADE CERRADO - {symbol}</b>\n"
+            f"Direccion: {direction}\n"
+            f"Resultado: <b>{result_label}</b>\n"
+            f"P&amp;L: <code>{sign}{pnl:.2f} USD</code>"
         )
         bot = self._get_bot()
         if not bot or not config.telegram_chat_id:
@@ -109,23 +111,19 @@ class TradingTelegramBot:
         market: str = "Binance",
     ):
         """Send a formatted demo trade signal to Telegram."""
-        emoji = "🟢" if direction == "long" else "🔴"
-        dir_text = "LONG ▲" if direction == "long" else "SHORT ▼"
+        dir_text = "LONG" if direction == "long" else "SHORT"
         rr = abs(tp - entry) / abs(entry - sl) if abs(entry - sl) > 0 else 0
         msg = (
-            f"<b>{emoji} TRADE DEMO — {symbol}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"⏱ TF: {timeframe} | {market}\n"
-            f"📊 Dirección: <b>{dir_text}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📍 Entrada:    <code>{entry:.5f}</code>\n"
-            f"🛑 Stop Loss:  <code>{sl:.5f}</code>\n"
-            f"🎯 Take Profit:<code>{tp:.5f}</code>\n"
-            f"📊 R:R: <code>1:{rr:.1f}</code>\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚡ Score: <b>{score}/100</b>\n"
-            f"💰 Riesgo: $5.00 (0.5%)\n"
-            f"🤖 Modo: DEMO - sin dinero real"
+            f"<b>TRADE DEMO - {symbol}</b>\n"
+            f"TF: {timeframe} | {market}\n"
+            f"Direccion: <b>{dir_text}</b>\n"
+            f"Entrada:    <code>{entry:.5f}</code>\n"
+            f"Stop Loss:  <code>{sl:.5f}</code>\n"
+            f"Take Profit:<code>{tp:.5f}</code>\n"
+            f"R:R: <code>1:{rr:.1f}</code>\n"
+            f"Score: <b>{score}/100</b>\n"
+            f"Riesgo: $5.00 (0.5%)\n"
+            f"Modo: DEMO - sin dinero real"
         )
         bot = self._get_bot()
         if not bot or not config.telegram_chat_id:
@@ -141,7 +139,7 @@ class TradingTelegramBot:
             print(f"[Telegram] send_signal_demo failed: {e}")
 
     async def send_risk_alert(self, reason: str):
-        msg = f"ðŸš¨ *ALERTA DE RIESGO*\n{reason}\n\nâ›” Bot pausado automÃ¡ticamente."
+        msg = f"<b>ALERTA DE RIESGO</b>\n{reason}\n\nBot pausado automaticamente."
         bot = self._get_bot()
         if not bot or not config.telegram_chat_id:
             print(f"[Telegram/Risk] {msg}")
@@ -162,12 +160,14 @@ class TradingTelegramBot:
         signal = self._pending.pop(signal_id, None)
         if action == "approve" and signal and self.on_approve:
             await query.edit_message_text(
-                f"âœ… *APROBADO â€” Ejecutando...*\n\n{signal.format_telegram()}",
+                f"<b>APROBADO - Ejecutando...</b>\n\n{signal.format_telegram()}",
                 parse_mode="HTML",
             )
             self.on_approve(signal)
         elif action == "reject":
-            await query.edit_message_text("âŒ *SeÃ±al rechazada. No se opera.*", parse_mode="HTML")
+            await query.edit_message_text(
+                "<b>Senal rechazada. No se opera.</b>",
+                parse_mode="HTML",
+            )
             if signal and self.on_reject:
                 self.on_reject(signal)
-

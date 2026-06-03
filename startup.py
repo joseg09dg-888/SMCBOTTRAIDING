@@ -68,7 +68,7 @@ RESTART_REASONS = {
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SMC Trading Bot")
     parser.add_argument("--auto",    action="store_true",   help="Modo no-interactivo (autoarranque)")
-    parser.add_argument("--capital", type=float, default=1000.0, help="Capital inicial en USD")
+    parser.add_argument("--capital", type=float, default=0.0, help="Capital inicial en USD (0=auto desde MT5)")
     parser.add_argument("--reason",  type=str,  default="",      help="Motivo del arranque para Telegram")
     return parser.parse_args()
 
@@ -78,10 +78,25 @@ async def send_welcome(supervisor: TradingSupervisor, capital: float, auto: bool
 
     if not auto:
         try:
-            raw = input("\nCapital inicial (USD) [1000]: ").strip()
-            capital = float(raw) if raw else capital
+            raw = input("\nCapital inicial (USD) [auto desde MT5]: ").strip()
+            capital = float(raw) if raw else 0.0
         except (EOFError, ValueError):
             pass
+
+    # Auto-detect capital from MT5 balance when 0
+    if capital <= 0:
+        try:
+            mt5_info = supervisor._mt5.get_account_info()
+            balance = mt5_info.get("balance", 0.0)
+            if balance > 0:
+                capital = balance
+                print(f"[OK] Capital detectado desde MT5: ${capital:,.2f}", flush=True)
+            else:
+                capital = 10_000.0
+                print(f"[WARN] No se pudo leer balance MT5, usando ${capital:,.0f}", flush=True)
+        except Exception as e:
+            capital = 10_000.0
+            print(f"[WARN] Error leyendo MT5 balance: {e} — usando ${capital:,.0f}", flush=True)
 
     supervisor.capital = capital
     supervisor.risk_manager.capital = capital

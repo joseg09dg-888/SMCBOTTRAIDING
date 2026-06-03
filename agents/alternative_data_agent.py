@@ -198,7 +198,6 @@ class AlternativeDataAgent:
         # Google Trends bonus (up to 5 extra; not counted in base 15 cap for FG)
         keywords = [f"buy {symbol.lower()}", symbol.lower()]
         trends = self.get_google_trends(keywords)
-        trends_bonus = sum(t.score_bonus for t in trends)
         # Contrarian: euphoria on trends → bad for bulls; fear on trends → good for bulls
         trends_contrarian_bonus = 0
         for t in trends:

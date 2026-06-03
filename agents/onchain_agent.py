@@ -215,23 +215,29 @@ class OnChainAgent:
         if symbol.upper() not in CRYPTO_SYMBOLS:
             return 0
 
-        if bias != "bullish":
-            return 0
-
         bonus = 0
-
         fear_greed = self.get_fear_greed()
-        if fear_greed is not None and fear_greed.value <= 25:
-            bonus += 15
 
-        if price > 0:
-            mvrv = self.estimate_mvrv(price)
-            if mvrv.zone == "undervalued":
-                bonus += 10
-
-        halving = self.get_halving_cycle()
-        if halving.phase == "expansion":
-            bonus += 5
+        if bias == "bullish":
+            if fear_greed is not None and fear_greed.value <= 25:
+                bonus += 15  # extreme fear = contrarian buy
+            if price > 0:
+                mvrv = self.estimate_mvrv(price)
+                if mvrv.zone == "undervalued":
+                    bonus += 10
+            halving = self.get_halving_cycle()
+            if halving.phase == "expansion":
+                bonus += 5
+        elif bias == "bearish":
+            if fear_greed is not None and fear_greed.value >= 75:
+                bonus += 15  # extreme greed = contrarian sell signal
+            if price > 0:
+                mvrv = self.estimate_mvrv(price)
+                if mvrv.zone == "overvalued":
+                    bonus += 10
+            halving = self.get_halving_cycle()
+            if halving.phase == "capitulation":
+                bonus += 5
 
         return min(bonus, 30)
 

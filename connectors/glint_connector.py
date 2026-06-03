@@ -159,7 +159,8 @@ class GlintConnector:
                     if not self._offline:
                         print("Glint en modo offline - bot opera sin noticias")
                         self._offline = True
-                    await asyncio.sleep(RETRY_INTERVAL)
+                    backoff = min(RETRY_INTERVAL * (2 ** min(consecutive_failures, 6)), 3600)
+                    await asyncio.sleep(backoff)
             except asyncio.CancelledError:
                 break
             except Exception:

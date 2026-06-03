@@ -170,6 +170,9 @@ class ContinuousLearningEngine:
         self._lessons: list[TradeLesson] = []
         # Map tag -> list of win booleans for fast win-rate computation
         self._tag_results: dict[str, list[bool]] = {}
+        # Deep-copy class-level mutable list so instances don't share state
+        import copy
+        self._channels = copy.deepcopy(self.__class__.CHANNELS)
 
     # ------------------------------------------------------------------
     # Core methods
@@ -326,7 +329,7 @@ class ContinuousLearningEngine:
             try:
                 # 1. Check live channels
                 live_channels: list[str] = []
-                for channel in self.CHANNELS:
+                for channel in self._channels:
                     is_live = self.check_youtube_live(channel)
                     channel.is_live = is_live
                     channel.last_checked = datetime.now(timezone.utc)
@@ -384,7 +387,7 @@ class ContinuousLearningEngine:
                 rate = sum(results) / len(results)
                 lines.append(f"  {tag}: {rate:.0%} ({len(results)} trades)")
 
-        live_count = sum(1 for ch in self.CHANNELS if ch.is_live)
-        lines.append(f"Canales YouTube en vivo: {live_count}/{len(self.CHANNELS)}")
+        live_count = sum(1 for ch in self._channels if ch.is_live)
+        lines.append(f"Canales YouTube en vivo: {live_count}/{len(self._channels)}")
 
         return "\n".join(lines)

@@ -53,11 +53,11 @@ class MLPredictor:
 
         # Momentum: % change over last 5 bars vs previous 5 bars
         if n >= 10:
-            recent = closes[-1] / closes[-5] - 1
-            prior  = closes[-5] / closes[-10] - 1
+            recent = closes[-1] / closes[-5] - 1 if closes[-5] != 0 else 0.0
+            prior  = closes[-5] / closes[-10] - 1 if closes[-10] != 0 else 0.0
             momentum = recent - prior
         elif n >= 2:
-            momentum = (closes[-1] / closes[0] - 1)
+            momentum = (closes[-1] / closes[0] - 1) if closes[0] != 0 else 0.0
         else:
             momentum = 0.0
 
@@ -92,7 +92,7 @@ class MLPredictor:
             x = np.arange(5)
             y = closes[-5:]
             slope = np.polyfit(x, y, 1)[0]
-            htf_bias = slope / closes[-1]  # normalized slope
+            htf_bias = slope / closes[-1] if closes[-1] != 0 else 0.0
         else:
             htf_bias = 0.0
 

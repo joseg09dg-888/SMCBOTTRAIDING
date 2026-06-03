@@ -18,8 +18,8 @@ from core.agent_memory import AgentMemoryManager, AGENT_NAMES
 _ACCURACY_THRESHOLDS = {
     "increase":  0.70,   # accuracy > 70% → weight +5%
     "maintain":  0.50,   # 50-70% → no change
-    "reduce":    0.30,   # < 50% → weight -10%
-    "disable":   0.30,   # < 30% for 7 consecutive days → weight → 0.1 (not 0, soft disable)
+    "reduce":    0.50,   # < 50% → weight -10%
+    "disable":   0.20,   # < 20% → weight → 0.1 (soft disable)
 }
 _WEIGHT_INCREASE = 0.05   # +5%
 _WEIGHT_REDUCE   = 0.10   # -10%

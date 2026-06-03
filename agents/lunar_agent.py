@@ -46,13 +46,15 @@ class LunarCycleAgent:
         pct = self._phase_pct(as_of)
 
         if pct < 0.125 or pct > 0.875:
-            name, bias, bonus = "nueva",     "bearish", 5
+            name, bias, bonus = "nueva",      "bearish", 2
         elif pct < 0.375:
-            name, bias, bonus = "creciente", "bullish", 5
+            name, bias, bonus = "creciente",  "bullish", 4
+        elif pct < 0.500:
+            name, bias, bonus = "llena_pre",  "bullish", 4
         elif pct < 0.625:
-            name, bias, bonus = "llena",     "bullish", 5
+            name, bias, bonus = "llena",      "bullish", 5
         else:
-            name, bias, bonus = "menguante", "bearish", 5
+            name, bias, bonus = "menguante",  "bearish", 4
 
         eclipse = self._check_eclipse(as_of)
 

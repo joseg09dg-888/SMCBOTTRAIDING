@@ -170,12 +170,14 @@ class FTMOAgent:
             return False, f"Safety stop: ${abs(state.daily_pnl_today):.2f} >= 60% of daily limit"
         return True, "Daily loss OK"
 
-    def check_drawdown_limit(self, state: ChallengeState) -> tuple:
+    def check_drawdown_limit(self, state: ChallengeState, equity: float = None) -> tuple:
         """
         Returns (can_trade, reason).
-        Drawdown = (initial_balance - current_balance) / initial_balance
+        Uses equity (balance + unrealized P&L) when provided; else uses closed balance.
+        FTMO counts drawdown from worst of balance or equity.
         """
-        drawdown_pct = (state.rules.initial_balance - state.current_balance) / state.rules.initial_balance
+        effective = min(state.current_balance, equity) if equity is not None and equity > 0 else state.current_balance
+        drawdown_pct = (state.rules.initial_balance - effective) / state.rules.initial_balance
         state.max_drawdown_reached_pct = max(state.max_drawdown_reached_pct, drawdown_pct)
         limit = state.rules.max_total_drawdown_pct
         if drawdown_pct >= limit:
@@ -202,10 +204,11 @@ class FTMOAgent:
         return True, f"Consistency OK: best day {best_day_pct*100:.1f}%"
 
     def can_trade(self, state: ChallengeState,
-                  as_of: datetime = None) -> tuple:
+                  as_of: datetime = None,
+                  equity: float = None) -> tuple:
         """
         Full pre-trade check. Returns (allowed, reason).
-        Checks: status, daily loss, drawdown, consecutive losses, time filters.
+        Checks: status, daily loss, drawdown (equity-aware), consecutive losses, time filters.
         """
         if state.status == ChallengeStatus.FAILED:
             return False, "Challenge failed"
@@ -218,7 +221,7 @@ class FTMOAgent:
         if not daily_ok:
             return False, daily_msg
 
-        dd_ok, dd_msg = self.check_drawdown_limit(state)
+        dd_ok, dd_msg = self.check_drawdown_limit(state, equity=equity)
         if not dd_ok:
             return False, dd_msg
 
@@ -230,7 +233,7 @@ class FTMOAgent:
         if dt.weekday() == 0 and dt.hour < 2:
             return False, "Monday first 2 hours - no trading"
 
-        # Friday after 16:00 UTC
+        # Friday after 16:00 UTC (NY session close - per FTMO/Axi rules)
         if dt.weekday() == 4 and dt.hour >= 16:
             return False, "Friday after 16:00 UTC - no trading"
 
@@ -293,9 +296,9 @@ class FTMOAgent:
         return state
 
     def new_trading_day(self, state: ChallengeState) -> ChallengeState:
-        """Reset daily PnL and reactivate if paused."""
+        """Reset daily PnL and reactivate if paused. Streak preserved across midnight."""
         state.daily_pnl_today = 0.0
-        state.consecutive_losses = 0
+        # consecutive_losses intentionally NOT reset here — streak persists across days
         if state.status == ChallengeStatus.PAUSED:
             state.status = ChallengeStatus.ACTIVE
         return state
@@ -303,10 +306,11 @@ class FTMOAgent:
     # ── News filter ────────────────────────────────────────────────────────
 
     def is_news_blackout(self, event_time: datetime,
-                         as_of: datetime = None) -> bool:
+                         as_of: datetime = None,
+                         blackout_minutes: int = 2) -> bool:
         """True if within blackout window of a news event."""
         dt = as_of or datetime.now(timezone.utc)
-        blackout = timedelta(minutes=self.rules_blackout_minutes(2))
+        blackout = timedelta(minutes=blackout_minutes)
         return abs(dt - event_time) <= blackout
 
     @staticmethod

@@ -30,6 +30,8 @@ class RiskManager:
         stop_loss: float,
         pip_value: float = 0.0001,
     ) -> float:
+        if pip_value <= 0:
+            return 0.0
         risk_usd = self.capital * self.config.max_risk_per_trade
         pips_sl = abs(entry - stop_loss) / pip_value
         if pips_sl == 0:
@@ -49,12 +51,18 @@ class RiskManager:
             raise ValueError("Entry y Stop Loss no pueden ser iguales")
 
         rr = abs(take_profit - entry) / abs(entry - stop_loss)
+        min_rr_ok = rr >= 2.0
         return {
-            "valid": True,
+            "valid": min_rr_ok,
             "risk_reward": round(rr, 2),
-            "min_rr_met": rr >= 2.0,
+            "min_rr_met": min_rr_ok,
             "risk_usd": round(self.capital * self.config.max_risk_per_trade, 2),
         }
+
+    def update_capital(self, new_balance: float):
+        """Sync capital with real MT5 account balance after each trade or on startup."""
+        if new_balance > 0:
+            self.capital = new_balance
 
     def record_trade(self, pnl: float):
         self.daily_pnl += pnl

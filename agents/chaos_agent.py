@@ -69,7 +69,7 @@ class ChaosTheoryAgent:
         R = cumdev.max() - cumdev.min()
         S = series.std(ddof=1)
         if S == 0:
-            return 1.0
+            return 0.0  # constant series = no trend, not R/S=1
         return R / S
 
     def calculate_hurst(self, prices: np.ndarray) -> HurstResult:

@@ -80,6 +80,7 @@ COMMANDS = {
     "/footprint":        "Analisis footprint (delta, absorcion). Ej: /footprint BTC",
     "/ftmo":             "Estado FTMO challenge y potencial de ingresos",
     "/demo":             "Posiciones demo Binance crypto con P&L en vivo",
+    "/performance":      "Performance real: win rate, profit factor, P&L cuenta Axi",
 }
 
 
@@ -159,6 +160,7 @@ class TelegramCommander:
             "/ver_mt5":          self._cmd_ver_mt5,
             "/proteger":         self._cmd_proteger,
             "/demo":             self._cmd_demo,
+            "/performance":      self._cmd_performance,
         }
 
         handler = handlers.get(cmd)
@@ -347,9 +349,10 @@ class TelegramCommander:
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"<b>FILTROS ACTIVOS</b>\n"
             f"Score MT5: >=75 | RR min: 1:2\n"
-            f"Max posiciones: 2 | Max/dia: 2\n"
-            f"8 filtros + Claude API confirm\n"
-            f"22 agentes institucionales"
+            f"Max posiciones: 2 | Max/dia: 8\n"
+            f"H4 trend filter: crypto + forex\n"
+            f"13 agentes institucionales paralelos\n"
+            f"Win Rate: {wr} | /performance para detalle"
         )
         return CommandResult(success=True, message=text, action="status")
 
@@ -725,6 +728,65 @@ class TelegramCommander:
             f"2%/mes x 80% split = $16,000/mes"
         )
         return CommandResult(success=True, message=text, action="criterios")
+
+    def _cmd_performance(self) -> CommandResult:
+        """Real-time performance stats from score_db with actual WIN/LOSS outcomes."""
+        from core.score_db import get_stats, get_recent_scores
+        from datetime import datetime, timezone
+
+        stats = get_stats()
+        total    = stats["executed"]
+        wins     = stats["wins"]
+        losses   = stats["losses"]
+        wr       = stats["win_rate"]
+        pf       = stats["profit_factor"]
+        avg_pnl  = stats["avg_pnl_pct"]
+        real     = stats["has_real_outcomes"]
+
+        # Open MT5 P&L
+        open_pnl = 0.0
+        balance  = 0.0
+        try:
+            from connectors.metatrader_connector import MT5Connector
+            from core.config import config as cfg
+            _m = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            pos = _m.get_open_positions()
+            open_pnl = sum(p.get("profit", 0.0) for p in pos)
+            _info = _m.get_account_info()
+            balance = _info.get("balance", 0.0) if _info else 0.0
+        except Exception:
+            pass
+
+        label = "reales" if real else "estimados (sin outcomes aun)"
+        net_pct = (balance - 100_000.0) / 100_000.0 * 100 if balance > 0 else 0.0
+        net_sign = "+" if net_pct >= 0 else ""
+
+        recent = get_recent_scores(5)
+        recent_lines = []
+        for row in recent:
+            ts, sym, tf, score, direction, entry, executed = row
+            hora = ts[11:16] if len(ts) > 16 else ts
+            arrow = "▲" if direction == "long" else "▼"
+            recent_lines.append(f"  {arrow} {sym} {tf} score={score} @ {hora}")
+
+        text = (
+            f"<b>PERFORMANCE EN VIVO</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"Trades ejecutados: <b>{total}</b>\n"
+            f"Ganados: <b>{wins}</b>  Perdidos: <b>{losses}</b>\n"
+            f"Win Rate: <b>{wr:.1f}%</b> ({label})\n"
+            f"Profit Factor: <b>{pf:.2f}</b>\n"
+            f"P&amp;L promedio demo: <b>{avg_pnl:+.2f}%</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>CUENTA MT5 (Axi Demo)</b>\n"
+            f"Balance: <code>${balance:,.2f}</code>\n"
+            f"Neto: <b>{net_sign}{net_pct:.3f}%</b> (de $100,000)\n"
+            f"P&amp;L posiciones abiertas: <b>${open_pnl:+.2f}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>Ultimas 5 senales:</b>\n"
+            + ("\n".join(recent_lines) if recent_lines else "  Sin senales aun")
+        )
+        return CommandResult(success=True, message=text, action="performance")
 
     def _cmd_proyeccion(self) -> CommandResult:
         from core.volume_calculator import VolumeCalculator

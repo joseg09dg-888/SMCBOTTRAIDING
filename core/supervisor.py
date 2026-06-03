@@ -261,7 +261,8 @@ class TradingSupervisor:
 
         self._last_glint_text: str      = ""
 
-        self._demo_trades: List[DemoTrade] = []
+        self._demo_trades: List[DemoTrade] = self._load_demo_trades()
+        self._crypto_h4_trend: Dict[str, str] = {}  # symbol → "LONG" | "SHORT"
 
         self.mode    = config.operation_mode
 
@@ -853,6 +854,64 @@ class TradingSupervisor:
 
 
     _DAILY_TRADES_PATH = os.path.join("memory", "daily_trades.json")
+    _DEMO_TRADES_PATH  = os.path.join("memory", "demo_trades_state.json")
+
+    def _load_demo_trades(self) -> list:
+        """Load open demo trades from disk so bot restarts don't lose positions."""
+        import json
+        try:
+            with open(self._DEMO_TRADES_PATH, "r", encoding="utf-8") as f:
+                rows = json.load(f)
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=8)).isoformat()
+            restored = []
+            for row in rows:
+                if row.get("opened_at", "") <= cutoff:
+                    continue  # expired
+                from agents.signal_agent import TradeSignal, SignalType
+                sig = TradeSignal(
+                    symbol=row["symbol"],
+                    signal_type=SignalType.LONG if row["direction"] == "long" else SignalType.SHORT,
+                    entry=row["entry"],
+                    stop_loss=row["sl"],
+                    take_profit=row["tp"],
+                    timeframe=row.get("timeframe", "1h"),
+                    trigger=row.get("trigger", "restored"),
+                    confidence=row.get("confidence", 0.7),
+                )
+                sig.decision_score = row.get("score", 60)
+                demo = DemoTrade(sig, sig.decision_score)
+                demo.opened_at = datetime.fromisoformat(row["opened_at"])
+                restored.append(demo)
+            if restored:
+                print(f"[DEMO] Restored {len(restored)} open demo trades from disk", flush=True)
+            return restored
+        except Exception:
+            return []
+
+    def _save_demo_trades(self):
+        """Persist open demo trade state to JSON."""
+        import json
+        try:
+            rows = []
+            for d in self._demo_trades:
+                if d.status != "open":
+                    continue
+                rows.append({
+                    "symbol":    d.signal.symbol,
+                    "direction": "long" if d.signal.signal_type == SignalType.LONG else "short",
+                    "entry":     d.signal.entry,
+                    "sl":        d.signal.stop_loss or 0.0,
+                    "tp":        d.signal.take_profit or 0.0,
+                    "timeframe": d.signal.timeframe,
+                    "trigger":   getattr(d.signal, "trigger", ""),
+                    "confidence":getattr(d.signal, "confidence", 0.7),
+                    "score":     d.score,
+                    "opened_at": d.opened_at.isoformat(),
+                })
+            with open(self._DEMO_TRADES_PATH, "w", encoding="utf-8") as f:
+                json.dump(rows, f)
+        except Exception:
+            pass
 
     def _load_daily_trades(self) -> Dict[str, int]:
         """Load daily MT5 trade count from disk — survives pm2 restarts."""
@@ -993,54 +1052,54 @@ class TradingSupervisor:
     async def _scan_symbol(self, symbol: str, timeframe: str) -> Optional[TradeSignal]:
 
         """
-
         Full pipeline for one symbol/timeframe:
-
-        fetch â†' SMC lite â†' SignalAgent â†' DecisionFilter â†' return signal or None
-
+        fetch → SMC lite → SignalAgent → DecisionFilter → H4 trend filter → return signal or None
         """
 
         loop = asyncio.get_event_loop()
 
         df = await loop.run_in_executor(
-
             None, lambda: self.binance.get_ohlcv(symbol, timeframe, limit=200)
-
         )
 
         if df.empty or len(df) < 50:
-
             return None
 
-
+        # ── Cache H4 trend when scanning the 4h timeframe ────────────────────
+        if timeframe == "4h" and len(df) >= 11:
+            avg_fast = df["close"].iloc[-3:].mean()
+            avg_slow = df["close"].iloc[-11:-3].mean()
+            self._crypto_h4_trend[symbol] = "LONG" if avg_fast > avg_slow else "SHORT"
 
         smc = self._run_smc_lite(df)
-
         current_price = float(df["close"].iloc[-1])
 
-
-
         signal = self.signal_agent.evaluate(
-
             analysis_text = smc["analysis_text"],
-
             symbol        = symbol,
-
             timeframe     = timeframe,
-
             current_price = current_price,
-
             poi_zones     = smc["poi_zones"],
-
             glint_context = self._last_glint_text,
-
+            df            = df,
         )
 
-
-
         if signal.signal_type == SignalType.WAIT:
-
             return signal   # still return so we can log the score=0
+
+        # ── H4 trend alignment filter for 1h crypto trades ───────────────────
+        if timeframe == "1h" and signal.signal_type != SignalType.WAIT:
+            h4_trend = self._crypto_h4_trend.get(symbol)
+            if h4_trend:
+                sig_dir = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
+                if sig_dir != h4_trend:
+                    print(
+                        f"[H4-FILTER] {symbol} 1h {sig_dir} contra tendencia H4 ({h4_trend}) — skip",
+                        flush=True,
+                    )
+                    signal.signal_type = SignalType.WAIT
+                    signal.decision_score = 0
+                    return signal
 
         original_direction = signal.signal_type
 
@@ -1090,6 +1149,8 @@ class TradingSupervisor:
             timeframe=timeframe, current_price=current_price,
 
             poi_zones=smc["poi_zones"], glint_context=self._last_glint_text,
+
+            df=df,
 
         )
 
@@ -1592,12 +1653,38 @@ class TradingSupervisor:
 
         """Record a simulated demo trade, notify via Telegram, log to SQLite."""
 
-        # Expire demo trades older than 8 hours (one full trading session)
+        # Expire demo trades older than 8 hours — record outcome before dropping
         cutoff = datetime.now(timezone.utc) - timedelta(hours=8)
-        self._demo_trades = [
-            d for d in self._demo_trades
-            if getattr(d, "opened_at", datetime.now(timezone.utc)) > cutoff
-        ]
+        still_valid = []
+        for _d in self._demo_trades:
+            if getattr(_d, "opened_at", datetime.now(timezone.utc)) <= cutoff:
+                if _d.status == "open":
+                    # Record final P&L at expiry via yfinance
+                    try:
+                        import yfinance as _yf
+                        _sym = _d.signal.symbol
+                        _cur = float(_yf.Ticker(_sym.replace("USDT", "-USD")).fast_info.last_price)
+                        _d.close(_cur)
+                        _sign = "+" if _d.pnl >= 0 else ""
+                        print(
+                            f"[DEMO EXPIRE] {_sym} | P&L: {_sign}{_d.pnl*100:.2f}% @ {_cur:.4f}",
+                            flush=True,
+                        )
+                        try:
+                            await self.telegram.send_glint_alert(
+                                f"<b>DEMO EXPIRADO (8h)</b>\n"
+                                f"{_sym} {'LONG' if _d.signal.signal_type == SignalType.LONG else 'SHORT'}\n"
+                                f"Entrada: <code>{_d.signal.entry:.4f}</code>  Cierre: <code>{_cur:.4f}</code>\n"
+                                f"P&amp;L: <b>{_sign}{_d.pnl*100:.2f}%</b>"
+                            )
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+            else:
+                still_valid.append(_d)
+        self._demo_trades = still_valid
+        self._save_demo_trades()
 
         # One slot per symbol — no duplicate positions on same pair
         if any(d.signal.symbol == signal.symbol for d in self._demo_trades):
@@ -1613,8 +1700,7 @@ class TradingSupervisor:
         demo = DemoTrade(signal, signal.decision_score)
 
         self._demo_trades.append(demo)
-
-
+        self._save_demo_trades()  # persist so restarts don't lose open positions
 
         direction = "long" if signal.signal_type == SignalType.LONG else "short"
 
@@ -1769,6 +1855,13 @@ class TradingSupervisor:
                 flush=True,
             )
 
+            # Record real outcome in score_db
+            try:
+                from core.score_db import update_score_outcome
+                update_score_outcome(symbol, entry, "WIN" if hit_tp else "LOSS", pnl_pct)
+            except Exception:
+                pass
+
             msg = (
                 f"<b>DEMO CERRADO — {'GANADO ✅' if hit_tp else 'SL ❌'}</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1783,6 +1876,7 @@ class TradingSupervisor:
                 pass
 
         self._demo_trades = still_open
+        self._save_demo_trades()  # persist updated state (closed trades removed)
 
 
     # -- Open position P&L monitor ------------------------------------------
@@ -1871,6 +1965,17 @@ class TradingSupervisor:
                     pnl    = deal.get("profit", 0.0)
 
                     result = "WIN" if pnl > 0 else "LOSS"
+
+                    # Record MT5 outcome in score_db
+                    try:
+                        _deal_sym   = deal.get("symbol", "")
+                        _deal_price = deal.get("price", 0.0)
+                        _deal_entry = deal.get("entry", _deal_price)
+                        _pnl_pct    = (pnl / max(abs(100_000.0 * 0.01), 1)) * 100  # approx
+                        from core.score_db import update_score_outcome
+                        update_score_outcome(_deal_sym, _deal_entry, result, _pnl_pct)
+                    except Exception:
+                        pass
 
                     # Update episodic memory
                     if not episode_id:

@@ -39,7 +39,8 @@ def load_positions() -> tuple[float, list[dict]]:
 
 
 async def _fetch_price(symbol: str) -> Optional[float]:
-    """Try Binance public ticker for current price (no auth needed)."""
+    """Try Binance for crypto, yfinance fallback for forex/gold."""
+    # Crypto: try Binance
     try:
         import aiohttp
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT"
@@ -48,6 +49,21 @@ async def _fetch_price(symbol: str) -> Optional[float]:
                 if r.status == 200:
                     data = await r.json()
                     return float(data["price"])
+    except Exception:
+        pass
+    # Forex/Gold fallback: yfinance
+    try:
+        import yfinance as yf
+        ticker_map = {
+            "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X",
+            "USDJPY": "USDJPY=X", "GBPJPY": "GBPJPY=X",
+            "XAUUSD": "GC=F", "US30": "^DJI", "NAS100": "^NDX",
+        }
+        ticker = ticker_map.get(symbol, f"{symbol}=X")
+        import pandas as pd
+        data = yf.download(ticker, period="1d", interval="5m", progress=False)
+        if not data.empty:
+            return float(data["Close"].iloc[-1])
     except Exception:
         pass
     return None
@@ -67,7 +83,7 @@ async def run_recovery(telegram_bot, capital: float) -> str:
     if not positions:
         return ""
 
-    downtime_min = int((time.time() - saved_at) / 60) if saved_at else 0
+    downtime_min = max(0, int((time.time() - saved_at) / 60)) if saved_at else 0
     lines = [f"⚠️ *Recuperación post-apagado* ({downtime_min} min offline)"]
 
     closed = []
@@ -75,9 +91,9 @@ async def run_recovery(telegram_bot, capital: float) -> str:
 
     for pos in positions:
         symbol = pos.get("symbol", "?")
-        entry = float(pos.get("entry", 0))
+        entry = float(pos.get("entry") or 0)
         direction = pos.get("direction", "long").lower()
-        size = float(pos.get("size", 0))
+        size = float(pos.get("size") or 0)
 
         current = await _fetch_price(symbol)
         if current is None or entry == 0:

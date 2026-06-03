@@ -165,6 +165,8 @@ class FEDSentimentAgent:
         if self._cached_sentiment is not None:
             return self._cached_sentiment
 
+        print("[FED] Advertencia: sin texto FED analizado — usando sesgo neutral", flush=True)
+
         # Default neutral sentiment
         next_fomc = self.get_next_fomc()
         fomc_blackout = self.is_fomc_blackout()

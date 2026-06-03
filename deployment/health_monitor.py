@@ -99,7 +99,7 @@ class HealthMonitor:
                 lock_file_exists=lock_exists,
                 last_log_line=last_line,
                 log_file_size_kb=log_size,
-                test_count=861,
+                test_count=1214,
                 uptime_estimate_sec=uptime,
             )
         except Exception:

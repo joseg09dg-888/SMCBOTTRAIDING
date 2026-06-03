@@ -195,6 +195,9 @@ class MT5Connector:
         empty = pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
         if not HAS_MT5:
             return empty
+        if not self.is_connected():
+            logger.warning(f"MT5 get_ohlcv: no conectado para {symbol}")
+            return empty
         try:
             tf = TIMEFRAME_MAP.get(timeframe, 16385)
             rates = mt5.copy_rates_from_pos(symbol, tf, 0, count)
@@ -238,6 +241,8 @@ class MT5Connector:
             info = mt5.symbol_info(symbol)
             ot    = mt5.ORDER_TYPE_BUY if order_type.upper() == "BUY" else mt5.ORDER_TYPE_SELL
             price = tick.ask if ot == mt5.ORDER_TYPE_BUY else tick.bid
+            if price <= 0:
+                return {"error": f"Precio invalido ({price}) para {symbol} — mercado cerrado?"}
 
             # Enforce minimum stop distance required by the broker
             if info is not None:
@@ -278,8 +283,9 @@ class MT5Connector:
             logger.info(f"MT5 order filled: {symbol} {order_type} #{result.order} @{result.price}")
 
             # Some brokers (Axi indices) strip SL/TP from the fill request.
-            # Apply SL/TP as a separate SLTP modification and verify it stuck.
+            # Apply SL/TP as a separate SLTP modification with retries + delay.
             if (sl != 0.0 or tp != 0.0) and result.order:
+                import time as _time
                 sl_req = {
                     "action":   mt5.TRADE_ACTION_SLTP,
                     "position": result.order,
@@ -287,16 +293,27 @@ class MT5Connector:
                     "sl":       sl,
                     "tp":       tp,
                 }
-                sl_result = mt5.order_send(sl_req)
-                if sl_result is None or sl_result.retcode != mt5.TRADE_RETCODE_DONE:
+                sl_ok = False
+                for _attempt in range(4):  # up to 4 tries: 0.5s, 1s, 2s, 3s delay
+                    _time.sleep(0.5 * (2 ** _attempt))  # exponential backoff
+                    sl_result = mt5.order_send(sl_req)
+                    if sl_result is not None and sl_result.retcode == mt5.TRADE_RETCODE_DONE:
+                        sl_ok = True
+                        logger.info(
+                            f"MT5 SL={sl:.5f} TP={tp:.5f} confirmed on "
+                            f"#{result.order} (attempt {_attempt+1})"
+                        )
+                        break
                     rc = sl_result.retcode if sl_result else "None"
                     logger.warning(
-                        f"MT5 SL/TP post-fill FAILED retcode={rc} — "
+                        f"MT5 SL/TP attempt {_attempt+1}/4 retcode={rc} — retrying..."
+                    )
+                if not sl_ok:
+                    logger.error(
+                        f"MT5 SL/TP DEFINITIVELY FAILED after 4 attempts — "
                         f"#{result.order} {symbol} opened WITHOUT SL. "
                         f"Bot will auto-close this position when market opens."
                     )
-                else:
-                    logger.info(f"MT5 SL={sl:.5f} TP={tp:.5f} confirmed on #{result.order}")
 
             return {"ticket": result.order, "status": "filled", "price": result.price}
         except Exception as e:
@@ -312,7 +329,11 @@ class MT5Connector:
                 return []
             return [{"ticket": p.ticket, "symbol": p.symbol,
                      "type": "BUY" if p.type == 0 else "SELL",
-                     "volume": p.volume, "profit": p.profit} for p in positions]
+                     "volume": p.volume, "profit": p.profit,
+                     "price_open": p.price_open,
+                     "price_current": p.price_current,
+                     "sl": p.sl, "tp": p.tp,
+                     "time": p.time} for p in positions]
         except Exception as e:
             logger.error(f"MT5 get_positions error: {e}")
             return []
@@ -451,10 +472,20 @@ class MT5Connector:
                 return False
             p = pos[0]
             close_type = mt5.ORDER_TYPE_SELL if p.type == 0 else mt5.ORDER_TYPE_BUY
+            tick = mt5.symbol_info_tick(p.symbol)
+            if tick is None:
+                logger.error(f"close_position: no tick para {p.symbol}, abortando #{ticket}")
+                return False
+            price = tick.bid if close_type == mt5.ORDER_TYPE_SELL else tick.ask
+            if price <= 0:
+                logger.error(f"close_position: precio invalido ({price}) para {p.symbol}")
+                return False
             request = {
                 "action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol,
                 "volume": p.volume, "type": close_type,
-                "position": ticket, "comment": "SMC Bot Close",
+                "position": ticket, "price": price,
+                "deviation": 20, "comment": "SMC Bot Close",
+                "type_filling": mt5.ORDER_FILLING_IOC,
             }
             result = mt5.order_send(request)
             return result is not None and result.retcode == mt5.TRADE_RETCODE_DONE

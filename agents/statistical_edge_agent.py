@@ -47,42 +47,50 @@ class QuantEdgeAgent:
         try:
             from agents.quant_stats import QuantStats
             self.stats = QuantStats
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] QuantStats no disponible: {e}", flush=True)
             self.stats = None
         try:
             from agents.quant_regime import RegimeDetector
             self.regime_detector = RegimeDetector()
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] RegimeDetector no disponible: {e}", flush=True)
             self.regime_detector = None
         try:
             from agents.quant_factors import FactorAnalyzer
             self.factor_analyzer = FactorAnalyzer()
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] FactorAnalyzer no disponible: {e}", flush=True)
             self.factor_analyzer = None
         try:
             from agents.quant_anomalies import AnomalyDetector
             self.anomaly_detector = AnomalyDetector()
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] AnomalyDetector no disponible: {e}", flush=True)
             self.anomaly_detector = None
         try:
             from agents.quant_ensemble import MLEnsemble
             self.ensemble = MLEnsemble()
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] MLEnsemble no disponible: {e}", flush=True)
             self.ensemble = None
         try:
             from agents.quant_stress import StressTester
             self.stress_tester = StressTester()
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] StressTester no disponible: {e}", flush=True)
             self.stress_tester = None
         try:
             from agents.quant_intel import CollectiveIntelligence
             self.collective = CollectiveIntelligence()
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] CollectiveIntelligence no disponible: {e}", flush=True)
             self.collective = None
         try:
             from agents.quant_flow import OrderFlowAnalyzer
             self.flow_analyzer = OrderFlowAnalyzer()
-        except Exception:
+        except Exception as e:
+            print(f"[EDGE] OrderFlowAnalyzer no disponible: {e}", flush=True)
             self.flow_analyzer = None
 
     def calculate_full_edge(
@@ -104,7 +112,7 @@ class QuantEdgeAgent:
 
         # SP2 — Core statistics
         expectancy = self.stats.calculate_expectancy(trades) if trades and self.stats else 0.0
-        returns = [t["pnl"] / self.capital for t in trades] if trades else [0.001] * 100
+        returns = [t["pnl"] / self.capital for t in trades] if trades else [0.0] * 20
         sharpe = self.stats.calculate_sharpe(returns) if self.stats else 0.0
         kelly = self.stats.calculate_kelly_fraction(0.6, 2.0, 1.0) if self.stats else 0.01
         mc = self.stats.run_monte_carlo(returns, n_sims=1000, seed=42) if self.stats else None

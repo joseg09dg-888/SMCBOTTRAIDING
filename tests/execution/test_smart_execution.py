@@ -177,6 +177,20 @@ def test_should_use_twap_small_order():
     assert ex.should_use_twap(50.0, 0.0001) is False
 
 
+def test_slippage_zero_target_price_no_crash():
+    ex = SmartExecutor()
+    result = ex.calculate_slippage(0.0, 100.0, "buy")
+    assert result == 0.0
+
+
+def test_split_vwap_empty_volume_profile_no_crash():
+    ex = SmartExecutor()
+    slices = ex.split_vwap("BTCUSDT", "buy", 1.0, [0.0, 0.0, 0.0], 50000.0)
+    assert isinstance(slices, list)
+    assert len(slices) > 0
+    assert abs(sum(s.quantity for s in slices) - 1.0) < 1e-6
+
+
 # ── format_report ──────────────────────────────────────────────────────────
 
 def test_format_report_string():

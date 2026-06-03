@@ -123,8 +123,10 @@ class AgentMemoryManager:
             name: {} for name in AGENT_NAMES
         }
 
-        # Layer 2: SQLite
+        # Layer 2: SQLite (WAL mode prevents corruption on PM2 restart)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_DDL)
         self._conn.commit()
@@ -326,8 +328,8 @@ class AgentMemoryManager:
                 json.dumps(self._json_kb[-2000:], indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[MEMORY] KB save failed: {e}", flush=True)
 
     def get_knowledge_count(self) -> int:
         if self._chroma_col is not None:

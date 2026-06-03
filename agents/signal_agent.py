@@ -95,10 +95,37 @@ class SignalAgent:
     def __init__(self, min_confidence: float = 0.65):
         self.min_confidence = min_confidence
         self.signal_history: List[TradeSignal] = []
+        self._last_df: Optional[object] = None  # injected by supervisor
 
-    def _sl_distance(self, symbol: str, entry: float) -> float:
-        """Return SL distance: max of 0.5% of price and symbol minimum."""
-        pct_dist = entry * 0.005
+    def _sl_distance(self, symbol: str, entry: float, df=None) -> float:
+        """Return SL distance using ATR(14) when df available, else 1% of price.
+
+        Using 1.5x ATR keeps SL outside normal noise so it's not hit prematurely.
+        Floor is always the symbol minimum to stay above broker stop distance.
+        """
+        import pandas as pd
+        # ATR-based SL (preferred)
+        _df = df if df is not None else self._last_df
+        if _df is not None and not getattr(_df, 'empty', True) and len(_df) >= 15:
+            try:
+                highs  = _df["high"].astype(float)
+                lows   = _df["low"].astype(float)
+                closes = _df["close"].astype(float)
+                prev_close = closes.shift(1)
+                tr = pd.concat([
+                    highs - lows,
+                    (highs - prev_close).abs(),
+                    (lows  - prev_close).abs(),
+                ], axis=1).max(axis=1)
+                atr14 = float(tr.rolling(14).mean().iloc[-1])
+                if atr14 > 0:
+                    atr_sl = atr14 * 1.5
+                    min_dist = self._MIN_SL_DIST.get(symbol, entry * 0.005)
+                    return max(atr_sl, min_dist)
+            except Exception:
+                pass
+        # Fallback: 1% of price (was 0.5% — doubled to reduce premature stops)
+        pct_dist = entry * 0.01
         min_dist = self._MIN_SL_DIST.get(symbol, pct_dist)
         return max(pct_dist, min_dist)
 
@@ -110,11 +137,25 @@ class SignalAgent:
         current_price: float,
         poi_zones: list,
         glint_context: str = "",
+        df=None,
     ) -> TradeSignal:
+        # Store df for ATR-based SL calculation
+        if df is not None:
+            self._last_df = df
+
         is_bullish = "bullish" in analysis_text.lower() or "alcista" in analysis_text.lower()
         is_bearish = "bearish" in analysis_text.lower() or "bajista" in analysis_text.lower()
         at_lower   = analysis_text.lower()
         has_setup  = ("setup" in at_lower and ("valid" in at_lower or "valido" in at_lower or "válido" in at_lower)) or "✅" in analysis_text
+
+        if is_bullish and is_bearish:
+            return TradeSignal(
+                symbol=symbol, signal_type=SignalType.WAIT,
+                entry=current_price, stop_loss=None,
+                take_profit=current_price, timeframe=timeframe,
+                trigger="Conflicto bullish+bearish — sin entrada",
+                confidence=0.0,
+            )
 
         if not has_setup or (not is_bullish and not is_bearish):
             return TradeSignal(
@@ -125,21 +166,23 @@ class SignalAgent:
                 confidence=0.0,
             )
 
+        _df = df if df is not None else self._last_df
+
         if poi_zones:
             poi = poi_zones[0]
             if is_bullish:
                 entry    = poi.get("zone_low", current_price)
-                sl_dist  = self._sl_distance(symbol, entry)
+                sl_dist  = self._sl_distance(symbol, entry, _df)
                 sl       = entry - sl_dist
                 tp       = entry + sl_dist * 3
             else:
                 entry    = poi.get("zone_high", current_price)
-                sl_dist  = self._sl_distance(symbol, entry)
+                sl_dist  = self._sl_distance(symbol, entry, _df)
                 sl       = entry + sl_dist
                 tp       = entry - sl_dist * 3
         else:
             entry   = current_price
-            sl_dist = self._sl_distance(symbol, entry)
+            sl_dist = self._sl_distance(symbol, entry, _df)
             sl      = (entry - sl_dist) if is_bullish else (entry + sl_dist)
             tp      = (entry + sl_dist * 3) if is_bullish else (entry - sl_dist * 3)
 
