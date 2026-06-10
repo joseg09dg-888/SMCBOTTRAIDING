@@ -85,12 +85,12 @@ SCAN_INTERVAL_SEC        = 30
 CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
-MAX_DAILY_TRADES         = 3       # quality over quantity: 3 best setups/day max
+MAX_DAILY_TRADES         = 5       # 5/day → 20 trades in 4 days for Axi proof
 MAX_OPEN_POSITIONS       = 2       # max 2 simultaneous — avoid over-exposure
-MIN_RR                   = 2.5    # raised: need bigger wins to compensate WR<60%
+MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
 
-# Dead hours: only trade during main sessions (London + NY overlap is best)
-DEAD_HOURS_UTC           = {22, 23, 0, 1, 2, 3, 4, 5, 6}  # avoid low-liquidity Asia
+# Active sessions: London (07-12 UTC) + NY (13-20 UTC) — best liquidity
+DEAD_HOURS_UTC           = {22, 23, 0, 1, 2, 3, 4, 5, 6}  # block low-liquidity hours
 
 
 
@@ -108,7 +108,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # US indices (NAS100, US30) active 13-20 UTC
 # Gold (XAUUSD) active 07-20 UTC
 
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "AUDUSD", "NAS100", "US30"]
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NAS100", "US30"]
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 first: cache trend before H1 dual-confirm filter
 
 MT5_MIN_VOLUME   = 0.01
