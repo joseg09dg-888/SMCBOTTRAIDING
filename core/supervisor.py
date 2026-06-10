@@ -2312,21 +2312,24 @@ class TradingSupervisor:
             import MetaTrader5 as _mt5
             from datetime import timezone as _tz
 
-            # ── 0. Anti-drag: close worst loser when it cancels out winners ───
-            # If net P&L is negative AND worst loser has lost more than total winners,
-            # close the loser immediately to protect gains.
-            NET_DRAG_THRESHOLD = -20.0   # trigger when net open P&L < -$20
-            MIN_DRAG_LOSS_USD  = -35.0   # only act if the losing position has lost >= $35
+            # ── 0. Anti-drag: ONLY for positions WITHOUT a proper SL ────────
+            # Positions WITH a SL are already protected — don't override MT5's SL/TP.
+            # Anti-drag only fires for positions missing SL (shouldn't happen, but safety net).
+            NET_DRAG_THRESHOLD = -20.0
+            MIN_DRAG_LOSS_USD  = -35.0
             all_pnls   = [p.get("profit", 0.0) for p in positions]
             net_pnl    = sum(all_pnls)
             total_wins = sum(x for x in all_pnls if x > 0)
             worst_loss = min(all_pnls) if all_pnls else 0.0
 
-            if (net_pnl < NET_DRAG_THRESHOLD
+            # Only fire anti-drag for positions WITHOUT a SL — ones WITH SL are safe
+            positions_no_sl = [p for p in positions if p.get("sl", 0.0) == 0.0]
+            if (positions_no_sl
+                    and net_pnl < NET_DRAG_THRESHOLD
                     and worst_loss < MIN_DRAG_LOSS_USD
                     and abs(worst_loss) > total_wins):
-                # Find the position with the worst loss
-                drag_pos = min(positions, key=lambda p: p.get("profit", 0.0))
+                # Find the position with the worst loss (among those without SL)
+                drag_pos = min(positions_no_sl, key=lambda p: p.get("profit", 0.0))
                 drag_ticket = drag_pos["ticket"]
                 drag_sym    = drag_pos.get("symbol", "?")
                 drag_pnl    = drag_pos.get("profit", 0.0)
@@ -2417,40 +2420,11 @@ class TradingSupervisor:
                             pass
                     continue
 
-                # ── 1b. Peak-profit retracement close ─────────────────────
-                # Track session peak; close when profit drops 25% from peak
-                # (minimum peak $20 to avoid closing tiny moves)
-                MIN_PEAK_USD    = 20.0
-                RETRACE_FACTOR  = 0.25   # close if PnL < peak * (1 - 0.25)
-                if pnl > 0:
-                    prev_peak = self._position_peaks.get(ticket, 0.0)
-                    if pnl > prev_peak:
-                        self._position_peaks[ticket] = pnl
-                        prev_peak = pnl
-                    if prev_peak >= MIN_PEAK_USD:
-                        retrace_threshold = prev_peak * (1.0 - RETRACE_FACTOR)
-                        if pnl <= retrace_threshold:
-                            print(
-                                f"[PEAK-CLOSE] {sym} #{ticket} peak=${prev_peak:.2f} "
-                                f"actual=${pnl:.2f} retroceso {RETRACE_FACTOR*100:.0f}% → cerrando",
-                                flush=True,
-                            )
-                            ok = await loop.run_in_executor(
-                                None, lambda t=ticket: self.mt5.close_position(t)
-                            )
-                            if ok:
-                                self._position_peaks.pop(ticket, None)
-                                try:
-                                    await self.telegram.send_glint_alert(
-                                        f"<b>CIERRE PICO GANANCIA</b>\n{sym} #{ticket}\n"
-                                        f"Pico: ${prev_peak:.2f} → actual: ${pnl:.2f}\n"
-                                        f"Retroceso {RETRACE_FACTOR*100:.0f}% → asegurado ${pnl:.2f}"
-                                    )
-                                except Exception:
-                                    pass
-                            continue
-                else:
-                    # Reset peak when position is not profitable
+                # Peak-profit retracement DISABLED — kills big winners prematurely.
+                # With RR=2.5 and TP/SL already set, let trades reach their target.
+                # The partial-close at 1:1 RR (in _position_monitor_loop above)
+                # already secures 50% of profit when trade is 1R in our favor.
+                if pnl <= 0:
                     self._position_peaks.pop(ticket, None)
 
                 # ── 2-3. Trailing stop (only for winning positions) ────────
