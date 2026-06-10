@@ -74,11 +74,11 @@ from memory.episodic_db import query_similar_episodes
 
 # Score thresholds
 
-DEMO_SCORE_THRESHOLD     = 60   # simulated crypto demo trades
-MT5_REAL_SCORE_THRESHOLD = 85   # QUALITY: only best setups (was 62 — too permissive)
-MT5_SCORE_AUTO_REDUCE    = 75   # reduce to 75 after 4h without trades (not 55!)
-MT5_SCORE_REDUCE_AFTER_H = 4    # wait 4 hours before reducing (not 1h)
-DEMO_MAX_POSITIONS       = 5
+DEMO_SCORE_THRESHOLD     = 999  # DISABLED: crypto demo no cuenta para Axi Select
+MT5_REAL_SCORE_THRESHOLD = 85   # QUALITY: only best setups
+MT5_SCORE_AUTO_REDUCE    = 75   # reduce to 75 after 4h without trades
+MT5_SCORE_REDUCE_AFTER_H = 4    # wait 4 hours before reducing
+DEMO_MAX_POSITIONS       = 0    # no demo positions — 100% focus on MT5 real
 SCAN_INTERVAL_SEC        = 30
 
 # Conservative mode disabled — 8 filters + Claude API confirmation are sufficient
@@ -96,7 +96,7 @@ DEAD_HOURS_UTC           = {22, 23, 0, 1, 2, 3, 4, 5, 6}  # block low-liquidity 
 
 # Symbols and timeframes to scan
 
-SCAN_SYMBOLS    = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT"]
+SCAN_SYMBOLS    = []  # DISABLED: crypto demo no aporta a Axi — 100% foco MT5 real
 
 SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filter runs
 
