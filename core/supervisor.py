@@ -75,9 +75,9 @@ from memory.episodic_db import query_similar_episodes
 # Score thresholds
 
 DEMO_SCORE_THRESHOLD     = 60   # simulated crypto demo trades
-MT5_REAL_SCORE_THRESHOLD = 62   # sprint: lowered to get more setups (was 72)
-MT5_SCORE_AUTO_REDUCE    = 55   # fallback after 1h sin trades (was 68)
-MT5_SCORE_REDUCE_AFTER_H = 1    # reduce faster in sprint (was 2h)
+MT5_REAL_SCORE_THRESHOLD = 85   # QUALITY: only best setups (was 62 — too permissive)
+MT5_SCORE_AUTO_REDUCE    = 75   # reduce to 75 after 4h without trades (not 55!)
+MT5_SCORE_REDUCE_AFTER_H = 4    # wait 4 hours before reducing (not 1h)
 DEMO_MAX_POSITIONS       = 5
 SCAN_INTERVAL_SEC        = 30
 
@@ -85,13 +85,12 @@ SCAN_INTERVAL_SEC        = 30
 CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
-MAX_DAILY_TRADES         = 10      # Axi sprint: 10/day for faster data accumulation
-MAX_OPEN_POSITIONS       = 3       # allow 3 simultaneous to capture more setups
-MIN_RR                   = 1.8    # slightly more permissive (was 2.0) — still good RR
+MAX_DAILY_TRADES         = 3       # quality over quantity: 3 best setups/day max
+MAX_OPEN_POSITIONS       = 2       # max 2 simultaneous — avoid over-exposure
+MIN_RR                   = 2.5    # raised: need bigger wins to compensate WR<60%
 
-# Dead hours (UTC) -- no new orders during low-liquidity windows
-# Reduced from 8h to 5h: only block midnight-03 UTC (lowest liquidity) + 22-23 UTC
-DEAD_HOURS_UTC           = {22, 23, 0, 1, 2}  # 22-02 UTC only (was 22-01 + 05-06)
+# Dead hours: only trade during main sessions (London + NY overlap is best)
+DEAD_HOURS_UTC           = {22, 23, 0, 1, 2, 3, 4, 5, 6}  # avoid low-liquidity Asia
 
 
 
@@ -269,6 +268,7 @@ class TradingSupervisor:
         self._demo_trades: List[DemoTrade] = self._load_demo_trades()
         self._crypto_h4_trend: Dict[str, str] = {}  # symbol → "LONG" | "SHORT"
         self._mt5_h4_direction: Dict[str, str] = {}  # symbol → "LONG" | "SHORT" | "WAIT"
+        self._mt5_d1_trend: Dict[str, str] = {}     # symbol → "LONG" | "SHORT" (D1 50EMA)
 
         self.mode    = config.operation_mode
 
@@ -1655,8 +1655,20 @@ class TradingSupervisor:
                 pass
 
         else:
-
-            print(f"[MT5 REAL] {signal.symbol} fallida: {result.get('error', '?')}", flush=True)
+            err_msg = result.get("error", "?")
+            print(f"[MT5 REAL] {signal.symbol} fallida: {err_msg}", flush=True)
+            # Retcode 10031 = no network — try to reinitialize MT5 connection
+            if "10031" in str(err_msg) or "network" in str(err_msg).lower():
+                try:
+                    import MetaTrader5 as _mt5_re
+                    print(f"[MT5] Reconectando (10031 — sin red)...", flush=True)
+                    _mt5_re.shutdown()
+                    import time as _time
+                    _time.sleep(2)
+                    _ok = _mt5_re.initialize()
+                    print(f"[MT5] Reinit: {'OK' if _ok else 'FALLO'}", flush=True)
+                except Exception as _re:
+                    print(f"[MT5] Reconectar error: {_re}", flush=True)
 
 
 
@@ -2260,14 +2272,14 @@ class TradingSupervisor:
                 return thr
             wins = sum(1 for d in recent if d.profit > 0)
             wr   = wins / len(recent)
-            if wr >= 0.60:
-                thr = 62   # ganando bien → mas trades
-            elif wr >= 0.45:
-                thr = 68   # rendimiento OK
-            elif wr >= 0.30:
-                thr = 75   # rendimiento malo → mas selectivo
+            if wr >= 0.65:
+                thr = 80   # excelente WR → threshold moderado
+            elif wr >= 0.55:
+                thr = 85   # buena WR → threshold alto calidad
+            elif wr >= 0.40:
+                thr = 90   # WR regular → solo mejores setups
             else:
-                thr = 75   # perdiendo — cap 75, no paralizar el bot aunque WR sea bajo
+                thr = 90   # WR baja → maxima selectividad, no bajar nunca de 90
             print(f"[ADAPT-THR] ultimos {len(recent)} trades WR={wr*100:.0f}% → threshold={thr}", flush=True)
             # Aplicar ajuste del learner si hay datos suficientes
             try:
@@ -2780,6 +2792,18 @@ class TradingSupervisor:
                     mt5_threshold = self._adaptive_threshold()
 
                     for symbol in MT5_SYMBOLS:
+                        # ── Update D1 trend (50 EMA daily) once per symbol ────
+                        try:
+                            _d1_df = await asyncio.get_running_loop().run_in_executor(
+                                None, lambda s=symbol: self.mt5.get_ohlcv(s, "D1", 55)
+                            )
+                            if _d1_df is not None and len(_d1_df) >= 50:
+                                _ema50 = float(_d1_df["close"].ewm(span=50).mean().iloc[-1])
+                                _last_close = float(_d1_df["close"].iloc[-1])
+                                self._mt5_d1_trend[symbol] = "LONG" if _last_close > _ema50 else "SHORT"
+                        except Exception:
+                            pass
+
                         for tf in MT5_TIMEFRAMES:
                             if not self._running:
                                 break
@@ -2796,11 +2820,15 @@ class TradingSupervisor:
                                 if tf == "H4" and signal.signal_type != SignalType.WAIT:
                                     self._mt5_h4_direction[symbol] = bias
 
-                                # Dual confirm: H1 trade only if H4 agrees
-                                if tf == "H1" and signal.signal_type != SignalType.WAIT:
+                                # TRIPLE confirm: D1 + H4 + H1 must all agree
+                                if signal.signal_type != SignalType.WAIT:
+                                    d1_dir = self._mt5_d1_trend.get(symbol)
                                     h4_dir = self._mt5_h4_direction.get(symbol)
-                                    if h4_dir and h4_dir != bias:
-                                        print(f" -- [DUAL-CONFIRM] H1={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
+                                    if d1_dir and d1_dir != bias:
+                                        print(f" -- [D1-FILTER] {bias} vs D1={d1_dir} — contra macro, skip", flush=True)
+                                        continue
+                                    if tf == "H1" and h4_dir and h4_dir != bias:
+                                        print(f" -- [H4-FILTER] H1={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
                                         continue
 
                                 if signal.signal_type == SignalType.WAIT or score < mt5_threshold:
