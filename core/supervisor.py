@@ -89,8 +89,9 @@ MAX_DAILY_TRADES         = 5       # 5/day → 20 trades in 4 days for Axi proof
 MAX_OPEN_POSITIONS       = 2       # max 2 simultaneous — avoid over-exposure
 MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
 
-# Active sessions: London (07-12 UTC) + NY (13-20 UTC) — best liquidity
-DEAD_HOURS_UTC           = {22, 23, 0, 1, 2, 3, 4, 5, 6}  # block low-liquidity hours
+# Colombia UTC-5: active 17:00-01:00 COL = Tokyo session starts 22:00 UTC
+# Dead only during true dead zone: 02:00-06:00 UTC (21:00-01:00 COL = middle of night)
+DEAD_HOURS_UTC           = {2, 3, 4, 5, 6}  # only block 02-06 UTC (madrugada Colombia)
 
 
 
