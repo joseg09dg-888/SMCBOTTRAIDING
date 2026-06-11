@@ -1406,17 +1406,34 @@ class TradingSupervisor:
             # Always use current market price — H4 signal entry can be hours old
             _entry_ref = _market_price if _market_price > 0 else (signal.entry if signal.entry and signal.entry > 0 else 0)
             if _entry_ref > 0:
-                # Slippage guard: si mercado movio > 1x SL_dist desde la señal, el setup es stale
+                # Slippage guard: if market moved > 2x SL_dist from signal entry,
+                # recalculate entry at current market price (don't skip — just adapt).
+                # 2x tolerance: 1x was too tight and blocked valid trending setups (USDJPY).
                 if signal.entry and signal.entry > 0 and _market_price > 0:
                     _sl_dist_signal = abs(signal.entry - sl_val)
                     _slippage = abs(_market_price - signal.entry)
-                    if _sl_dist_signal > 0 and _slippage > _sl_dist_signal:
+                    if _sl_dist_signal > 0 and _slippage > _sl_dist_signal * 2.0:
                         print(
                             f"[MT5] {signal.symbol}: SETUP STALE -- mercado movio {_slippage:.4f} "
-                            f"(> SL_dist {_sl_dist_signal:.4f}), skip",
+                            f"(> 2x SL_dist {_sl_dist_signal:.4f}), skip",
                             flush=True,
                         )
                         return
+                    elif _sl_dist_signal > 0 and _slippage > _sl_dist_signal:
+                        # Moved 1-2x SL: use current price, recalculate SL/TP from here
+                        print(
+                            f"[MT5] {signal.symbol}: ADAPTED entry {signal.entry:.4f}→{_market_price:.4f} "
+                            f"(slippage {_slippage:.4f}), recalculating SL/TP at market",
+                            flush=True,
+                        )
+                        _entry_ref = _market_price
+                        # Recalculate SL/TP maintaining same distances from new entry
+                        _sl_dist_orig = _sl_dist_signal
+                        sl_val = _entry_ref - _sl_dist_orig if order_type == "BUY" else _entry_ref + _sl_dist_orig
+                        tp_val = _entry_ref + _sl_dist_orig * MIN_RR if order_type == "BUY" else _entry_ref - _sl_dist_orig * MIN_RR
+                        sl_val = round(sl_val, 5)
+                        tp_val = round(tp_val, 5)
+
                 sl_dist = abs(_entry_ref - sl_val)
                 tp_dist = abs(_entry_ref - tp_val)
                 rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
