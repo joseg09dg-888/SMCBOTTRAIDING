@@ -1,0 +1,14 @@
+{
+  "suspended": {
+    "USDJPY": {
+      "reason": "Auditoria 2026-06-14: WR 6.2% en 130 trades (60% del volumen), neto -$524 -- senal/SL/TP stale repetida",
+      "since": "2026-06-14T21:45:44.498279+00:00"
+    },
+    "GBPJPY": {
+      "reason": "Auditoria 2026-06-14: WR 17.6% en 17 trades, neto -$364",
+      "since": "2026-06-14T21:45:44.498279+00:00"
+    }
+  },
+  "risk_multiplier": 1.0,
+  "history": []
+}

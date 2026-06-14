@@ -49,6 +49,8 @@ from core.goals_manager import GoalsManager
 
 from core.nightly_reporter import NightlyReporter
 
+from core.risk_governor import RiskGovernor, fetch_recent_deals_by_symbol
+
 from core.volume_calculator import VolumeCalculator
 from core.market_hours import is_market_open, minutes_until_open
 
@@ -109,11 +111,10 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # US indices (NAS100, US30) active 13-20 UTC
 # Gold (XAUUSD) active 07-20 UTC
 
-# USDJPY y GBPJPY suspendidos 2026-06-14: auditoria forense (215 trades desde
-# 2026-05-01) mostro USDJPY=130 trades (60% del volumen) con WR=6.2% y
-# senal/SL/TP repetidos (stale signal) -- neto -$524. GBPJPY WR=17.6%, neto -$364.
-# Reactivar solo tras corregir el bug de senal stale en USDJPY.
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "AUDUSD", "USDCAD", "NAS100", "US30"]
+# Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
+# La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
+# real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NAS100", "US30"]
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 first: cache trend before H1 dual-confirm filter
 
 MT5_MIN_VOLUME   = 0.01
@@ -290,6 +291,19 @@ class TradingSupervisor:
         self._goals_mgr  = GoalsManager(conn=self._episodic_conn)
 
         self._reporter   = NightlyReporter(conn=self._episodic_conn)
+
+        # Autonomous circuit breaker: per-symbol WR-based suspension +
+        # drawdown-based risk multiplier, persisted across restarts.
+        self.risk_governor = RiskGovernor(
+            all_symbols=MT5_SYMBOLS,
+            initial_suspended={
+                "USDJPY": (
+                    "Auditoria 2026-06-14: WR 6.2% en 130 trades (60% del volumen), "
+                    "neto -$524 -- senal/SL/TP stale repetida"
+                ),
+                "GBPJPY": "Auditoria 2026-06-14: WR 17.6% en 17 trades, neto -$364",
+            },
+        )
 
         self._open_episodes: Dict[int, int] = self._load_open_episodes()
 
@@ -631,7 +645,9 @@ class TradingSupervisor:
 
             print(f"  MT5:           CONECTADO -- Balance ${bal:,.2f}")
 
-            print(f"  Forex:         {', '.join(MT5_SYMBOLS)}")
+            print(f"  Forex:         {', '.join(self.risk_governor.active_symbols())}")
+            if self.risk_governor.suspended_symbols():
+                print(f"  Suspendidos:   {', '.join(self.risk_governor.suspended_symbols().keys())} (RiskGovernor)")
 
             try:
 
@@ -675,6 +691,7 @@ class TradingSupervisor:
                     self._learning_loop(),
                     self._research_loop(),
                     self._goals_loop(),
+                    self._risk_governor_loop(),
                     self._nightly_report_loop(),
                     self._vision_monitor_loop(),
                     return_exceptions=True,
@@ -1585,6 +1602,10 @@ class TradingSupervisor:
             print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 0.5%", flush=True)
         else:
             risk_pct = 0.0025
+        gov_mult = self.risk_governor.risk_multiplier()
+        if gov_mult != 1.0:
+            risk_pct *= gov_mult
+            print(f"[GOVERNOR] multiplicador de riesgo x{gov_mult:.2f} → riesgo final {risk_pct*100:.3f}%", flush=True)
         # Use current market price for correct lot sizing (signal.entry can be H4 stale)
         try:
             import MetaTrader5 as _mt5
@@ -2569,6 +2590,60 @@ class TradingSupervisor:
 
 
 
+    async def _risk_governor_loop(self):
+
+        while self._running:
+
+            try:
+
+                symbol_deals = await asyncio.get_event_loop().run_in_executor(
+
+                    None, fetch_recent_deals_by_symbol, MT5_SYMBOLS
+
+                )
+
+                acc = self.mt5.get_account_info() if self.mt5 else None
+
+                balance = acc.get("balance", 0.0) if acc else 0.0
+
+                if balance <= 0:
+
+                    print("[GOVERNOR] sin balance MT5 -- ciclo omitido", flush=True)
+
+                    await asyncio.sleep(7200)
+
+                    continue
+
+                drawdown_pct = max(0.0, (100_000.0 - balance) / 100_000.0)
+
+                changes = self.risk_governor.evaluate(symbol_deals, drawdown_pct)
+
+                if RiskGovernor.has_changes(changes):
+
+                    report = self.risk_governor.format_report(changes, balance, drawdown_pct)
+
+                    print(f"[GOVERNOR]\n{report}", flush=True)
+
+                    try:
+
+                        await self.telegram.send_glint_alert(report)
+
+                    except Exception:
+
+                        pass
+
+                else:
+
+                    print(f"[GOVERNOR] {self.risk_governor.status_line()}", flush=True)
+
+            except Exception as exc:
+
+                print(f"[GOVERNOR] error: {exc}", flush=True)
+
+            await asyncio.sleep(7200)  # every 2 hours
+
+
+
     async def _goals_loop(self):
 
         while self._running:
@@ -2795,7 +2870,7 @@ class TradingSupervisor:
                     # ── Threshold adaptativo basado en win rate reciente ──────
                     mt5_threshold = self._adaptive_threshold()
 
-                    for symbol in MT5_SYMBOLS:
+                    for symbol in self.risk_governor.active_symbols():
                         # ── Update D1 trend (50 EMA daily) once per symbol ────
                         try:
                             _d1_df = await asyncio.get_running_loop().run_in_executor(
