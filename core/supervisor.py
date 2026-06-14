@@ -109,7 +109,11 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # US indices (NAS100, US30) active 13-20 UTC
 # Gold (XAUUSD) active 07-20 UTC
 
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NAS100", "US30"]
+# USDJPY y GBPJPY suspendidos 2026-06-14: auditoria forense (215 trades desde
+# 2026-05-01) mostro USDJPY=130 trades (60% del volumen) con WR=6.2% y
+# senal/SL/TP repetidos (stale signal) -- neto -$524. GBPJPY WR=17.6%, neto -$364.
+# Reactivar solo tras corregir el bug de senal stale en USDJPY.
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "AUDUSD", "USDCAD", "NAS100", "US30"]
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 first: cache trend before H1 dual-confirm filter
 
 MT5_MIN_VOLUME   = 0.01
@@ -1571,15 +1575,16 @@ class TradingSupervisor:
 
         # Use real MT5 balance (not startup capital=1000) for correct lot sizing
         live_capital = self._ftmo_state.current_balance if self._ftmo_state.current_balance > 1000 else self.capital
-        # Dynamic risk: 2% for very high confidence (score>=90), 1% for high (>=75), 0.5% normal
+        # Dynamic risk (halved 2026-06-14, WR=29.1%/PF=0.35 over 213 trades):
+        # 1% for very high confidence (score>=90), 0.5% for high (>=75), 0.25% normal
         if signal.decision_score >= 90:
-            risk_pct = 0.02
-            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 2% (alta confianza)", flush=True)
-        elif signal.decision_score >= 75:
             risk_pct = 0.01
-            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 1%", flush=True)
-        else:
+            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 1% (alta confianza)", flush=True)
+        elif signal.decision_score >= 75:
             risk_pct = 0.005
+            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 0.5%", flush=True)
+        else:
+            risk_pct = 0.0025
         # Use current market price for correct lot sizing (signal.entry can be H4 stale)
         try:
             import MetaTrader5 as _mt5
@@ -1995,6 +2000,13 @@ class TradingSupervisor:
                         cur_tp  = p.get("tp", 0.0)
                         volume  = p.get("volume", 0.0)
                         partial_done_key = f"partial_{ticket}"
+                        # XAUUSD: partial-close-at-1:1 caps wins at ~0.5R while a
+                        # full SL loses 1R. Audit (05-01 a 06-11, 51 trades, WR=80.4%)
+                        # found avg win $27 vs avg loss $209 -> neto -$979.74. Dejar
+                        # correr a TP completo (RR ~2.5-3) con SL a breakeven via el
+                        # loop de trailing debajo, sin partial-close.
+                        if symbol == "XAUUSD":
+                            continue
                         # Skip if already partially closed this trade
                         if not (ticket and entry > 0 and cur_sl > 0 and volume > 0):
                             continue
