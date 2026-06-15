@@ -290,7 +290,11 @@ class TradingSupervisor:
 
         self._goals_mgr  = GoalsManager(conn=self._episodic_conn)
 
-        self._reporter   = NightlyReporter(conn=self._episodic_conn)
+        self._reporter   = NightlyReporter(
+            conn=self._episodic_conn,
+            telegram_bot=self.telegram.get_bot(),
+            chat_id=config.telegram_chat_id,
+        )
 
         # Autonomous circuit breaker: per-symbol WR-based suspension +
         # drawdown-based risk multiplier, persisted across restarts.

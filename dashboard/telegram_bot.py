@@ -30,6 +30,11 @@ class TradingTelegramBot:
                 self._bot = None
         return self._bot
 
+    def get_bot(self):
+        """Public accessor so other components (e.g. NightlyReporter) can
+        reuse this bot's underlying telegram.Bot instance."""
+        return self._get_bot()
+
     async def send_signal(self, signal: TradeSignal, mode: str = "auto"):
         bot = self._get_bot()
         if not bot or not config.telegram_chat_id:
