@@ -82,9 +82,12 @@ class AlternativeDataAgent:
 
     FEAR_GREED_URL = "https://api.alternative.me/fng/?limit=1"
 
+    _FAIL_COOLDOWN_SEC = 4 * 3600  # retry dead endpoints every 4h
+
     def __init__(self):
         self._fg_cache: Optional[dict] = None
         self._trends_cache: List[TrendsSignal] = []
+        self._fg_fail_ts: float = 0.0
 
     # ------------------------------------------------------------------
     # Fear & Greed Index
@@ -95,6 +98,9 @@ class AlternativeDataAgent:
         Fetch the latest Fear & Greed index from alternative.me.
         Returns the raw API dict, or None if unavailable.
         """
+        import time as _time
+        if _time.time() - self._fg_fail_ts < self._FAIL_COOLDOWN_SEC:
+            return self._fg_cache
         try:
             import requests
             resp = requests.get(self.FEAR_GREED_URL, timeout=5)
@@ -109,7 +115,9 @@ class AlternativeDataAgent:
             self._fg_cache = result
             return result
         except Exception as exc:
-            logger.warning("Fear & Greed fetch failed: %s — using cache", exc)
+            self._fg_fail_ts = _time.time()
+            if self._fg_cache is None:
+                logger.warning("Fear & Greed fetch failed: %s — using cache", exc)
             return self._fg_cache
 
     # ------------------------------------------------------------------
