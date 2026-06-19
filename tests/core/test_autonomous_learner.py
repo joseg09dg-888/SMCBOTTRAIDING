@@ -38,48 +38,48 @@ class TestAutonomousLearner:
         assert isinstance(result, dict)
 
     def test_high_win_rate_gets_boost(self, conn):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 6)  # 20 samples, WR=70%
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("CHoCH+OB", "trending", "london")
         assert result[key]["weight_adj"] == 1.20
 
     def test_mid_win_rate_stays_neutral(self, conn):
-        _add_episodes(conn, "FVG", "ranging", "ny", 3, 2)
+        _add_episodes(conn, "FVG", "ranging", "ny", 12, 10)  # 22 samples, WR=54.5%
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("FVG", "ranging", "ny")
         assert result[key]["weight_adj"] == 1.00
 
     def test_low_win_rate_gets_penalty(self, conn):
-        _add_episodes(conn, "OB", "high_vol", "asia", 2, 5)
+        _add_episodes(conn, "OB", "high_vol", "asia", 7, 13)  # 20 samples, WR=35%, total<30
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("OB", "high_vol", "asia")
-        assert result[key]["weight_adj"] == 0.80
+        assert result[key]["weight_adj"] == 0.90
 
     def test_very_low_win_rate_near_disabled(self, conn):
-        _add_episodes(conn, "BOS", "ranging", "ny", 2, 10)
+        _add_episodes(conn, "BOS", "ranging", "ny", 6, 24)  # 30 samples, WR=20%, total>=30
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("BOS", "ranging", "ny")
-        assert result[key]["weight_adj"] == 0.50
+        assert result[key]["weight_adj"] == 0.80
 
-    def test_groups_below_5_samples_skipped(self, conn):
-        _add_episodes(conn, "RARE", "trending", "london", 3, 1)
+    def test_groups_below_20_samples_skipped(self, conn):
+        _add_episodes(conn, "RARE", "trending", "london", 3, 1)  # 4 samples < 20
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         assert ("RARE", "trending", "london") not in result
 
     def test_saves_lessons_to_db(self, conn):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 7)  # 21 samples
         learner = AutonomousLearner(conn=conn)
         learner.run_analysis()
         rows = conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
         assert rows >= 1
 
     def test_get_weight_adj_returns_float(self, conn):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 7)  # 21 samples, WR=66.7%
         learner = AutonomousLearner(conn=conn)
         learner.run_analysis()
         adj = learner.get_weight_adj("CHoCH+OB", "trending", "london")
@@ -93,32 +93,32 @@ class TestAutonomousLearner:
         assert adj == 1.0
 
     def test_65_pct_exactly_is_neutral(self, conn):
-        _add_episodes(conn, "FVG", "trending", "london", 13, 7)
+        _add_episodes(conn, "FVG", "trending", "london", 13, 7)  # 20 samples, WR=65% not > 65%
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("FVG", "trending", "london")
         assert result[key]["weight_adj"] == 1.00
 
     def test_66_pct_is_boost(self, conn):
-        _add_episodes(conn, "FVG", "trending", "london", 4, 2)
+        _add_episodes(conn, "FVG", "trending", "london", 14, 6)  # 20 samples, WR=70%
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("FVG", "trending", "london")
         assert result[key]["weight_adj"] == 1.20
 
     def test_50_pct_is_neutral(self, conn):
-        _add_episodes(conn, "FVG", "ranging", "asia", 5, 5)
+        _add_episodes(conn, "FVG", "ranging", "asia", 10, 10)  # 20 samples, WR=50%
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("FVG", "ranging", "asia")
         assert result[key]["weight_adj"] == 1.00
 
-    def test_35_pct_with_10_samples_near_disable(self, conn):
-        _add_episodes(conn, "WEAK", "high_vol", "asia", 3, 7)
+    def test_30_pct_with_30_samples_max_penalty(self, conn):
+        _add_episodes(conn, "WEAK", "high_vol", "asia", 9, 21)  # 30 samples, WR=30%
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         key = ("WEAK", "high_vol", "asia")
-        assert result[key]["weight_adj"] == 0.50
+        assert result[key]["weight_adj"] == 0.80
 
     def test_empty_db_returns_empty_dict(self, conn):
         learner = AutonomousLearner(conn=conn)
@@ -126,7 +126,7 @@ class TestAutonomousLearner:
         assert result == {}
 
     def test_run_analysis_updates_weight_cache(self, conn):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 7)  # 21 samples
         learner = AutonomousLearner(conn=conn)
         learner.run_analysis()
         assert len(learner._weights) > 0
@@ -143,15 +143,15 @@ class TestAutonomousLearner:
         assert result == {}
 
     def test_mixed_setups_analyzed_independently(self, conn):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
-        _add_episodes(conn, "FVG", "ranging", "ny", 2, 5)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 7)  # 21 samples, WR=66.7%
+        _add_episodes(conn, "FVG", "ranging", "ny", 9, 21)  # 30 samples, WR=30%
         learner = AutonomousLearner(conn=conn)
         result = learner.run_analysis()
         assert result[("CHoCH+OB", "trending", "london")]["weight_adj"] == 1.20
         assert result[("FVG", "ranging", "ny")]["weight_adj"] == 0.80
 
     def test_effective_threshold_decreases_on_boost(self, conn):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 6)  # 20 samples, WR=70%
         learner = AutonomousLearner(conn=conn)
         learner.run_analysis()
         base_threshold = 30
@@ -159,7 +159,7 @@ class TestAutonomousLearner:
         assert eff < base_threshold
 
     def test_effective_threshold_increases_on_penalty(self, conn):
-        _add_episodes(conn, "FVG", "ranging", "ny", 2, 5)
+        _add_episodes(conn, "FVG", "ranging", "ny", 7, 15)  # 22 samples, WR=31.8%<35%
         learner = AutonomousLearner(conn=conn)
         learner.run_analysis()
         base_threshold = 30
@@ -175,17 +175,17 @@ class TestAutonomousLearner:
         assert eff == base
 
     def test_print_summary_no_crash(self, conn, capsys):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 7)  # 21 samples
         learner = AutonomousLearner(conn=conn)
         learner.run_analysis()
         captured = capsys.readouterr()
         assert "[LEARN]" in captured.out
 
     def test_run_analysis_twice_updates_lessons(self, conn):
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 7, 2)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 14, 7)  # 21 samples
         learner = AutonomousLearner(conn=conn)
         learner.run_analysis()
-        _add_episodes(conn, "CHoCH+OB", "trending", "london", 2, 1)
+        _add_episodes(conn, "CHoCH+OB", "trending", "london", 2, 1)  # total 24
         learner.run_analysis()
         rows = conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
         assert rows >= 2

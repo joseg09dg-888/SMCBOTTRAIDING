@@ -418,4 +418,4 @@ Con $200K fondead al 90% profit split:
 
 ---
 
-*Última actualización: 2026-06-03 | Tests: 1295 | Bot: PM2 ONLINE | MT5 pairs: 8 | Dead hours: 22-02 UTC | MAX_DAILY: 10 | MAX_OPEN: 3 | MIN_RR: 1.8 | H4+H1 dual confirm | ATR SL | Partial close 50% | Demo monitor ACTIVO*
+*Última actualización: 2026-06-19 | Tests: 1323 | Bot: PM2 ONLINE | Active pairs: EURUSD/GBPUSD/AUDUSD/USDCAD/NAS100 | Suspendidos: USDJPY/GBPJPY/XAUUSD/US30 | MAX_DOLLAR_RISK: $400 | Breakeven: 1.5R | Time-close: solo perdedores 36h | Winners corren a TP | Aprendizaje: 64 episodios backfilled, WR=43.1%, AutonomousLearner activo*

@@ -286,34 +286,67 @@ class MT5Connector:
             # Apply SL/TP as a separate SLTP modification with retries + delay.
             if (sl != 0.0 or tp != 0.0) and result.order:
                 import time as _time
+                # Wait for the position to appear in the terminal before modifying
+                _time.sleep(1.5)
+                # Find the actual position ticket (may differ from order ticket on some brokers)
+                _pos_ticket = result.order
+                _positions = mt5.positions_get(symbol=symbol)
+                if _positions:
+                    # Use the most recently opened position for this symbol
+                    _matching = [p for p in _positions if p.magic == 234000]
+                    if _matching:
+                        _pos_ticket = sorted(_matching, key=lambda p: p.time, reverse=True)[0].ticket
                 sl_req = {
                     "action":   mt5.TRADE_ACTION_SLTP,
-                    "position": result.order,
+                    "position": _pos_ticket,
                     "symbol":   symbol,
                     "sl":       sl,
                     "tp":       tp,
                 }
                 sl_ok = False
-                for _attempt in range(4):  # up to 4 tries: 0.5s, 1s, 2s, 3s delay
-                    _time.sleep(0.5 * (2 ** _attempt))  # exponential backoff
+                for _attempt in range(6):  # up to 6 tries with longer delays
+                    _time.sleep(1.0 * (_attempt + 1))
                     sl_result = mt5.order_send(sl_req)
-                    if sl_result is not None and sl_result.retcode == mt5.TRADE_RETCODE_DONE:
+                    rc = sl_result.retcode if sl_result else None
+                    # 10009=DONE, 10025=NO_CHANGES (SL/TP already set from fill request)
+                    if rc in (mt5.TRADE_RETCODE_DONE, 10025):
                         sl_ok = True
                         logger.info(
                             f"MT5 SL={sl:.5f} TP={tp:.5f} confirmed on "
-                            f"#{result.order} (attempt {_attempt+1})"
+                            f"#{_pos_ticket} retcode={rc} (attempt {_attempt+1})"
                         )
                         break
-                    rc = sl_result.retcode if sl_result else "None"
                     logger.warning(
-                        f"MT5 SL/TP attempt {_attempt+1}/4 retcode={rc} — retrying..."
+                        f"MT5 SL/TP attempt {_attempt+1}/6 retcode={rc} — retrying..."
                     )
                 if not sl_ok:
                     logger.error(
                         f"MT5 SL/TP DEFINITIVELY FAILED after 4 attempts — "
-                        f"#{result.order} {symbol} opened WITHOUT SL. "
-                        f"Bot will auto-close this position when market opens."
+                        f"#{result.order} {symbol} CLOSING POSITION IMMEDIATELY to avoid no-SL exposure."
                     )
+                    # Close the position immediately — never leave a position open without SL
+                    _close_type = mt5.ORDER_TYPE_SELL if ot == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+                    _close_tick = mt5.symbol_info_tick(symbol)
+                    _close_price = _close_tick.bid if ot == mt5.ORDER_TYPE_BUY else _close_tick.ask
+                    _close_req = {
+                        "action":       mt5.TRADE_ACTION_DEAL,
+                        "symbol":       symbol,
+                        "volume":       volume,
+                        "type":         _close_type,
+                        "position":     result.order,
+                        "price":        _close_price,
+                        "deviation":    100,
+                        "magic":        234000,
+                        "comment":      "SMC Bot NoSL Close",
+                        "type_time":    mt5.ORDER_TIME_GTC,
+                        "type_filling": mt5.ORDER_FILLING_IOC,
+                    }
+                    _cr = mt5.order_send(_close_req)
+                    if _cr and _cr.retcode == mt5.TRADE_RETCODE_DONE:
+                        logger.error(f"MT5 NoSL position #{result.order} CLOSED immediately.")
+                        return {"error": f"SL/TP failed — position closed immediately to avoid exposure"}
+                    else:
+                        logger.error(f"MT5 NoSL close FAILED retcode={_cr.retcode if _cr else 'None'} — MANUAL INTERVENTION REQUIRED")
 
             return {"ticket": result.order, "status": "filled", "price": result.price}
         except Exception as e:

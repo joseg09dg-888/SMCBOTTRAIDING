@@ -87,8 +87,8 @@ SCAN_INTERVAL_SEC        = 30
 CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
-MAX_DAILY_TRADES         = 5       # 5/day → 20 trades in 4 days for Axi proof
-MAX_OPEN_POSITIONS       = 2       # max 2 simultaneous — avoid over-exposure
+MAX_DAILY_TRADES         = 10      # 10/day — más oportunidades para challenge
+MAX_OPEN_POSITIONS       = 3       # max 3 simultáneas — más exposición positiva
 MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
 
 # Colombia UTC-5: active 17:00-01:00 COL = Tokyo session starts 22:00 UTC
@@ -300,6 +300,9 @@ class TradingSupervisor:
         # drawdown-based risk multiplier, persisted across restarts.
         self.risk_governor = RiskGovernor(
             all_symbols=MT5_SYMBOLS,
+            # Tiers calibrados para Axi (max drawdown 10%):
+            # >= 7% → 0.25x | >= 4% → 0.5x | <4% → 1.0x (full)
+            dd_tiers=((0.07, 0.25), (0.04, 0.5)),
             initial_suspended={
                 "USDJPY": (
                     "Auditoria 2026-06-14: WR 6.2% en 130 trades (60% del volumen), "
@@ -646,6 +649,9 @@ class TradingSupervisor:
             if bal > 0:
                 self.capital = bal
                 self.risk_manager.update_capital(bal)
+
+            # Backfill outcomes for any positions that closed during prior restart
+            await loop.run_in_executor(None, self._recover_orphaned_episodes)
 
             print(f"  MT5:           CONECTADO -- Balance ${bal:,.2f}")
 
@@ -994,82 +1000,55 @@ class TradingSupervisor:
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        if signal.decision_score < 50:
+        if signal.decision_score < 40:  # lowered from 50 — allow EURUSD/GBPUSD to be enriched
             return 0
 
         bias = "bullish" if signal.signal_type == SignalType.LONG else "bearish"
         prices = list(df["close"].astype(float).values) if not df.empty else []
 
-        def _lunar():
-            try: return self._lunar.score_adjustment(bias)
-            except Exception: return 0
+        _agent_names = ["lunar","elliott","chaos","edge","footprint","instflow","micro","fed","onchain","geo","retail","alt","energy"]
+        _agent_results = {}
 
+        def _make(name, fn):
+            def _wrapped():
+                try:
+                    val = fn()
+                    _agent_results[name] = val
+                    return val
+                except Exception as e:
+                    _agent_results[name] = f"ERR:{type(e).__name__}"
+                    return 0
+            return _wrapped
+
+        def _lunar():   return self._lunar.score_adjustment(bias)
         def _elliott():
-            try:
-                e = self._elliott.analyze(df, bias)
-                return e.score_bonus
-            except Exception: return 0
-
-        def _chaos():
-            try: return self._chaos.score_adjustment(df)
-            except Exception: return 0
-
+            e = self._elliott.analyze(df, bias)
+            return e.score_bonus
+        def _chaos():   return self._chaos.score_adjustment(df)
         def _edge():
-            try:
-                edge = self._edge.calculate_full_edge(symbol=signal.symbol, prices=prices)
-                return self._edge.get_decision_pts(edge)
-            except Exception: return 0
-
+            edge = self._edge.calculate_full_edge(symbol=signal.symbol, prices=prices)
+            return self._edge.get_decision_pts(edge)
         def _footprint():
             if signal.symbol not in SCAN_SYMBOLS:
                 return 0
-            try:
-                fp_candle = self._footprint.build_live_footprint(
-                    signal.symbol, candle_open=signal.entry or 0, limit=500
-                )
-                direction = "long" if signal.signal_type == SignalType.LONG else "short"
-                return self._footprint.score_for_trade(fp_candle, direction, signal.entry or 0)
-            except Exception: return 0
-
-        def _instflow():
-            try: return self._inst_flow.score_adjustment(signal.symbol, bias)
-            except Exception: return 0
-
-        def _micro():
-            try: return self._microstructure.score_adjustment(signal.symbol, signal.entry or 0.0)
-            except Exception: return 0
-
-        def _fed():
-            try: return self._fed.score_adjustment(signal.symbol, bias)
-            except Exception: return 0
-
-        def _onchain():
-            try: return self._onchain.score_adjustment(signal.symbol, bias, signal.entry or 0.0)
-            except Exception: return 0
-
-        def _geo():
-            try: return self._geopolitical.score_adjustment(signal.symbol, bias)
-            except Exception: return 0
-
-        def _retail():
-            try: return self._retail_psych.score_adjustment(signal.symbol, df, bias)
-            except Exception: return 0
-
-        def _alt():
-            try: return self._alt_data.score_adjustment(signal.symbol, bias)
-            except Exception: return 0
-
+            fp_candle = self._footprint.build_live_footprint(
+                signal.symbol, candle_open=signal.entry or 0, limit=500
+            )
+            direction = "long" if signal.signal_type == SignalType.LONG else "short"
+            return self._footprint.score_for_trade(fp_candle, direction, signal.entry or 0)
+        def _instflow(): return self._inst_flow.score_adjustment(signal.symbol, bias)
+        def _micro():    return self._microstructure.score_adjustment(signal.symbol, signal.entry or 0.0)
+        def _fed():      return self._fed.score_adjustment(signal.symbol, bias)
+        def _onchain():  return self._onchain.score_adjustment(signal.symbol, bias, signal.entry or 0.0)
+        def _geo():      return self._geopolitical.score_adjustment(signal.symbol, bias)
+        def _retail():   return self._retail_psych.score_adjustment(signal.symbol, df, bias)
+        def _alt():      return self._alt_data.score_adjustment(signal.symbol, bias)
         def _energy():
-            try:
-                energy = self._energy.analyze(signal.symbol, signal.entry or 0.0, prices)
-                return energy.to_decision_pts()
-            except Exception: return 0
+            energy = self._energy.analyze(signal.symbol, signal.entry or 0.0, prices)
+            return energy.to_decision_pts()
 
-        tasks = [
-            _lunar, _elliott, _chaos, _edge, _footprint,
-            _instflow, _micro, _fed, _onchain, _geo,
-            _retail, _alt, _energy,
-        ]
+        raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy]
+        tasks = [_make(name, fn) for name, fn in zip(_agent_names, raw_tasks)]
 
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
             futures = [executor.submit(fn) for fn in tasks]
@@ -1077,6 +1056,16 @@ class TradingSupervisor:
 
         bonus_clamped = int(max(-30, min(60, bonus)))
         base = signal.decision_score
+
+        # Log which agents contributed and which errored
+        errors = [f"{k}:{v}" for k, v in _agent_results.items() if isinstance(v, str) and v.startswith("ERR")]
+        contribs = {k: v for k, v in _agent_results.items() if isinstance(v, (int, float)) and v != 0}
+        if errors:
+            print(f"[ENRICH-ERR] {signal.symbol}: {' | '.join(errors)}", flush=True)
+        if contribs:
+            contrib_str = " ".join(f"{k}={v:+d}" for k, v in contribs.items())
+            print(f"[ENRICH-CONTRIB] {signal.symbol}: {contrib_str}", flush=True)
+
         print(
             f"[ENRICH] {signal.symbol} base={base} bonus={bonus_clamped:+d} "
             f"final={base + bonus_clamped} | {signal.signal_type.value.upper()}",
@@ -1437,22 +1426,15 @@ class TradingSupervisor:
                 if signal.entry and signal.entry > 0 and _market_price > 0:
                     _sl_dist_signal = abs(signal.entry - sl_val)
                     _slippage = abs(_market_price - signal.entry)
-                    if _sl_dist_signal > 0 and _slippage > _sl_dist_signal * 2.0:
-                        print(
-                            f"[MT5] {signal.symbol}: SETUP STALE -- mercado movio {_slippage:.4f} "
-                            f"(> 2x SL_dist {_sl_dist_signal:.4f}), skip",
-                            flush=True,
-                        )
-                        return
-                    elif _sl_dist_signal > 0 and _slippage > _sl_dist_signal:
-                        # Moved 1-2x SL: use current price, recalculate SL/TP from here
+                    if _sl_dist_signal > 0 and _slippage > _sl_dist_signal:
+                        # Market moved past 1x SL distance from signal anchor — adapt to current price
+                        # (previously >2x would skip entirely; now we always adapt instead of skip)
                         print(
                             f"[MT5] {signal.symbol}: ADAPTED entry {signal.entry:.4f}→{_market_price:.4f} "
-                            f"(slippage {_slippage:.4f}), recalculating SL/TP at market",
+                            f"(drift={_slippage:.4f}, {_slippage/_sl_dist_signal:.1f}x SL_dist), recalculating SL/TP at market",
                             flush=True,
                         )
                         _entry_ref = _market_price
-                        # Recalculate SL/TP maintaining same distances from new entry
                         _sl_dist_orig = _sl_dist_signal
                         sl_val = _entry_ref - _sl_dist_orig if order_type == "BUY" else _entry_ref + _sl_dist_orig
                         tp_val = _entry_ref + _sl_dist_orig * MIN_RR if order_type == "BUY" else _entry_ref - _sl_dist_orig * MIN_RR
@@ -1462,7 +1444,7 @@ class TradingSupervisor:
                 sl_dist = abs(_entry_ref - sl_val)
                 tp_dist = abs(_entry_ref - tp_val)
                 rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
-                if rr < MIN_RR:
+                if rr < MIN_RR - 0.01:  # small tolerance for float rounding
                     print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {MIN_RR} minimo (entry={_entry_ref:.5f}), skip", flush=True)
                     return
                 print(f"[RR-OK] {signal.symbol}: RR={rr:.2f} >= {MIN_RR} (entry={_entry_ref:.5f})", flush=True)
@@ -1619,6 +1601,26 @@ class TradingSupervisor:
             _fill_price = 0.0
         _entry_for_vol = _fill_price if _fill_price > 0 else (signal.entry or sl_val)
         volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
+
+        # Hard cap: max $400 loss per trade — raised from $150 to allow proper lot sizing
+        MAX_DOLLAR_RISK = 400.0
+        if volume > 0 and sl_val > 0 and _entry_for_vol > 0:
+            _sl_pips = abs(_entry_for_vol - sl_val)
+            _sym_info = None
+            try:
+                import MetaTrader5 as _mt5r
+                _sym_info = _mt5r.symbol_info(signal.symbol)
+            except Exception:
+                pass
+            if _sym_info:
+                _pip_val = _sym_info.trade_contract_size * _sym_info.point
+                _dollar_risk = volume * (_sl_pips / _sym_info.point) * _pip_val
+                if _dollar_risk > MAX_DOLLAR_RISK and _sl_pips > 0:
+                    _raw_vol = MAX_DOLLAR_RISK / ((_sl_pips / _sym_info.point) * _pip_val)
+                    _step = _sym_info.volume_step if _sym_info.volume_step > 0 else 0.01
+                    # Round DOWN to valid step, then enforce minimum
+                    volume = max(round(int(_raw_vol / _step) * _step, 8), _sym_info.volume_min)
+                    print(f"[RISK-CAP] {signal.symbol}: riesgo estimado ${_dollar_risk:.0f} > ${MAX_DOLLAR_RISK} cap — vol ajustado a {volume} (step={_step})", flush=True)
 
         print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} vol={volume} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
 
@@ -2106,8 +2108,8 @@ class TradingSupervisor:
                         else:
                             profit_in_sl = (entry - cur_price) / sl_dist
                             be_sl = entry - 0.0001 * sl_dist
-                        # Move SL to breakeven once trade is 1x SL in profit
-                        if profit_in_sl >= 1.0:
+                        # Move SL to breakeven once trade is 1.5x SL in profit (more room for winners)
+                        if profit_in_sl >= 1.5:
                             if ptype == "BUY" and cur_sl < be_sl:
                                 ok = await loop.run_in_executor(
                                     None, lambda t=ticket, s=round(be_sl, 5), tp=cur_tp:
@@ -2307,6 +2309,47 @@ class TradingSupervisor:
         except Exception:
             pass
 
+    def _recover_orphaned_episodes(self) -> None:
+        """On startup: backfill outcomes for tickets that closed during a prior restart."""
+        try:
+            import MetaTrader5 as _mt5_oe
+            from datetime import timedelta
+            from memory.episodic_db import update_episode_result
+            open_pos = _mt5_oe.positions_get() or []
+            open_tickets = {p.ticket for p in open_pos}
+            orphaned = {t: eid for t, eid in self._open_episodes.items()
+                        if t not in open_tickets}
+            if not orphaned:
+                return
+            now = datetime.now(timezone.utc)
+            deals = _mt5_oe.history_deals_get(now - timedelta(days=90), now) or []
+            closing = {d.position_id: d for d in deals if d.entry == 1}
+            removed = []
+            for ticket, episode_id in orphaned.items():
+                d = closing.get(ticket)
+                if d:
+                    pnl = round(d.profit + d.swap + d.commission, 2)
+                    result = "WIN" if pnl > 0 else "LOSS"
+                    try:
+                        update_episode_result(
+                            episode_id,
+                            exit_price=d.price, pnl=pnl, result=result,
+                            lesson=f"Backfill: {result} PnL={pnl:+.2f}",
+                            conn=self._episodic_conn,
+                        )
+                        print(f"[LEARN] backfill ticket={ticket} -> {result} pnl={pnl:+.2f}", flush=True)
+                    except Exception:
+                        pass
+                    removed.append(ticket)
+                else:
+                    removed.append(ticket)
+            for t in removed:
+                self._open_episodes.pop(t, None)
+            if removed:
+                self._save_open_episodes()
+        except Exception as _e:
+            print(f"[LEARN] orphan recovery error: {_e}", flush=True)
+
     def _adaptive_threshold(self) -> int:
         """
         Calcula threshold dinamico basado en win rate de ultimos 10 trades reales.
@@ -2354,9 +2397,9 @@ class TradingSupervisor:
         1b. Peak-profit retracement: close when profit falls 25% from peak (peak >= $20)
         2. Move SL to breakeven when profit >= 1R (SL distance)
         3. Trail SL at 1R below/above price when profit >= 2R
-        4. Hard-close profitable positions after MAX_HOLD_HOURS (lock in gains)
+        4. Hard-close LOSING positions stuck > 36h (prevents directionless drains)
         """
-        MAX_HOLD_HOURS = 8  # close winning positions after 8h to avoid reversal
+        MAX_HOLD_HOURS = 36  # only close positions that are losing after 36h
         try:
             loop = asyncio.get_running_loop()
             positions = await loop.run_in_executor(None, self.mt5.get_positions)
@@ -2475,11 +2518,37 @@ class TradingSupervisor:
                             pass
                     continue
 
-                # Peak-profit retracement DISABLED — kills big winners prematurely.
-                # With RR=2.5 and TP/SL already set, let trades reach their target.
-                # The partial-close at 1:1 RR (in _position_monitor_loop above)
-                # already secures 50% of profit when trade is 1R in our favor.
-                if pnl <= 0:
+                # ── 1b. Peak-profit retracement guard ─────────────────────
+                # Only fires when peak profit is large (>= $200) to avoid killing
+                # small winners. Closes if profit retreats 30% from peak.
+                PEAK_MIN_USD      = 200.0   # only guard big winners
+                PEAK_RETRACE_PCT  = 0.30    # close if profit drops 30% from peak
+                if pnl > 0:
+                    peak = self._position_peaks.get(ticket, 0.0)
+                    if pnl > peak:
+                        self._position_peaks[ticket] = pnl
+                        peak = pnl
+                    if (peak >= PEAK_MIN_USD
+                            and pnl < peak * (1.0 - PEAK_RETRACE_PCT)):
+                        print(
+                            f"[PEAK-GUARD] {sym} #{ticket} peak=${peak:.2f} → "
+                            f"actual=${pnl:.2f} (retroceso {(1-pnl/peak)*100:.0f}%) → cerrando para asegurar ganancia",
+                            flush=True,
+                        )
+                        ok = await loop.run_in_executor(
+                            None, lambda t=ticket: self.mt5.close_position(t)
+                        )
+                        if ok:
+                            self._position_peaks.pop(ticket, None)
+                            try:
+                                await self.telegram.send_glint_alert(
+                                    f"<b>GANANCIA ASEGURADA</b>\n{sym} #{ticket}\n"
+                                    f"Peak: ${peak:.2f} → Retroceso 30% → cerrado en ${pnl:.2f}"
+                                )
+                            except Exception:
+                                pass
+                        continue
+                else:
                     self._position_peaks.pop(ticket, None)
 
                 # ── 2-3. Trailing stop (only for winning positions) ────────
@@ -2492,7 +2561,18 @@ class TradingSupervisor:
                             profit_r  = (cur_price - entry) / sl_dist if is_buy else (entry - cur_price) / sl_dist
 
                             new_sl = None
-                            if profit_r >= 2.0:
+                            if profit_r >= 3.0:
+                                # At 3R+: tight trail at 0.5R below/above price (lock in more)
+                                trail_sl = (cur_price - sl_dist * 0.5) if is_buy else (cur_price + sl_dist * 0.5)
+                                trail_sl = round(trail_sl, 5)
+                                if (is_buy and trail_sl > sl_cur) or (not is_buy and trail_sl < sl_cur):
+                                    new_sl = trail_sl
+                                    print(
+                                        f"[TRAIL] {sym} #{ticket} profit_R={profit_r:.1f} "
+                                        f"tight trail SL {sl_cur:.5f}→{new_sl:.5f}",
+                                        flush=True,
+                                    )
+                            elif profit_r >= 2.0:
                                 # At 2R+: trail SL at 1R below/above current price
                                 trail_sl = (cur_price - sl_dist) if is_buy else (cur_price + sl_dist)
                                 trail_sl = round(trail_sl, 5)
@@ -2503,8 +2583,8 @@ class TradingSupervisor:
                                         f"trail SL {sl_cur:.5f}→{new_sl:.5f}",
                                         flush=True,
                                     )
-                            elif profit_r >= 1.0 and sl_cur != entry:
-                                # At 1R+: move SL to breakeven
+                            elif profit_r >= 1.5 and sl_cur != entry:
+                                # At 1.5R+: move SL to breakeven (raised from 1R — more room for winners)
                                 new_sl = round(entry, 5)
                                 if (is_buy and new_sl > sl_cur) or (not is_buy and new_sl < sl_cur):
                                     print(
@@ -2530,14 +2610,15 @@ class TradingSupervisor:
                                     except Exception:
                                         pass
 
-                # ── 4. Hard close winning position after MAX_HOLD_HOURS ────
-                if pnl > 0 and open_time > 0:
+                # ── 4. Hard close LOSING position stuck > MAX_HOLD_HOURS ────
+                # Winners are handled by trail SL / breakeven — don't kill them early.
+                if pnl <= 0 and open_time > 0:
                     import time as _time
                     age_h = (_time.time() - open_time) / 3600
                     if age_h >= MAX_HOLD_HOURS:
                         print(
                             f"[TIME-CLOSE] {sym} #{ticket} abierta {age_h:.1f}h "
-                            f"ganando ${pnl:.2f} → cerrando (limite {MAX_HOLD_HOURS}h)",
+                            f"perdiendo ${pnl:.2f} → cerrando (limite {MAX_HOLD_HOURS}h)",
                             flush=True,
                         )
                         ok = await loop.run_in_executor(
@@ -2548,7 +2629,7 @@ class TradingSupervisor:
                             try:
                                 await self.telegram.send_glint_alert(
                                     f"<b>CIERRE POR TIEMPO</b>\n{sym} #{ticket}\n"
-                                    f"Abierta {age_h:.1f}h → cerrada con ${pnl:+.2f}"
+                                    f"Abierta {age_h:.1f}h perdiendo → cerrada en ${pnl:+.2f}"
                                 )
                             except Exception:
                                 pass

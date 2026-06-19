@@ -41,8 +41,8 @@ def supervisor():
 
 
 class TestEnrichWithAgents:
-    def test_returns_zero_when_base_score_below_50(self, supervisor):
-        signal = _make_signal(score=45)
+    def test_returns_zero_when_base_score_below_gate(self, supervisor):
+        signal = _make_signal(score=35)  # below gate of 40
         df = _make_df()
         bonus = supervisor._enrich_with_agents(signal, df)
         assert bonus == 0

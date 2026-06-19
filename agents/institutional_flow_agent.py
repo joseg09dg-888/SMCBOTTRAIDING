@@ -51,10 +51,16 @@ class InstitutionalFlowAgent:
     COT_URL = "https://www.cftc.gov/ddi/preliminary/aspx/fincomrep.aspx"
     OPTIONS_URL = "https://phx.unusualwhales.com/api/etf/{symbol}/flow"
 
+    # Retry cooldown after failures: 4 hours (COT is weekly, options rarely changes)
+    _FAIL_COOLDOWN_SEC = 4 * 3600
+
     def __init__(self):
         # In-memory cache for last successful fetches
         self._cot_cache: Dict[str, COTSnapshot] = {}
         self._options_cache: Dict[str, OptionsFlowSnapshot] = {}
+        # Timestamps of last failure per symbol to avoid hammering dead endpoints
+        self._cot_fail_ts: Dict[str, float] = {}
+        self._options_fail_ts: Dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # COT (Commitments of Traders) helpers
@@ -84,6 +90,10 @@ class InstitutionalFlowAgent:
         Returns a COTSnapshot on success, or None if unavailable.
         Falls back to in-memory cache on network failure.
         """
+        import time as _time
+        last_fail = self._cot_fail_ts.get(symbol, 0.0)
+        if _time.time() - last_fail < self._FAIL_COOLDOWN_SEC:
+            return self._cot_cache.get(symbol)
         try:
             import requests  # optional dependency; may not be installed
             resp = requests.get(self.COT_URL, timeout=5)
@@ -143,7 +153,9 @@ class InstitutionalFlowAgent:
             return snapshot
 
         except Exception as exc:
-            logger.warning("COT fetch failed for %s: %s — using cache", symbol, exc)
+            self._cot_fail_ts[symbol] = _time.time()
+            if symbol not in self._cot_cache:
+                logger.warning("COT fetch failed for %s: %s — using cache", symbol, exc)
             return self._cot_cache.get(symbol)
 
     # ------------------------------------------------------------------
@@ -167,6 +179,10 @@ class InstitutionalFlowAgent:
         Attempt to fetch options flow from unusualwhales.com free tier.
         Returns None gracefully if network is unavailable or data is missing.
         """
+        import time as _time
+        last_fail = self._options_fail_ts.get(symbol, 0.0)
+        if _time.time() - last_fail < self._FAIL_COOLDOWN_SEC:
+            return self._options_cache.get(symbol)
         try:
             import requests
             url = self.OPTIONS_URL.format(symbol=symbol)
@@ -196,7 +212,9 @@ class InstitutionalFlowAgent:
             return snapshot
 
         except Exception as exc:
-            logger.warning("Options fetch failed for %s: %s — using cache", symbol, exc)
+            self._options_fail_ts[symbol] = _time.time()
+            if symbol not in self._options_cache:
+                logger.warning("Options fetch failed for %s: %s — using cache", symbol, exc)
             return self._options_cache.get(symbol)
 
     # ------------------------------------------------------------------
