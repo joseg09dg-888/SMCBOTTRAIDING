@@ -7,8 +7,903 @@
     "GBPJPY": {
       "reason": "Auditoria 2026-06-14: WR 17.6% en 17 trades, neto -$364",
       "since": "2026-06-14T21:45:44.498279+00:00"
+    },
+    "XAUUSD": {
+      "reason": "Auditoria 2026-06-18: WR 33% en 12 trades, EV=-$71.9/trade, neto -$863 - TP nunca alcanzado, gold demasiado volatil",
+      "since": "2026-06-18T22:00:00.000000+00:00"
+    },
+    "US30": {
+      "reason": "Auditoria 2026-06-18: WR 29% en 7 trades, EV=-$16.9/trade, neto -$118 - WR debajo del umbral",
+      "since": "2026-06-18T22:00:00.000000+00:00"
     }
   },
   "risk_multiplier": 1.0,
-  "history": []
+  "history": [
+    {
+      "ts": "2026-06-16T10:11:14.037860+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T12:11:21.904768+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T14:11:37.266792+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T16:12:29.882909+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": {
+          "from": 1.0,
+          "to": 0.5,
+          "drawdown_pct": 0.02304929999999993
+        }
+      }
+    },
+    {
+      "ts": "2026-06-16T18:04:18.776642+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T18:10:26.202778+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T18:13:59.077134+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T18:33:02.996293+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T18:33:54.750266+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T18:36:32.844075+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T19:33:18.391305+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T19:57:00.999780+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T21:57:06.997559+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-16T22:25:56.232339+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T00:26:06.845641+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T02:26:11.128791+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T04:26:27.638882+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T06:26:31.653156+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T08:26:39.756931+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T10:26:48.831702+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T12:27:00.305677+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T16:22:09.211679+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T18:22:09.657488+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T20:22:27.990308+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-17T22:22:31.487780+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T00:22:34.905710+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T02:22:43.977063+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T04:22:49.281206+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T05:05:02.134998+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T07:05:07.715260+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T09:05:22.215351+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T11:05:27.029578+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 0.5,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T13:05:32.433780+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": {
+          "from": 0.5,
+          "to": 1.0,
+          "drawdown_pct": 0.017779700000000013
+        }
+      }
+    },
+    {
+      "ts": "2026-06-18T15:05:54.604568+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T17:06:07.899802+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T19:11:21.735116+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T21:27:33.281396+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T23:27:52.990972+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "XAUUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs",
+        "US30"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-18T23:49:09.475315+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T01:49:18.714400+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T03:49:26.061683+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T05:49:31.575930+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T07:49:40.053889+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T09:49:44.136684+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T11:49:49.633387+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T13:50:46.715854+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T15:05:52.037094+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T15:12:47.409345+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T17:12:54.206066+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-19T19:13:00.486259+00:00",
+      "active_symbols": [
+        "EURUSD",
+        "GBPUSD",
+        "AUDUSD",
+        "USDCAD",
+        "NAS100.fs"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    }
+  ],
+  "last_run": "2026-06-19T19:13:00.486259+00:00",
+  "last_drawdown_pct": 0.016018399999999964
 }
