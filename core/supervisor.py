@@ -1382,8 +1382,8 @@ class TradingSupervisor:
 
             return
 
-        if now_utc.weekday() == 4 and now_utc.hour >= 20:  # viernes 20:00+ UTC (Axi cierra 21:00)
-            print(f"[MT5] {signal.symbol}: viernes 20:00+ UTC, skip", flush=True)
+        if now_utc.weekday() == 4 and now_utc.hour >= 16:  # viernes 16:00+ UTC — no abrir nuevos trades
+            print(f"[MT5] {signal.symbol}: viernes 16:00+ UTC, no se abren nuevos trades, skip", flush=True)
             return
 
 
