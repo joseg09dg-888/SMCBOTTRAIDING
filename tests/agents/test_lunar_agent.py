@@ -24,7 +24,7 @@ def test_phase_pct_between_0_and_1(agent):
 
 def test_phase_name_is_valid(agent):
     s = agent.get_current_phase()
-    assert s.phase_name in ("nueva", "creciente", "llena", "menguante")
+    assert s.phase_name in ("nueva", "creciente", "llena_pre", "llena", "menguante")
 
 
 def test_new_moon_is_bearish(agent):

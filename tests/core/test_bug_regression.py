@@ -110,6 +110,33 @@ def test_volume_calculator_zero_pip_value_returns_zero():
     assert vol == 0.0
 
 
+# ── Friday cutoff: no trades after 16:00 UTC ─────────────────────────────
+
+def test_friday_cutoff_is_1600_utc():
+    """Regression: GBPUSD was opened at 16:38 UTC Friday because cutoff was 20:00."""
+    import pathlib
+    src = pathlib.Path("core/supervisor.py").read_text(encoding="utf-8")
+    # The old wrong cutoff must NOT appear together on the same line
+    for line in src.splitlines():
+        if "weekday() == 4" in line and "hour >= 20" in line:
+            raise AssertionError(
+                f"Friday cutoff still set to 20:00 UTC on line: {line.strip()}"
+            )
+    # The correct cutoff must exist
+    assert any(
+        "weekday() == 4" in line and "hour >= 16" in line
+        for line in src.splitlines()
+    ), "Friday cutoff 16:00 UTC not found in supervisor.py"
+
+
+def test_friday_preclose_hour_in_manage_positions():
+    """FRIDAY_CLOSE_HOUR must be 19 to close losers at 19:30 UTC."""
+    import pathlib
+    src = pathlib.Path("core/supervisor.py").read_text(encoding="utf-8")
+    assert "FRIDAY_CLOSE_HOUR = 19" in src, "FRIDAY_CLOSE_HOUR must be 19 UTC"
+    assert "FRIDAY_CLOSE_MIN  = 30" in src, "FRIDAY_CLOSE_MIN must be 30"
+
+
 # ── telegram_commander: no duplicate methods ──────────────────────────────
 
 def test_telegram_commander_no_duplicate_methods():

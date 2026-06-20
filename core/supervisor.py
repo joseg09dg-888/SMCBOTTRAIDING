@@ -2392,7 +2392,8 @@ class TradingSupervisor:
     async def _manage_open_positions(self):
         """
         Active position management:
-        0. Anti-drag: close worst loser when net P&L is negative and loser > winner
+        0a. Friday pre-close: close ALL losing positions by 19:30 UTC Friday (before 21:00 close)
+        0b. Anti-drag: close worst loser when net P&L is negative and loser > winner
         1. Auto-close on loss > 0.8% balance
         1b. Peak-profit retracement: close when profit falls 25% from peak (peak >= $20)
         2. Move SL to breakeven when profit >= 1R (SL distance)
@@ -2400,6 +2401,8 @@ class TradingSupervisor:
         4. Hard-close LOSING positions stuck > 36h (prevents directionless drains)
         """
         MAX_HOLD_HOURS = 36  # only close positions that are losing after 36h
+        FRIDAY_CLOSE_HOUR = 19   # UTC — close losers by 19:30 UTC to avoid weekend gap risk
+        FRIDAY_CLOSE_MIN  = 30
         try:
             loop = asyncio.get_running_loop()
             positions = await loop.run_in_executor(None, self.mt5.get_positions)
@@ -2409,6 +2412,42 @@ class TradingSupervisor:
             limit_usd = bal * 0.008  # 0.8% = early stop
             import MetaTrader5 as _mt5
             from datetime import timezone as _tz
+
+            # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
+            now_utc = datetime.now(timezone.utc)
+            if now_utc.weekday() == 4:  # Friday
+                past_cutoff = (now_utc.hour > FRIDAY_CLOSE_HOUR or
+                               (now_utc.hour == FRIDAY_CLOSE_HOUR and now_utc.minute >= FRIDAY_CLOSE_MIN))
+                if past_cutoff:
+                    losers = [p for p in positions if p.get("profit", 0.0) < 0]
+                    for lp in losers:
+                        sym    = lp.get("symbol", "?")
+                        ticket = lp["ticket"]
+                        pnl    = lp.get("profit", 0.0)
+                        print(
+                            f"[FRIDAY-CLOSE] {sym} #{ticket} perdiendo ${pnl:.2f} "
+                            f"— cerrando antes del fin de semana (19:30 UTC)",
+                            flush=True,
+                        )
+                        ok = await loop.run_in_executor(
+                            None, lambda t=ticket: self.mt5.close_position(t)
+                        )
+                        if ok:
+                            self._position_peaks.pop(ticket, None)
+                            try:
+                                await self.telegram.send_glint_alert(
+                                    f"<b>CIERRE VIERNES</b> {sym} #{ticket}\n"
+                                    f"Cerrado antes del fin de semana.\n"
+                                    f"P&amp;L: ${pnl:.2f}"
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            print(f"[FRIDAY-CLOSE] ERROR cerrando {sym} #{ticket}", flush=True)
+                    # Reload positions after Friday cleanup
+                    positions = await loop.run_in_executor(None, self.mt5.get_positions)
+                    if not positions:
+                        return
 
             # ── 0. Anti-drag: ONLY for positions WITHOUT a proper SL ────────
             # Positions WITH a SL are already protected — don't override MT5's SL/TP.
