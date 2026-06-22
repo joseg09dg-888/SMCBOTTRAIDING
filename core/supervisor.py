@@ -378,7 +378,7 @@ class TradingSupervisor:
         # Daily profit target tracking
         self._daily_pnl_date: str = ""           # "YYYY-MM-DD" UTC
         self._daily_realized_pnl: float = 0.0   # closed trades today
-        self._daily_target_hit: bool = False     # $150 hit — day locked, no new trades
+        self._daily_target_hit: bool = False     # $245 hit — day locked, no new trades
         self._daily_protect_hit: bool = False    # reserved (unused)
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -660,6 +660,19 @@ class TradingSupervisor:
 
             # Backfill outcomes for any positions that closed during prior restart
             await loop.run_in_executor(None, self._recover_orphaned_episodes)
+
+            # Sync daily PnL on startup — prevents race condition where _market_scan_loop
+            # fires immediately (no sleep) before _position_monitor_loop first runs (60s sleep).
+            # Without this, bot could open new trades even if today's target was already hit.
+            _today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            _realized  = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
+            self._daily_pnl_date     = _today_str
+            self._daily_realized_pnl = float(_realized) if _realized is not None else 0.0
+            if self._daily_realized_pnl >= DAILY_PROFIT_TARGET:
+                self._daily_target_hit = True
+                print(f"[STARTUP] Meta diaria ya cumplida: ${self._daily_realized_pnl:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — sin trades hoy", flush=True)
+            else:
+                print(f"[STARTUP] PnL realizado hoy: ${self._daily_realized_pnl:.2f} / meta ${DAILY_PROFIT_TARGET:.0f}", flush=True)
 
             print(f"  MT5:           CONECTADO -- Balance ${bal:,.2f}")
 
@@ -2438,7 +2451,7 @@ class TradingSupervisor:
             limit_usd = bal * 0.008  # 0.8% = emergency stop per position
 
             # ── 0. Daily profit target ────────────────────────────────────────
-            # $150 = meta diaria → cierra TODO → día ganado → bot en pausa
+            # $245 = meta diaria → cierra TODO → día ganado → bot en pausa
             today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if self._daily_pnl_date != today_utc:
                 self._daily_pnl_date    = today_utc
