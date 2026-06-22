@@ -372,6 +372,8 @@ class TradingSupervisor:
         }
         # Peak-profit tracker: ticket → max PnL seen this session
         self._position_peaks: Dict[int, float] = {}
+        # Time-close retry cooldown: ticket → last attempt timestamp
+        self._close_attempted: Dict[int, float] = {}
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -2655,6 +2657,11 @@ class TradingSupervisor:
                     import time as _time
                     age_h = (_time.time() - open_time) / 3600
                     if age_h >= MAX_HOLD_HOURS:
+                        # Cooldown: don't spam close attempts — retry at most every 5 min
+                        _last_try = self._close_attempted.get(ticket, 0.0)
+                        if _time.time() - _last_try < 300:
+                            continue  # skip until cooldown expires
+                        self._close_attempted[ticket] = _time.time()
                         print(
                             f"[TIME-CLOSE] {sym} #{ticket} abierta {age_h:.1f}h "
                             f"perdiendo ${pnl:.2f} → cerrando (limite {MAX_HOLD_HOURS}h)",
@@ -2665,6 +2672,7 @@ class TradingSupervisor:
                         )
                         if ok:
                             self._position_peaks.pop(ticket, None)
+                            self._close_attempted.pop(ticket, None)
                             try:
                                 await self.telegram.send_glint_alert(
                                     f"<b>CIERRE POR TIEMPO</b>\n{sym} #{ticket}\n"
@@ -2672,6 +2680,8 @@ class TradingSupervisor:
                                 )
                             except Exception:
                                 pass
+                        else:
+                            print(f"[TIME-CLOSE] {sym} #{ticket} close FALLO — reintento en 5min", flush=True)
 
         except Exception as _me:
             print(f"[AUTO-CLOSE] error monitor: {_me}", flush=True)

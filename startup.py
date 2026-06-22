@@ -86,7 +86,7 @@ async def send_welcome(supervisor: TradingSupervisor, capital: float, auto: bool
     # Auto-detect capital from MT5 balance when 0
     if capital <= 0:
         try:
-            mt5_info = supervisor._mt5.get_account_info()
+            mt5_info = supervisor.mt5.get_account_info()
             balance = mt5_info.get("balance", 0.0)
             if balance > 0:
                 capital = balance
