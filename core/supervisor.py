@@ -90,6 +90,7 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "U
 MAX_DAILY_TRADES         = 10      # 10/day — más oportunidades para challenge
 MAX_OPEN_POSITIONS       = 3       # max 3 simultáneas — más exposición positiva
 MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
+DAILY_PROFIT_TARGET      = 200.0  # $200/día → ~4% mensual → pasa el challenge Axi 5%
 
 # Colombia UTC-5: active 17:00-01:00 COL = Tokyo session starts 22:00 UTC
 # Dead only during true dead zone: 02:00-06:00 UTC (21:00-01:00 COL = middle of night)
@@ -374,6 +375,10 @@ class TradingSupervisor:
         self._position_peaks: Dict[int, float] = {}
         # Time-close retry cooldown: ticket → last attempt timestamp
         self._close_attempted: Dict[int, float] = {}
+        # Daily profit target tracking
+        self._daily_pnl_date: str = ""           # "YYYY-MM-DD" UTC
+        self._daily_realized_pnl: float = 0.0   # closed trades today
+        self._daily_target_hit: bool = False     # locked for the day
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -1478,6 +1483,10 @@ class TradingSupervisor:
             )
 
             self._ftmo_state.daily_pnl_today = daily_pnl
+            # Keep daily_realized_pnl in sync with MT5 real closed P&L
+            today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if self._daily_pnl_date == today_utc and daily_pnl is not None:
+                self._daily_realized_pnl = float(daily_pnl)
 
             acc_info = await asyncio.get_running_loop().run_in_executor(
 
@@ -2414,6 +2423,50 @@ class TradingSupervisor:
             limit_usd = bal * 0.008  # 0.8% = early stop
             import MetaTrader5 as _mt5
             from datetime import timezone as _tz
+
+            # ── 0. Daily profit target: close ALL when $200/day reached ─────────
+            today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if self._daily_pnl_date != today_utc:
+                self._daily_pnl_date = today_utc
+                self._daily_realized_pnl = 0.0
+                self._daily_target_hit = False
+
+            if not self._daily_target_hit:
+                float_pnl = sum(p.get("profit", 0.0) for p in positions)
+                total_today = self._daily_realized_pnl + float_pnl
+                if total_today >= DAILY_PROFIT_TARGET:
+                    self._daily_target_hit = True
+                    print(
+                        f"[TARGET] Objetivo diario ${DAILY_PROFIT_TARGET:.0f} alcanzado "
+                        f"(realizado=${self._daily_realized_pnl:.2f} + float=${float_pnl:.2f} "
+                        f"= ${total_today:.2f}) → cerrando todo",
+                        flush=True,
+                    )
+                    for tp in list(positions):
+                        t_ticket = tp["ticket"]
+                        t_sym    = tp.get("symbol", "?")
+                        t_pnl    = tp.get("profit", 0.0)
+                        ok = await loop.run_in_executor(
+                            None, lambda t=t_ticket: self.mt5.close_position(t)
+                        )
+                        if ok:
+                            self._position_peaks.pop(t_ticket, None)
+                            self._close_attempted.pop(t_ticket, None)
+                            print(f"[TARGET-CLOSE] {t_sym} #{t_ticket} cerrado en ${t_pnl:+.2f}", flush=True)
+                    try:
+                        await self.telegram.send_glint_alert(
+                            f"<b>OBJETIVO DIARIO ALCANZADO</b>\n"
+                            f"Meta: ${DAILY_PROFIT_TARGET:.0f}/dia\n"
+                            f"Realizado: ${self._daily_realized_pnl:.2f} + Float: ${float_pnl:.2f}\n"
+                            f"<b>Total: ${total_today:.2f}</b>\n"
+                            f"Todas las posiciones cerradas. Bot en pausa hasta manana."
+                        )
+                    except Exception:
+                        pass
+                    return  # done for today
+
+            if self._daily_target_hit:
+                return  # target already hit today — no new management needed
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
             now_utc = datetime.now(timezone.utc)
