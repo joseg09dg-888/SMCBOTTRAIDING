@@ -1440,11 +1440,19 @@ class TradingSupervisor:
                     _sl_dist_signal = abs(signal.entry - sl_val)
                     _slippage = abs(_market_price - signal.entry)
                     if _sl_dist_signal > 0 and _slippage > _sl_dist_signal:
-                        # Market moved past 1x SL distance from signal anchor — adapt to current price
-                        # (previously >2x would skip entirely; now we always adapt instead of skip)
+                        drift_factor = _slippage / _sl_dist_signal
+                        if drift_factor > 2.0:
+                            # Market moved too far from OB — stale signal, skip
+                            print(
+                                f"[MT5] {signal.symbol}: STALE SETUP drift={_slippage:.4f} "
+                                f"({drift_factor:.1f}x SL_dist > 2x max) — skip",
+                                flush=True,
+                            )
+                            return
+                        # 1-2x drift: adapt entry to current market price
                         print(
                             f"[MT5] {signal.symbol}: ADAPTED entry {signal.entry:.4f}→{_market_price:.4f} "
-                            f"(drift={_slippage:.4f}, {_slippage/_sl_dist_signal:.1f}x SL_dist), recalculating SL/TP at market",
+                            f"(drift={_slippage:.4f}, {drift_factor:.1f}x SL_dist), recalculating SL/TP at market",
                             flush=True,
                         )
                         _entry_ref = _market_price
@@ -2426,22 +2434,23 @@ class TradingSupervisor:
             import MetaTrader5 as _mt5
             from datetime import timezone as _tz
 
+            bal       = self._ftmo_state.current_balance or self.capital
+            limit_usd = bal * 0.008  # 0.8% = emergency stop per position
+
             # ── 0. Daily profit target ────────────────────────────────────────
             # $150 = meta diaria → cierra TODO → día ganado → bot en pausa
             today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if self._daily_pnl_date != today_utc:
-                self._daily_pnl_date   = today_utc
-                self._daily_target_hit = False
+                self._daily_pnl_date    = today_utc
+                self._daily_target_hit  = False
                 self._daily_protect_hit = False
 
-            # Track realized PnL for reporting (not used for trigger)
+            # Track realized PnL for reporting
             mt5_daily = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
             if mt5_daily is not None:
                 self._daily_realized_pnl = float(mt5_daily)
 
-            # Trigger is float-only: when open positions total >= $150 → close all
-            # This locks in profits when the portfolio is up $150 on live positions,
-            # independent of earlier losses that day (handles restarts cleanly).
+            # Trigger: when open positions float total >= $150 → close all → day locked
             float_pnl = sum(p.get("profit", 0.0) for p in (positions or []))
 
             # Cierra TODO cuando las posiciones abiertas suman $150+
@@ -2476,6 +2485,9 @@ class TradingSupervisor:
 
             if self._daily_target_hit:
                 return  # dia ganado, no abrir mas
+
+            if not positions:
+                return  # nada que gestionar
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
             now_utc = datetime.now(timezone.utc)
