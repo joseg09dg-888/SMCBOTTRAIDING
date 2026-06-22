@@ -1364,10 +1364,10 @@ class TradingSupervisor:
 
 
 
-        # ── FILTER 0b: Meta diaria ya cumplida ───────────────────────────
+        # Meta mínima diaria: solo logging, NO bloquea nuevos trades.
+        # El $245 es el piso, no el techo — más trades = más ganancia potencial.
         if self._daily_target_hit:
-            print(f"[MT5] {signal.symbol}: META DIARIA CUMPLIDA — no se abren nuevos trades hoy, skip", flush=True)
-            return
+            print(f"[MT5] {signal.symbol}: meta $245 cumplida — siguiendo operando para mayor ganancia", flush=True)
 
         # ── FILTER 0: Mercado abierto ─────────────────────────────────────
         if not is_market_open(signal.symbol):
@@ -2451,7 +2451,7 @@ class TradingSupervisor:
             limit_usd = bal * 0.008  # 0.8% = emergency stop per position
 
             # ── 0. Daily profit target ────────────────────────────────────────
-            # $245 = meta diaria → cierra TODO → día ganado → bot en pausa
+            # $245 = meta mínima diaria → notifica → bot sigue para más ganancia
             today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if self._daily_pnl_date != today_utc:
                 self._daily_pnl_date    = today_utc
@@ -2463,44 +2463,30 @@ class TradingSupervisor:
             if mt5_daily is not None:
                 self._daily_realized_pnl = float(mt5_daily)
 
-            # Trigger: realizadas HOY + flotante actual >= $245 → cierra todo → día ganado
-            # Ejemplo: trade1 cierra +$80, trade2 cierra +$90, trade3 flotante +$75
-            #          → $80+$90+$75 = $245 → META CUMPLIDA
+            # Meta mínima diaria: notifica cuando se alcanza, NO cierra ni para.
+            # $245 es el piso — el bot sigue operando para acumular más ganancia.
+            # Ejemplo: +$80 +$90 +$75 = $245 META → sigue → +$100 +$60 = $405 ese día.
             float_pnl   = sum(p.get("profit", 0.0) for p in (positions or []))
             total_today = self._daily_realized_pnl + float_pnl
 
             if not self._daily_target_hit and total_today >= DAILY_PROFIT_TARGET:
                 self._daily_target_hit = True
                 print(
-                    f"[META-DIA] realizadas=${self._daily_realized_pnl:.2f} + flotante=${float_pnl:.2f}"
-                    f" = ${total_today:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — META CUMPLIDA, cerrando todo",
+                    f"[META-MIN] realizadas=${self._daily_realized_pnl:.2f} + flotante=${float_pnl:.2f}"
+                    f" = ${total_today:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — META MINIMA CUMPLIDA, siguiendo",
                     flush=True,
                 )
-                for tp in list(positions):
-                    t_ticket = tp["ticket"]
-                    t_sym    = tp.get("symbol", "?")
-                    t_pnl    = tp.get("profit", 0.0)
-                    ok = await loop.run_in_executor(
-                        None, lambda t=t_ticket: self.mt5.close_position(t)
-                    )
-                    if ok:
-                        self._position_peaks.pop(t_ticket, None)
-                        self._close_attempted.pop(t_ticket, None)
-                        print(f"[META-CLOSE] {t_sym} #{t_ticket} cerrado ${t_pnl:+.2f}", flush=True)
                 try:
                     await self.telegram.send_glint_alert(
-                        f"<b>META DIARIA CUMPLIDA</b>\n"
+                        f"<b>META MINIMA DIARIA CUMPLIDA</b>\n"
                         f"Realizadas hoy: <b>${self._daily_realized_pnl:.2f}</b>\n"
-                        f"Flotante cerrado: <b>${float_pnl:.2f}</b>\n"
-                        f"Total del dia: <b>${total_today:.2f}</b>\n"
-                        f"Bot en pausa hasta manana."
+                        f"Flotante: <b>${float_pnl:.2f}</b>\n"
+                        f"Total: <b>${total_today:.2f}</b>\n"
+                        f"Siguiendo operaciones para maximizar ganancia del dia."
                     )
                 except Exception:
                     pass
-                return
-
-            if self._daily_target_hit:
-                return  # dia ganado, no abrir mas
+                # NO return — el bot continúa operando
 
             if not positions:
                 return  # nada que gestionar
