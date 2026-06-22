@@ -90,7 +90,7 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "U
 MAX_DAILY_TRADES         = 10      # 10/day — más oportunidades para challenge
 MAX_OPEN_POSITIONS       = 3       # max 3 simultáneas — más exposición positiva
 MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
-DAILY_PROFIT_TARGET      = 150.0  # $150 → cierra TODO — meta diaria cumplida, día ganado
+DAILY_PROFIT_TARGET      = 245.0  # $245 → cierra TODO — 5% mensual sobre $98K (20 días)
 
 # Colombia UTC-5: active 17:00-01:00 COL = Tokyo session starts 22:00 UTC
 # Dead only during true dead zone: 02:00-06:00 UTC (21:00-01:00 COL = middle of night)
