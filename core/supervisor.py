@@ -2445,20 +2445,22 @@ class TradingSupervisor:
                 self._daily_target_hit  = False
                 self._daily_protect_hit = False
 
-            # Track realized PnL for reporting
+            # Sync realized PnL from MT5 — acumula todos los trades cerrados hoy
             mt5_daily = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
             if mt5_daily is not None:
                 self._daily_realized_pnl = float(mt5_daily)
 
-            # Trigger: when open positions float total >= $150 → close all → day locked
-            float_pnl = sum(p.get("profit", 0.0) for p in (positions or []))
+            # Trigger: realizadas HOY + flotante actual >= $245 → cierra todo → día ganado
+            # Ejemplo: trade1 cierra +$80, trade2 cierra +$90, trade3 flotante +$75
+            #          → $80+$90+$75 = $245 → META CUMPLIDA
+            float_pnl   = sum(p.get("profit", 0.0) for p in (positions or []))
+            total_today = self._daily_realized_pnl + float_pnl
 
-            # Cierra TODO cuando las posiciones abiertas suman $150+
-            if not self._daily_target_hit and float_pnl >= DAILY_PROFIT_TARGET:
+            if not self._daily_target_hit and total_today >= DAILY_PROFIT_TARGET:
                 self._daily_target_hit = True
                 print(
-                    f"[META-DIA] posiciones flotantes=${float_pnl:.2f} >= ${DAILY_PROFIT_TARGET:.0f} "
-                    f"— META CUMPLIDA, cerrando todo",
+                    f"[META-DIA] realizadas=${self._daily_realized_pnl:.2f} + flotante=${float_pnl:.2f}"
+                    f" = ${total_today:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — META CUMPLIDA, cerrando todo",
                     flush=True,
                 )
                 for tp in list(positions):
@@ -2475,8 +2477,9 @@ class TradingSupervisor:
                 try:
                     await self.telegram.send_glint_alert(
                         f"<b>META DIARIA CUMPLIDA</b>\n"
-                        f"Profit en posiciones: <b>${float_pnl:.2f}</b>\n"
-                        f"Todas las posiciones cerradas.\n"
+                        f"Realizadas hoy: <b>${self._daily_realized_pnl:.2f}</b>\n"
+                        f"Flotante cerrado: <b>${float_pnl:.2f}</b>\n"
+                        f"Total del dia: <b>${total_today:.2f}</b>\n"
                         f"Bot en pausa hasta manana."
                     )
                 except Exception:
