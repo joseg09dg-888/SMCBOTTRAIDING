@@ -120,7 +120,9 @@ class RiskGovernor:
                     since = datetime.fromisoformat(since_raw)
                 except Exception:
                     since = now
-                if now - since >= timedelta(hours=self.cooldown_hours):
+                # Per-entry cooldown_hours overrides class default (allows 30-day bans)
+                entry_cooldown = self._state["suspended"][sym].get("cooldown_hours", self.cooldown_hours)
+                if now - since >= timedelta(hours=entry_cooldown):
                     del self._state["suspended"][sym]
                     changes["reactivated"].append({"symbol": sym, "reason": "cooldown expirado, reevaluando"})
             else:
