@@ -90,7 +90,7 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "U
 MAX_DAILY_TRADES         = 10      # 10/day — más oportunidades para challenge
 MAX_OPEN_POSITIONS       = 3       # max 3 simultáneas — más exposición positiva
 MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
-DAILY_PROTECT_LEVEL      = 150.0  # $150 → cierra perdedoras, ganadoras siguen al TP (objetivo Axi 5%)
+DAILY_PROFIT_TARGET      = 150.0  # $150 → cierra TODO — meta diaria cumplida, día ganado
 
 # Colombia UTC-5: active 17:00-01:00 COL = Tokyo session starts 22:00 UTC
 # Dead only during true dead zone: 02:00-06:00 UTC (21:00-01:00 COL = middle of night)
@@ -2425,9 +2425,8 @@ class TradingSupervisor:
             import MetaTrader5 as _mt5
             from datetime import timezone as _tz
 
-            # ── 0. Daily profit protection ────────────────────────────────────
-            # $150 PROTECT: cierra perdedoras, ganadoras siguen al TP
-            # Sin cierre total — las ganadoras corren hasta TP para el 5% Axi
+            # ── 0. Daily profit target ────────────────────────────────────────
+            # $150 = meta diaria → cierra TODO → día ganado → bot en pausa
             today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if self._daily_pnl_date != today_utc:
                 self._daily_pnl_date     = today_utc
@@ -2437,6 +2436,39 @@ class TradingSupervisor:
 
             float_pnl   = sum(p.get("profit", 0.0) for p in positions)
             total_today = self._daily_realized_pnl + float_pnl
+
+            # Cierra TODO cuando se alcanza la meta
+            if not self._daily_target_hit and total_today >= DAILY_PROFIT_TARGET:
+                self._daily_target_hit = True
+                print(
+                    f"[META-DIA] ${total_today:.2f} >= ${DAILY_PROFIT_TARGET:.0f} "
+                    f"— META CUMPLIDA, cerrando todo",
+                    flush=True,
+                )
+                for tp in list(positions):
+                    t_ticket = tp["ticket"]
+                    t_sym    = tp.get("symbol", "?")
+                    t_pnl    = tp.get("profit", 0.0)
+                    ok = await loop.run_in_executor(
+                        None, lambda t=t_ticket: self.mt5.close_position(t)
+                    )
+                    if ok:
+                        self._position_peaks.pop(t_ticket, None)
+                        self._close_attempted.pop(t_ticket, None)
+                        print(f"[META-CLOSE] {t_sym} #{t_ticket} cerrado ${t_pnl:+.2f}", flush=True)
+                try:
+                    await self.telegram.send_glint_alert(
+                        f"<b>META DIARIA CUMPLIDA</b>\n"
+                        f"Total del dia: <b>${total_today:.2f}</b>\n"
+                        f"Todas las posiciones cerradas.\n"
+                        f"Bot en pausa hasta manana."
+                    )
+                except Exception:
+                    pass
+                return
+
+            if self._daily_target_hit:
+                return  # dia ganado, no abrir mas
 
             # ── Nivel $150: cierra SOLO perdedoras, ganadoras siguen ─────────
             if not getattr(self, "_daily_protect_hit", False) and total_today >= DAILY_PROTECT_LEVEL:
