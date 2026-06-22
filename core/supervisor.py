@@ -378,8 +378,8 @@ class TradingSupervisor:
         # Daily profit target tracking
         self._daily_pnl_date: str = ""           # "YYYY-MM-DD" UTC
         self._daily_realized_pnl: float = 0.0   # closed trades today
-        self._daily_target_hit: bool = False     # $200 hit — day locked
-        self._daily_protect_hit: bool = False    # $150 hit — losers closed, winners run
+        self._daily_target_hit: bool = False     # $150 hit — day locked, no new trades
+        self._daily_protect_hit: bool = False    # reserved (unused)
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -1350,6 +1350,11 @@ class TradingSupervisor:
         tp_val = signal.take_profit if signal.take_profit else 0.0
 
 
+
+        # ── FILTER 0b: Meta diaria ya cumplida ───────────────────────────
+        if self._daily_target_hit:
+            print(f"[MT5] {signal.symbol}: META DIARIA CUMPLIDA — no se abren nuevos trades hoy, skip", flush=True)
+            return
 
         # ── FILTER 0: Mercado abierto ─────────────────────────────────────
         if not is_market_open(signal.symbol):
@@ -2418,10 +2423,6 @@ class TradingSupervisor:
         try:
             loop = asyncio.get_running_loop()
             positions = await loop.run_in_executor(None, self.mt5.get_positions)
-            if not positions:
-                return
-            bal = self._ftmo_state.current_balance or self.capital
-            limit_usd = bal * 0.008  # 0.8% = early stop
             import MetaTrader5 as _mt5
             from datetime import timezone as _tz
 
@@ -2429,19 +2430,25 @@ class TradingSupervisor:
             # $150 = meta diaria → cierra TODO → día ganado → bot en pausa
             today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if self._daily_pnl_date != today_utc:
-                self._daily_pnl_date     = today_utc
-                self._daily_realized_pnl = 0.0
-                self._daily_target_hit   = False
-                self._daily_protect_hit  = False
+                self._daily_pnl_date   = today_utc
+                self._daily_target_hit = False
+                self._daily_protect_hit = False
 
-            float_pnl   = sum(p.get("profit", 0.0) for p in positions)
-            total_today = self._daily_realized_pnl + float_pnl
+            # Track realized PnL for reporting (not used for trigger)
+            mt5_daily = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
+            if mt5_daily is not None:
+                self._daily_realized_pnl = float(mt5_daily)
 
-            # Cierra TODO cuando se alcanza la meta
-            if not self._daily_target_hit and total_today >= DAILY_PROFIT_TARGET:
+            # Trigger is float-only: when open positions total >= $150 → close all
+            # This locks in profits when the portfolio is up $150 on live positions,
+            # independent of earlier losses that day (handles restarts cleanly).
+            float_pnl = sum(p.get("profit", 0.0) for p in (positions or []))
+
+            # Cierra TODO cuando las posiciones abiertas suman $150+
+            if not self._daily_target_hit and float_pnl >= DAILY_PROFIT_TARGET:
                 self._daily_target_hit = True
                 print(
-                    f"[META-DIA] ${total_today:.2f} >= ${DAILY_PROFIT_TARGET:.0f} "
+                    f"[META-DIA] posiciones flotantes=${float_pnl:.2f} >= ${DAILY_PROFIT_TARGET:.0f} "
                     f"— META CUMPLIDA, cerrando todo",
                     flush=True,
                 )
@@ -2459,7 +2466,7 @@ class TradingSupervisor:
                 try:
                     await self.telegram.send_glint_alert(
                         f"<b>META DIARIA CUMPLIDA</b>\n"
-                        f"Total del dia: <b>${total_today:.2f}</b>\n"
+                        f"Profit en posiciones: <b>${float_pnl:.2f}</b>\n"
                         f"Todas las posiciones cerradas.\n"
                         f"Bot en pausa hasta manana."
                     )
@@ -2469,40 +2476,6 @@ class TradingSupervisor:
 
             if self._daily_target_hit:
                 return  # dia ganado, no abrir mas
-
-            # ── Nivel $150: cierra SOLO perdedoras, ganadoras siguen ─────────
-            if not getattr(self, "_daily_protect_hit", False) and total_today >= DAILY_PROTECT_LEVEL:
-                self._daily_protect_hit = True
-                losers = [p for p in positions if p.get("profit", 0.0) < 0]
-                if losers:
-                    print(
-                        f"[PROTECT-150] ${total_today:.2f} >= ${DAILY_PROTECT_LEVEL:.0f} "
-                        f"→ cerrando {len(losers)} perdedora(s), ganadoras siguen",
-                        flush=True,
-                    )
-                    for lp in losers:
-                        l_ticket = lp["ticket"]
-                        l_sym    = lp.get("symbol", "?")
-                        l_pnl    = lp.get("profit", 0.0)
-                        ok = await loop.run_in_executor(
-                            None, lambda t=l_ticket: self.mt5.close_position(t)
-                        )
-                        if ok:
-                            self._position_peaks.pop(l_ticket, None)
-                            self._close_attempted.pop(l_ticket, None)
-                            print(f"[PROTECT-CLOSE] {l_sym} #{l_ticket} cerrado ${l_pnl:+.2f}", flush=True)
-                    try:
-                        winners = [p for p in positions if p.get("profit", 0.0) >= 0]
-                        w_txt = "\n".join(
-                            f"  {p.get('symbol','?')} ${p.get('profit',0):+.2f}" for p in winners
-                        )
-                        await self.telegram.send_glint_alert(
-                            f"<b>DIA ASEGURADO — $150</b>\n"
-                            f"Total: ${total_today:.2f}\n"
-                            f"Perdedoras cerradas. Ganadoras siguen corriendo:\n{w_txt}"
-                        )
-                    except Exception:
-                        pass
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
             now_utc = datetime.now(timezone.utc)
