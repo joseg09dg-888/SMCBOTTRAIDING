@@ -1070,7 +1070,8 @@ class TradingSupervisor:
         def _alt():      return self._alt_data.score_adjustment(signal.symbol, bias)
         def _energy():
             energy = self._energy.analyze(signal.symbol, signal.entry or 0.0, prices)
-            return energy.to_decision_pts()
+            pts = energy.to_decision_pts()
+            return max(-3, min(3, pts))  # solo sugeridor: ±3 pts max
 
         raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy]
         tasks = [_make(name, fn) for name, fn in zip(_agent_names, raw_tasks)]
