@@ -2543,9 +2543,10 @@ class TradingSupervisor:
             if not positions:
                 return  # nada que gestionar
 
-            # ── 0. Scalp $10 take-profit ──────────────────────────────────────
-            # Scalp M15: cerrar en cuanto llega a $10 de ganancia — no esperar TP
-            SCALP_MIN_PROFIT = 10.0
+            # ── 0. Scalp gestión de P&L ───────────────────────────────────────
+            # Scalp M15: TP=$10 (ganancia), SL=$2 (pérdida máxima por scalp)
+            SCALP_MIN_PROFIT =  10.0
+            SCALP_MAX_LOSS   =  -2.0
             for sp in list(scalp_positions):
                 sp_pnl    = sp.get("profit", 0.0)
                 sp_ticket = sp["ticket"]
@@ -2554,7 +2555,12 @@ class TradingSupervisor:
                     ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
                     if ok:
                         self._position_peaks.pop(sp_ticket, None)
-                        print(f"[SCALP-TP] {sp_sym} #{sp_ticket} cerrado en ${sp_pnl:+.2f} (meta $10 alcanzada)", flush=True)
+                        print(f"[SCALP-TP] {sp_sym} #{sp_ticket} cerrado ${sp_pnl:+.2f} (meta $10)", flush=True)
+                elif sp_pnl <= SCALP_MAX_LOSS:
+                    ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
+                    if ok:
+                        self._position_peaks.pop(sp_ticket, None)
+                        print(f"[SCALP-SL] {sp_sym} #{sp_ticket} cerrado ${sp_pnl:+.2f} (max loss -$2)", flush=True)
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
             now_utc = datetime.now(timezone.utc)
