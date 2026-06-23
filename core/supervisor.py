@@ -90,11 +90,12 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "U
 MAX_DAILY_TRADES         = 100     # sin techo — el mercado limita, no el bot
 MAX_OPEN_POSITIONS       = 3       # max 3 simultáneas — más exposición positiva
 MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
-DAILY_PROFIT_TARGET      = 245.0  # $245 → cierra TODO — 5% mensual sobre $98K (20 días)
+DAILY_PROFIT_TARGET      = 245.0  # $245 piso → notifica Telegram, bot sigue operando
 
-# Colombia UTC-5: active 17:00-01:00 COL = Tokyo session starts 22:00 UTC
-# Dead only during true dead zone: 02:00-06:00 UTC (21:00-01:00 COL = middle of night)
-DEAD_HOURS_UTC           = {2, 3, 4, 5, 6}  # only block 02-06 UTC (madrugada Colombia)
+# Colombia UTC-5: bot opera solo en horario NY+London cuando usuario esta despierto
+# Bloqueado: midnight-8am Colombia = 05:00-13:00 UTC (madrugada completa)
+# Activo: 8am-midnight Colombia = 13:00-05:00 UTC (NY session completa + tarde)
+DEAD_HOURS_UTC           = {5, 6, 7, 8, 9, 10, 11, 12}  # 00:00-08:00 COL bloqueado
 
 
 
