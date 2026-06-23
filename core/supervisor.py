@@ -1447,7 +1447,8 @@ class TradingSupervisor:
             print(f"[TREND-H4] {signal.symbol}: error obteniendo H4 ({_te}) — skip", flush=True)
             return  # sin datos H4 confiables → no operar
 
-        # ── SCALP M15: TP/SL fijos en pips — cierra en $10-75 por trade ────────
+        # ── SCALP M15: volumen fijo 0.1L, SL=4pips($4), TP=12pips($12) ─────────
+        # 0.1L: pip=$1 → SL=4pips=$4 max loss, TP=12pips=$12, cerrar en $10
         if _is_scalp:
             try:
                 import MetaTrader5 as _mt5s
@@ -1455,16 +1456,16 @@ class TradingSupervisor:
                 _scalp_price = (_tick_s.ask if order_type == "BUY" else _tick_s.bid) if _tick_s else 0.0
                 _sym_s = _mt5s.symbol_info(signal.symbol)
                 if _scalp_price > 0 and _sym_s:
-                    _pip = _sym_s.point * 10  # 1 pip = 10 points for 5-digit brokers
-                    _sl_pips  = 8   # 8 pips SL
-                    _tp_pips  = 12  # 12 pips TP → RR=1.5
+                    _pip = _sym_s.point * 10  # 1 pip = 10 points (5-digit broker)
+                    _sl_pips  = 4   # 4 pips SL = $4 max loss a 0.1L
+                    _tp_pips  = 12  # 12 pips TP = $12, monitor cierra en $10
                     if order_type == "BUY":
                         sl_val = round(_scalp_price - _sl_pips * _pip, 5)
                         tp_val = round(_scalp_price + _tp_pips * _pip, 5)
                     else:
                         sl_val = round(_scalp_price + _sl_pips * _pip, 5)
                         tp_val = round(_scalp_price - _tp_pips * _pip, 5)
-                    print(f"[SCALP] {signal.symbol} {order_type} SL={sl_val} TP={tp_val} (8pip SL / 12pip TP)", flush=True)
+                    print(f"[SCALP] {signal.symbol} {order_type} @{_scalp_price:.5f} SL={sl_val:.5f} TP={tp_val:.5f} (4pip/$4 SL, 12pip/$12 TP)", flush=True)
             except Exception as _se:
                 print(f"[SCALP] error calculando SL/TP: {_se}", flush=True)
 
@@ -1683,9 +1684,13 @@ class TradingSupervisor:
         except Exception:
             _fill_price = 0.0
         _entry_for_vol = _fill_price if _fill_price > 0 else (signal.entry or sl_val)
-        volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
 
-        # Scalp: $50 max risk (many small trades). Swing: $400 max risk.
+        # Scalp: volumen FIJO 0.1L → pip=$1 → SL=4pips=$4 max, TP=12pips=$12
+        if _is_scalp:
+            volume = 0.1
+        else:
+            volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
+
         MAX_DOLLAR_RISK = SCALP_MAX_DOLLAR_RISK if _is_scalp else 400.0
         if volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
@@ -2545,8 +2550,8 @@ class TradingSupervisor:
 
             # ── 0. Scalp gestión de P&L ───────────────────────────────────────
             # Scalp M15: TP=$10 (ganancia), SL=$2 (pérdida máxima por scalp)
-            SCALP_MIN_PROFIT =  10.0
-            SCALP_MAX_LOSS   =  -2.0
+            SCALP_MIN_PROFIT =  10.0  # cerrar ganando $10
+            SCALP_MAX_LOSS   =  -4.0  # cerrar perdiendo $4 (4 pips a 0.1L)
             for sp in list(scalp_positions):
                 sp_pnl    = sp.get("profit", 0.0)
                 sp_ticket = sp["ticket"]
