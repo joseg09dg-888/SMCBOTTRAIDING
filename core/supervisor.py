@@ -2508,30 +2508,37 @@ class TradingSupervisor:
             if mt5_daily is not None:
                 self._daily_realized_pnl = float(mt5_daily)
 
-            # Meta mínima diaria: notifica cuando se alcanza, NO cierra ni para.
-            # $245 es el piso — el bot sigue operando para acumular más ganancia.
-            # Ejemplo: +$80 +$90 +$75 = $245 META → sigue → +$100 +$60 = $405 ese día.
+            # ── Swing profit target: cierra SWINGS cuando llegan a $245 juntos ──
+            # Los scalps siguen corriendo para acumular más ganancia.
+            swing_positions = [p for p in (positions or []) if abs(p.get("tp", 0) - p.get("price_open", 0)) >= 0.0025]
+            scalp_positions = [p for p in (positions or []) if abs(p.get("tp", 0) - p.get("price_open", 0)) < 0.0025]
+            swing_float = sum(p.get("profit", 0.0) for p in swing_positions)
             float_pnl   = sum(p.get("profit", 0.0) for p in (positions or []))
             total_today = self._daily_realized_pnl + float_pnl
 
-            if not self._daily_target_hit and total_today >= DAILY_PROFIT_TARGET:
+            if not self._daily_target_hit and swing_float >= DAILY_PROFIT_TARGET:
                 self._daily_target_hit = True
                 print(
-                    f"[META-MIN] realizadas=${self._daily_realized_pnl:.2f} + flotante=${float_pnl:.2f}"
-                    f" = ${total_today:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — META MINIMA CUMPLIDA, siguiendo",
+                    f"[META-SWING] swing_float=${swing_float:.2f} >= ${DAILY_PROFIT_TARGET:.0f}"
+                    f" — META CUMPLIDA, cerrando SWINGS, scalps siguen",
                     flush=True,
                 )
+                for sp in list(swing_positions):
+                    t_ticket = sp["ticket"]
+                    t_sym    = sp.get("symbol", "?")
+                    t_pnl    = sp.get("profit", 0.0)
+                    ok = await loop.run_in_executor(None, lambda t=t_ticket: self.mt5.close_position(t))
+                    if ok:
+                        self._position_peaks.pop(t_ticket, None)
+                        print(f"[META-CLOSE-SWING] {t_sym} #{t_ticket} cerrado ${t_pnl:+.2f}", flush=True)
                 try:
                     await self.telegram.send_glint_alert(
-                        f"<b>META MINIMA DIARIA CUMPLIDA</b>\n"
-                        f"Realizadas hoy: <b>${self._daily_realized_pnl:.2f}</b>\n"
-                        f"Flotante: <b>${float_pnl:.2f}</b>\n"
-                        f"Total: <b>${total_today:.2f}</b>\n"
-                        f"Siguiendo operaciones para maximizar ganancia del dia."
+                        f"<b>META DIARIA CUMPLIDA — SWINGS CERRADOS</b>\n"
+                        f"Swing profit: <b>${swing_float:.2f}</b>\n"
+                        f"Scalps siguen operando para mas ganancia."
                     )
                 except Exception:
                     pass
-                # NO return — el bot continúa operando
 
             if not positions:
                 return  # nada que gestionar
