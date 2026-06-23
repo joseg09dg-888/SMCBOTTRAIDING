@@ -2521,8 +2521,11 @@ class TradingSupervisor:
 
             # ── Swing profit target: cierra SWINGS cuando llegan a $245 juntos ──
             # Los scalps siguen corriendo para acumular más ganancia.
-            swing_positions = [p for p in (positions or []) if abs(p.get("tp", 0) - p.get("price_open", 0)) >= 0.0025]
-            scalp_positions = [p for p in (positions or []) if abs(p.get("tp", 0) - p.get("price_open", 0)) < 0.0025]
+            # Clasificar por VOLUMEN — más confiable que distancia de TP
+            # Scalp: vol <= 0.1L (todos los trades pequeños, cerrar en +$10/-$4)
+            # Swing: vol > 0.1L (trades grandes, cerrar cuando swing_float >= $245)
+            scalp_positions = [p for p in (positions or []) if p.get("volume", 0) <= 0.10]
+            swing_positions = [p for p in (positions or []) if p.get("volume", 0) > 0.10]
             swing_float = sum(p.get("profit", 0.0) for p in swing_positions)
             float_pnl   = sum(p.get("profit", 0.0) for p in (positions or []))
             total_today = self._daily_realized_pnl + float_pnl
