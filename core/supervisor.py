@@ -1416,25 +1416,32 @@ class TradingSupervisor:
 
 
         # ── FILTER 3b: Tendencia H4 — solo entrar a favor del trend ─────────
+        # Usa 50 velas H4 (200h ≈ 8 días) para evitar falsos por pullbacks cortos.
+        # MA10 vs MA30: si fallan datos → bloquear (no continuar con señal sin confirmar).
+        _h4_trend_ok = False
         try:
             df_h4 = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: self.mt5.get_ohlcv(signal.symbol, "H4", 12)
+                None, lambda: self.mt5.get_ohlcv(signal.symbol, "H4", 50)
             )
-            if df_h4 is not None and len(df_h4) >= 8:
-                avg_fast = df_h4["close"].iloc[-3:].mean()    # 3 velas recientes
-                avg_slow = df_h4["close"].iloc[-11:-3].mean() # 8 velas anteriores sin solapamiento
-                h4_bias = "LONG" if avg_fast > avg_slow else "SHORT"
+            if df_h4 is not None and len(df_h4) >= 30:
+                avg_fast = df_h4["close"].iloc[-10:].mean()   # MA10 — últimas 10 velas H4 (40h)
+                avg_slow = df_h4["close"].iloc[-30:].mean()   # MA30 — últimas 30 velas H4 (120h)
+                h4_bias  = "LONG" if avg_fast > avg_slow else "SHORT"
                 sig_dir  = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
                 if sig_dir != h4_bias:
                     print(
-                        f"[TREND-H4] {signal.symbol}: {sig_dir} contra tendencia H4 ({h4_bias})"
-                        f" avg_fast={avg_fast:.4f} avg_slow={avg_slow:.4f} -- skip",
+                        f"[TREND-H4] {signal.symbol}: {sig_dir} contra H4 ({h4_bias}) -- skip",
                         flush=True,
                     )
                     return
                 print(f"[TREND-H4] {signal.symbol}: {sig_dir} a favor H4 ({h4_bias}) OK", flush=True)
+                _h4_trend_ok = True
+            else:
+                print(f"[TREND-H4] {signal.symbol}: datos H4 insuficientes — skip", flush=True)
+                return
         except Exception as _te:
-            print(f"[TREND-H4] {signal.symbol}: error tendencia ({_te}), continua", flush=True)
+            print(f"[TREND-H4] {signal.symbol}: error obteniendo H4 ({_te}) — skip", flush=True)
+            return  # sin datos H4 confiables → no operar
 
         # ── FILTER 4: RR minimo — SIEMPRE usa precio actual (signal.entry puede ser H4 stale) ───
         if tp_val > 0 and sl_val > 0:

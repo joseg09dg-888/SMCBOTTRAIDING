@@ -70,9 +70,14 @@ class MarketStructure:
         lh = sum(1 for s in swings if s.swing_type == "LH")
         ll = sum(1 for s in swings if s.swing_type == "LL")
 
-        if hh >= 1 and hl >= 1 and lh == 0 and ll == 0:
+        # Bullish: más HH+HL que LH+LL (tendencia alcista dominante)
+        # Bearish: más LH+LL que HH+HL (tendencia bajista dominante)
+        # Condición anterior (lh==0 y ll==0) era imposible en 200 velas reales → siempre neutral
+        bull_score = hh + hl
+        bear_score = lh + ll
+        if bull_score > bear_score and hh >= 1 and hl >= 1:
             stype, bias = StructureType.BULLISH_TREND, "bullish"
-        elif lh >= 1 and ll >= 1 and hh == 0 and hl == 0:
+        elif bear_score > bull_score and lh >= 1 and ll >= 1:
             stype, bias = StructureType.BEARISH_TREND, "bearish"
         elif hh > 0 and ll > 0:
             stype, bias = StructureType.DISTRIBUTION, "neutral"

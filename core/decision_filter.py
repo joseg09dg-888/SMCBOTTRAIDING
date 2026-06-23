@@ -160,15 +160,20 @@ class DecisionFilter:
             score += 3
             parts.append("bias alineado +3")
 
-        # BOS confirmed: 8 pts
-        if bos_list:
+        # BOS: solo cuenta si va en la misma dirección del bias del trade
+        aligned_bos = [b for b in bos_list if b.get("direction", "") == bias]
+        if aligned_bos:
             score += 8
-            parts.append(f"BOS confirmado +8 ({bos_list[-1]['direction']})")
+            parts.append(f"BOS alineado +8 ({aligned_bos[-1]['direction']})")
+        elif bos_list:  # BOS existe pero contra el bias — penalizar
+            score -= 5
+            parts.append(f"BOS contra bias -5 ({bos_list[-1]['direction']})")
 
-        # CHoCH: 4 pts (potential reversal — use with bias)
-        if choch_list:
+        # CHoCH: solo cuenta si va en la misma dirección del bias
+        aligned_choch = [c for c in choch_list if c.get("direction", "") == bias]
+        if aligned_choch:
             score += 4
-            parts.append(f"CHoCH detectado +4")
+            parts.append(f"CHoCH alineado +4")
 
         # OB present: 5 pts
         relevant_obs = bull_obs if bias == "bullish" else bear_obs
