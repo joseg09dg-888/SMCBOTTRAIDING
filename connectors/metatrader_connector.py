@@ -471,6 +471,22 @@ class MT5Connector:
         except Exception:
             return 0.0
 
+    def get_scalp_daily_pnl(self) -> float:
+        """Realized P&L from scalp trades today (volume <= 0.1L). Syncs from MT5."""
+        if not HAS_MT5:
+            return 0.0
+        try:
+            from datetime import datetime, timezone
+            now   = datetime.now(timezone.utc)
+            today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+            deals = mt5.history_deals_get(today, now) or []
+            return round(sum(
+                d.profit + d.swap + d.commission
+                for d in deals if d.entry == 1 and d.symbol != "" and d.volume <= 0.11
+            ), 2)
+        except Exception:
+            return 0.0
+
     def modify_position_sl_tp(self, ticket: int, sl: float, tp: float = 0.0) -> bool:
         """Set or update SL/TP on an existing open position."""
         if not HAS_MT5:

@@ -2559,13 +2559,15 @@ class TradingSupervisor:
             SCALP_MAX_LOSS     =  -4.0   # cerrar scalp individual en -$4
             SCALP_DAILY_TARGET =  60.0   # cerrar TODOS scalps cuando acumula $60 hoy
 
-            # Reset contador si cambió el día
+            # Sincronizar scalp P&L desde MT5 real cada ciclo — no confiar en contador en memoria
             _today_s = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if self._scalp_pnl_date != _today_s:
-                self._scalp_pnl_date       = _today_s
-                self._scalp_realized_today = 0.0
-                self._scalp_daily_hit      = False
-                self._scalp_peak_today     = 0.0
+                self._scalp_pnl_date   = _today_s
+                self._scalp_daily_hit  = False
+                self._scalp_peak_today = 0.0
+            _scalp_mt5 = await loop.run_in_executor(None, self.mt5.get_scalp_daily_pnl)
+            if _scalp_mt5 is not None:
+                self._scalp_realized_today = float(_scalp_mt5)
 
             # Actualizar peak diario de scalps
             if self._scalp_realized_today > self._scalp_peak_today:
