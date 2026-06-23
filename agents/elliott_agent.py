@@ -86,7 +86,9 @@ class ElliottFibonacciAgent:
         elif position > 0.80:
             wave_count   = 5
             current_wave = "wave_5"
-            bonus        = -5  # fin de impulso, riesgo de reversal inminente
+            # Bearish trade en wave_5 = confirma reversal inminente (+5)
+            # Bullish trade en wave_5 = late long, riesgo alto (-5)
+            bonus        = +5 if bias == "bearish" else -5
             confidence   = 0.60
             w_type       = "impulse"
         elif position < 0.20:
