@@ -1375,10 +1375,11 @@ class TradingSupervisor:
 
 
 
-        # Meta mínima diaria: solo logging, NO bloquea nuevos trades.
-        # El $245 es el piso, no el techo — más trades = más ganancia potencial.
-        if self._daily_target_hit:
-            print(f"[MT5] {signal.symbol}: meta $245 cumplida — siguiendo operando para mayor ganancia", flush=True)
+        # Meta swing $245 cumplida → SOLO scalps (M15) el resto del día
+        # Los swings ya aseguraron el mínimo — no abrir más swings que se coman la ganancia
+        if self._daily_target_hit and not _is_scalp:
+            print(f"[MT5] {signal.symbol}: meta swing $245 cumplida — solo scalps permitidos, skip swing", flush=True)
+            return
 
         # ── FILTER 0: Mercado abierto ─────────────────────────────────────
         if not is_market_open(signal.symbol):
