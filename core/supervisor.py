@@ -1605,22 +1605,20 @@ class TradingSupervisor:
 
         sym_open = [p for p in existing if p["symbol"] == signal.symbol]
         if sym_open:
-
             pos = sym_open[0]
-
             pnl_live = pos.get("profit", 0.0)
-
-            print(
-
-                f"[MT5] {signal.symbol}: posicion {pos['type']} ya abierta "
-
-                f"({pnl_live:+.2f} USD) -- skip nueva orden",
-
-                flush=True,
-
-            )
-
-            return
+            pos_dir = pos.get("type", "").upper()
+            # Scalp puede abrir en mismo simbolo si hay swing en MISMA direccion
+            # Swing no puede abrir si ya hay posicion abierta en ese simbolo
+            if _is_scalp and pos_dir == order_type:
+                pass  # permitir scalp adicional en misma direccion
+            else:
+                print(
+                    f"[MT5] {signal.symbol}: posicion {pos_dir} ya abierta "
+                    f"({pnl_live:+.2f} USD) -- skip",
+                    flush=True,
+                )
+                return
 
 
 
