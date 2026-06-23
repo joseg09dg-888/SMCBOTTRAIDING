@@ -2573,12 +2573,20 @@ class TradingSupervisor:
             if self._scalp_realized_today > self._scalp_peak_today:
                 self._scalp_peak_today = self._scalp_realized_today
 
-            # Si el peak pasó $60 y ahora cayó a $60 → cerrar todo para asegurar $60
-            if (self._scalp_peak_today >= SCALP_DAILY_TARGET and
-                    self._scalp_realized_today <= SCALP_DAILY_TARGET and
+            # Trailing lock por milestones:
+            # Peak $65 → lock=$60. Peak $110 → lock=$100. Peak $250 → lock=$200.
+            # Si current cae AL lock → cerrar todo (asegurar ese nivel)
+            _SCALP_MILESTONES = [60, 100, 200, 300, 500, 750, 1000]
+            _scalp_lock = 0
+            for _m in _SCALP_MILESTONES:
+                if self._scalp_peak_today >= _m:
+                    _scalp_lock = _m
+            if (_scalp_lock > 0 and
+                    self._scalp_realized_today <= _scalp_lock and
+                    self._scalp_peak_today > _scalp_lock and
                     not self._scalp_daily_hit):
                 self._scalp_daily_hit = True
-                print(f"[SCALP-META] Peak ${self._scalp_peak_today:.2f} cayó a ${self._scalp_realized_today:.2f} — asegurando $60", flush=True)
+                print(f"[SCALP-LOCK] Peak=${self._scalp_peak_today:.2f} cayó a ${self._scalp_realized_today:.2f} <= lock=${_scalp_lock} — cerrando todo", flush=True)
 
             # Meta diaria scalp $60 alcanzada → cerrar todos los scalps abiertos
             if self._scalp_daily_hit and scalp_positions:
