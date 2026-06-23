@@ -384,6 +384,10 @@ class TradingSupervisor:
         self._daily_realized_pnl: float = 0.0   # closed trades today
         self._daily_target_hit: bool = False     # $245 hit — day locked, no new trades
         self._daily_protect_hit: bool = False    # reserved (unused)
+        # Scalp daily target: $60 acumulado en scalps → cierra todos los scalps
+        self._scalp_realized_today: float = 0.0
+        self._scalp_daily_hit: bool = False
+        self._scalp_pnl_date: str = ""
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -2550,23 +2554,66 @@ class TradingSupervisor:
                 return  # nada que gestionar
 
             # ── 0. Scalp gestión de P&L ───────────────────────────────────────
-            # Scalp M15: TP=$10 (ganancia), SL=$2 (pérdida máxima por scalp)
-            SCALP_MIN_PROFIT =  10.0  # cerrar ganando $10
-            SCALP_MAX_LOSS   =  -4.0  # cerrar perdiendo $4 (4 pips a 0.1L)
-            for sp in list(scalp_positions):
-                sp_pnl    = sp.get("profit", 0.0)
-                sp_ticket = sp["ticket"]
-                sp_sym    = sp.get("symbol", "?")
-                if sp_pnl >= SCALP_MIN_PROFIT:
-                    ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
+            SCALP_MIN_PROFIT   =  10.0   # cerrar scalp individual en +$10
+            SCALP_MAX_LOSS     =  -4.0   # cerrar scalp individual en -$4
+            SCALP_DAILY_TARGET =  60.0   # cerrar TODOS scalps cuando acumula $60 hoy
+
+            # Reset contador si cambió el día
+            _today_s = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if self._scalp_pnl_date != _today_s:
+                self._scalp_pnl_date       = _today_s
+                self._scalp_realized_today = 0.0
+                self._scalp_daily_hit      = False
+
+            # Si el TOTAL flotante de scalps abiertos llega a $5 → cierra todos ahora
+            scalp_total_float = sum(p.get("profit", 0.0) for p in scalp_positions)
+            if scalp_positions and scalp_total_float >= 5.0 and not self._scalp_daily_hit:
+                for sp in list(scalp_positions):
+                    ok = await loop.run_in_executor(None, lambda t=sp["ticket"]: self.mt5.close_position(t))
                     if ok:
-                        self._position_peaks.pop(sp_ticket, None)
-                        print(f"[SCALP-TP] {sp_sym} #{sp_ticket} cerrado ${sp_pnl:+.2f} (meta $10)", flush=True)
-                elif sp_pnl <= SCALP_MAX_LOSS:
-                    ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
+                        self._position_peaks.pop(sp["ticket"], None)
+                        self._scalp_realized_today += sp.get("profit", 0.0)
+                        print(f"[SCALP-FLOAT] {sp.get('symbol','?')} cerrado ${sp.get('profit',0):+.2f} (grupo +$5)", flush=True)
+                if not self._scalp_daily_hit and self._scalp_realized_today >= SCALP_DAILY_TARGET:
+                    self._scalp_daily_hit = True
+                    print(f"[SCALP-META] ${self._scalp_realized_today:.2f} >= $60 — META SCALP CUMPLIDA", flush=True)
+
+            # Meta diaria scalp $60 alcanzada → cerrar todos los scalps abiertos
+            elif self._scalp_daily_hit and scalp_positions:
+                for sp in list(scalp_positions):
+                    ok = await loop.run_in_executor(None, lambda t=sp["ticket"]: self.mt5.close_position(t))
                     if ok:
-                        self._position_peaks.pop(sp_ticket, None)
-                        print(f"[SCALP-SL] {sp_sym} #{sp_ticket} cerrado ${sp_pnl:+.2f} (max loss -$2)", flush=True)
+                        self._position_peaks.pop(sp["ticket"], None)
+                        print(f"[SCALP-DAY] {sp.get('symbol','?')} cerrado ${sp.get('profit',0):+.2f} (meta $60 scalp cumplida)", flush=True)
+            else:
+                # Gestión individual de cada scalp
+                for sp in list(scalp_positions):
+                    sp_pnl    = sp.get("profit", 0.0)
+                    sp_ticket = sp["ticket"]
+                    sp_sym    = sp.get("symbol", "?")
+                    if sp_pnl >= SCALP_MIN_PROFIT:
+                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
+                        if ok:
+                            self._position_peaks.pop(sp_ticket, None)
+                            self._scalp_realized_today += sp_pnl
+                            print(f"[SCALP-TP] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
+                            if not self._scalp_daily_hit and self._scalp_realized_today >= SCALP_DAILY_TARGET:
+                                self._scalp_daily_hit = True
+                                print(f"[SCALP-META] ${self._scalp_realized_today:.2f} >= $60 — META SCALP CUMPLIDA", flush=True)
+                                try:
+                                    await self.telegram.send_glint_alert(
+                                        f"<b>META SCALP DIARIA $60 CUMPLIDA</b>\n"
+                                        f"Total scalps hoy: <b>${self._scalp_realized_today:.2f}</b>\n"
+                                        f"Cerrando scalps restantes. Swing sigue."
+                                    )
+                                except Exception:
+                                    pass
+                    elif sp_pnl <= SCALP_MAX_LOSS:
+                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
+                        if ok:
+                            self._position_peaks.pop(sp_ticket, None)
+                            self._scalp_realized_today += sp_pnl
+                            print(f"[SCALP-SL] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
             now_utc = datetime.now(timezone.utc)
