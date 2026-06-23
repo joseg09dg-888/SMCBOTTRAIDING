@@ -101,12 +101,13 @@ class TestDailyTargetMinimum:
 
     def test_resets_on_new_day(self):
         s = _FakeSupervisor()
+        s._daily_pnl_date    = "2026-06-23"  # yesterday
         s._daily_target_hit  = True
         s._daily_realized_pnl = 300.0
-        s._maybe_reset_day("2026-06-23")  # new day
+        s._maybe_reset_day("2026-06-24")  # new day
         assert not s._daily_target_hit
         assert not s._daily_protect_hit
-        assert s._daily_pnl_date == "2026-06-23"
+        assert s._daily_pnl_date == "2026-06-24"
         # realized_pnl is NOT reset here — it syncs from MT5 on next cycle
         # MT5.get_daily_pnl() returns 0.0 for a new day with no trades
 

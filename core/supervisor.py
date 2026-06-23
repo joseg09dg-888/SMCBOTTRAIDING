@@ -3106,20 +3106,32 @@ class TradingSupervisor:
                                 bias  = signal.signal_type.value.upper()
                                 print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="", flush=True)
 
-                                # Cache H4 direction for dual-confirm filter
-                                if tf == "H4" and signal.signal_type != SignalType.WAIT:
-                                    self._mt5_h4_direction[symbol] = bias
+                                # Siempre actualizar cache H4 — incluso en WAIT para no dejar stale
+                                if tf == "H4":
+                                    self._mt5_h4_direction[symbol] = bias  # LONG, SHORT, o WAIT
 
-                                # TRIPLE confirm: D1 + H4 + H1 must all agree
+                                # TRIPLE confirm: D1 + H4 + H1 deben coincidir
                                 if signal.signal_type != SignalType.WAIT:
                                     d1_dir = self._mt5_d1_trend.get(symbol)
                                     h4_dir = self._mt5_h4_direction.get(symbol)
-                                    if d1_dir and d1_dir != bias:
+
+                                    # D1 desconocido = NO operar — sin macro confirmada no hay trade
+                                    if not d1_dir:
+                                        print(f" -- [D1-FILTER] D1 no disponible — skip", flush=True)
+                                        continue
+
+                                    # D1 contra el trade = bloquear
+                                    if d1_dir != bias:
                                         print(f" -- [D1-FILTER] {bias} vs D1={d1_dir} — contra macro, skip", flush=True)
                                         continue
-                                    if tf == "H1" and h4_dir and h4_dir != bias:
+
+                                    # H4 solo bloquea si explicitamente en contra (LONG vs SHORT)
+                                    # H4=WAIT significa sin setup fuerte — se permite si D1 confirma
+                                    if tf == "H1" and h4_dir in ("LONG", "SHORT") and h4_dir != bias:
                                         print(f" -- [H4-FILTER] H1={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
                                         continue
+
+                                    print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
 
                                 if signal.signal_type == SignalType.WAIT or score < mt5_threshold:
                                     self._scan_stats["blocked_score"] += 1
