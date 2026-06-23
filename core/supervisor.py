@@ -1487,13 +1487,16 @@ class TradingSupervisor:
                     if _sl_dist_signal > 0 and _slippage > _sl_dist_signal:
                         drift_factor = _slippage / _sl_dist_signal
                         if drift_factor > 2.0:
-                            # Market moved too far from OB — stale signal, skip
-                            print(
-                                f"[MT5] {signal.symbol}: STALE SETUP drift={_slippage:.4f} "
-                                f"({drift_factor:.1f}x SL_dist > 2x max) — skip",
-                                flush=True,
-                            )
-                            return
+                            # Scalp M15: siempre usa precio de mercado — stale no aplica
+                            if _is_scalp:
+                                pass  # SL/TP ya calculados al precio actual
+                            else:
+                                print(
+                                    f"[MT5] {signal.symbol}: STALE SETUP drift={_slippage:.4f} "
+                                    f"({drift_factor:.1f}x SL_dist > 2x max) — skip",
+                                    flush=True,
+                                )
+                                return
                         # 1-2x drift: adapt entry to current market price
                         print(
                             f"[MT5] {signal.symbol}: ADAPTED entry {signal.entry:.4f}→{_market_price:.4f} "
