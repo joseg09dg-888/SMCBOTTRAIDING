@@ -1361,6 +1361,7 @@ class TradingSupervisor:
         """Send a real order to MT5 demo -- strict quality filters applied."""
 
         order_type = "BUY" if signal.signal_type == SignalType.LONG else "SELL"
+        _is_scalp  = (signal.timeframe == "M15")   # definido aqui para todo el metodo
 
         sl_val = signal.stop_loss if signal.stop_loss else 0.0
 
@@ -1589,7 +1590,6 @@ class TradingSupervisor:
         # ── FILTER 7: Max posiciones abiertas ────────────────────────────────
         loop = asyncio.get_running_loop()
         existing = await loop.run_in_executor(None, self.mt5.get_positions)
-        _is_scalp = (signal.timeframe == "M15")
 
         # Scalp y swing tienen topes independientes
         if _is_scalp:
