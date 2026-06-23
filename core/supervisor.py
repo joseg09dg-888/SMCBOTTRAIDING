@@ -2578,23 +2578,8 @@ class TradingSupervisor:
                 self._scalp_daily_hit = True
                 print(f"[SCALP-META] Peak ${self._scalp_peak_today:.2f} cayó a ${self._scalp_realized_today:.2f} — asegurando $60", flush=True)
 
-            # Si el TOTAL flotante de scalps llega a +$5 (tomar ganancia) o -$5 (cortar pérdida)
-            scalp_total_float = sum(p.get("profit", 0.0) for p in scalp_positions)
-            _scalp_close_group = (scalp_total_float >= 5.0 or scalp_total_float <= -5.0)
-            if scalp_positions and _scalp_close_group and not self._scalp_daily_hit:
-                for sp in list(scalp_positions):
-                    ok = await loop.run_in_executor(None, lambda t=sp["ticket"]: self.mt5.close_position(t))
-                    if ok:
-                        self._position_peaks.pop(sp["ticket"], None)
-                        self._scalp_realized_today += sp.get("profit", 0.0)
-                        tag = "grupo +$5" if scalp_total_float >= 5.0 else "grupo -$5 stop"
-                        print(f"[SCALP-FLOAT] {sp.get('symbol','?')} cerrado ${sp.get('profit',0):+.2f} ({tag})", flush=True)
-                if not self._scalp_daily_hit and self._scalp_realized_today >= SCALP_DAILY_TARGET:
-                    self._scalp_daily_hit = True
-                    print(f"[SCALP-META] ${self._scalp_realized_today:.2f} >= $60 — META SCALP CUMPLIDA", flush=True)
-
             # Meta diaria scalp $60 alcanzada → cerrar todos los scalps abiertos
-            elif self._scalp_daily_hit and scalp_positions:
+            if self._scalp_daily_hit and scalp_positions:
                 for sp in list(scalp_positions):
                     ok = await loop.run_in_executor(None, lambda t=sp["ticket"]: self.mt5.close_position(t))
                     if ok:
