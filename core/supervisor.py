@@ -77,9 +77,12 @@ from memory.episodic_db import query_similar_episodes
 # Score thresholds
 
 DEMO_SCORE_THRESHOLD     = 999  # DISABLED: crypto demo no cuenta para Axi Select
-MT5_REAL_SCORE_THRESHOLD = 85   # QUALITY: only best setups
-MT5_SCORE_AUTO_REDUCE    = 75   # reduce to 75 after 4h without trades
-MT5_SCORE_REDUCE_AFTER_H = 4    # wait 4 hours before reducing
+MT5_REAL_SCORE_THRESHOLD = 85   # SWING: best setups H1/H4
+MT5_SCALP_THRESHOLD      = 65   # SCALP M15: más trades, TP/SL pequeños
+MT5_SCORE_AUTO_REDUCE    = 75
+MT5_SCORE_REDUCE_AFTER_H = 4
+MAX_SCALP_POSITIONS      = 10   # scalp: hasta 10 simultáneas (riesgo pequeño por trade)
+SCALP_MAX_DOLLAR_RISK    = 50.0 # scalp: max $50 por trade → 100 trades × $10 = $1000
 DEMO_MAX_POSITIONS       = 0    # no demo positions — 100% focus on MT5 real
 SCAN_INTERVAL_SEC        = 30
 
@@ -88,7 +91,7 @@ CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is 
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
 MAX_DAILY_TRADES         = 100     # sin techo — el mercado limita, no el bot
-MAX_OPEN_POSITIONS       = 3       # max 3 simultáneas — más exposición positiva
+MAX_OPEN_POSITIONS       = 5       # 3 swing + 2 scalp simultáneas
 MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
 DAILY_PROFIT_TARGET      = 245.0  # $245 piso → notifica Telegram, bot sigue operando
 
@@ -117,7 +120,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
 MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NAS100.fs", "US30"]
-MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 first: cache trend before H1 dual-confirm filter
+MT5_TIMEFRAMES   = ["H4", "H1", "M15"]  # H4 trend → H1 swing → M15 scalp
 
 MT5_MIN_VOLUME   = 0.01
 
@@ -1443,6 +1446,27 @@ class TradingSupervisor:
             print(f"[TREND-H4] {signal.symbol}: error obteniendo H4 ({_te}) — skip", flush=True)
             return  # sin datos H4 confiables → no operar
 
+        # ── SCALP M15: TP/SL fijos en pips — cierra en $10-75 por trade ────────
+        if _is_scalp:
+            try:
+                import MetaTrader5 as _mt5s
+                _tick_s = _mt5s.symbol_info_tick(signal.symbol)
+                _scalp_price = (_tick_s.ask if order_type == "BUY" else _tick_s.bid) if _tick_s else 0.0
+                _sym_s = _mt5s.symbol_info(signal.symbol)
+                if _scalp_price > 0 and _sym_s:
+                    _pip = _sym_s.point * 10  # 1 pip = 10 points for 5-digit brokers
+                    _sl_pips  = 8   # 8 pips SL
+                    _tp_pips  = 12  # 12 pips TP → RR=1.5
+                    if order_type == "BUY":
+                        sl_val = round(_scalp_price - _sl_pips * _pip, 5)
+                        tp_val = round(_scalp_price + _tp_pips * _pip, 5)
+                    else:
+                        sl_val = round(_scalp_price + _sl_pips * _pip, 5)
+                        tp_val = round(_scalp_price - _tp_pips * _pip, 5)
+                    print(f"[SCALP] {signal.symbol} {order_type} SL={sl_val} TP={tp_val} (8pip SL / 12pip TP)", flush=True)
+            except Exception as _se:
+                print(f"[SCALP] error calculando SL/TP: {_se}", flush=True)
+
         # ── FILTER 4: RR minimo — SIEMPRE usa precio actual (signal.entry puede ser H4 stale) ───
         if tp_val > 0 and sl_val > 0:
             try:
@@ -1486,10 +1510,11 @@ class TradingSupervisor:
                 sl_dist = abs(_entry_ref - sl_val)
                 tp_dist = abs(_entry_ref - tp_val)
                 rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
-                if rr < MIN_RR - 0.01:  # small tolerance for float rounding
-                    print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {MIN_RR} minimo (entry={_entry_ref:.5f}), skip", flush=True)
+                _min_rr_req = 1.5 if _is_scalp else MIN_RR - 0.01
+                if rr < _min_rr_req:
+                    print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {_min_rr_req} minimo, skip", flush=True)
                     return
-                print(f"[RR-OK] {signal.symbol}: RR={rr:.2f} >= {MIN_RR} (entry={_entry_ref:.5f})", flush=True)
+                print(f"[RR-OK] {signal.symbol}: RR={rr:.2f} ({'SCALP' if _is_scalp else 'SWING'})", flush=True)
 
 
 
@@ -1558,14 +1583,25 @@ class TradingSupervisor:
 
 
 
-        # ── FILTER 7: Max posiciones abiertas (por simbolo y total) ─────────
+        # ── FILTER 7: Max posiciones abiertas ────────────────────────────────
         loop = asyncio.get_running_loop()
         existing = await loop.run_in_executor(None, self.mt5.get_positions)
+        _is_scalp = (signal.timeframe == "M15")
 
-        if len(existing) >= MAX_OPEN_POSITIONS:
-            self._scan_stats["blocked_duplicate"] += 1
-            print(f"[MT5] {signal.symbol}: {len(existing)} posiciones abiertas (max={MAX_OPEN_POSITIONS}), skip", flush=True)
-            return
+        # Scalp y swing tienen topes independientes
+        if _is_scalp:
+            scalp_open = [p for p in existing if p.get("timeframe") == "M15" or
+                          abs(p.get("tp", 0) - p.get("price_open", 0)) < 0.0025]
+            if len(scalp_open) >= MAX_SCALP_POSITIONS:
+                print(f"[MT5] {signal.symbol}: {len(scalp_open)} scalps abiertas (max={MAX_SCALP_POSITIONS}), skip", flush=True)
+                return
+        else:
+            swing_open = [p for p in existing if not (p.get("timeframe") == "M15" or
+                          abs(p.get("tp", 0) - p.get("price_open", 0)) < 0.0025)]
+            if len(swing_open) >= MAX_OPEN_POSITIONS:
+                self._scan_stats["blocked_duplicate"] += 1
+                print(f"[MT5] {signal.symbol}: {len(swing_open)} swing abiertas (max={MAX_OPEN_POSITIONS}), skip", flush=True)
+                return
 
         sym_open = [p for p in existing if p["symbol"] == signal.symbol]
         if sym_open:
@@ -1648,8 +1684,8 @@ class TradingSupervisor:
         _entry_for_vol = _fill_price if _fill_price > 0 else (signal.entry or sl_val)
         volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
 
-        # Hard cap: max $400 loss per trade — raised from $150 to allow proper lot sizing
-        MAX_DOLLAR_RISK = 400.0
+        # Scalp: $50 max risk (many small trades). Swing: $400 max risk.
+        MAX_DOLLAR_RISK = SCALP_MAX_DOLLAR_RISK if _is_scalp else 400.0
         if volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
             _sym_info = None
@@ -3133,18 +3169,20 @@ class TradingSupervisor:
                                         continue
 
                                     # H4 solo bloquea si explicitamente en contra (LONG vs SHORT)
-                                    # H4=WAIT significa sin setup fuerte — se permite si D1 confirma
-                                    if tf == "H1" and h4_dir in ("LONG", "SHORT") and h4_dir != bias:
-                                        print(f" -- [H4-FILTER] H1={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
+                                    if tf in ("H1", "M15") and h4_dir in ("LONG", "SHORT") and h4_dir != bias:
+                                        print(f" -- [H4-FILTER] {tf}={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
                                         continue
 
                                     print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
 
-                                if signal.signal_type == SignalType.WAIT or score < mt5_threshold:
+                                # M15 = scalping: threshold más bajo para más trades
+                                effective_threshold = MT5_SCALP_THRESHOLD if tf == "M15" else mt5_threshold
+                                if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
-                                    print(f" -- sin setup (threshold={mt5_threshold})")
+                                    print(f" -- sin setup (threshold={effective_threshold})")
                                 else:
-                                    print(f" -- ejecutando MT5 REAL (score={score}>={mt5_threshold})")
+                                    tag = "SCALP" if tf == "M15" else "SWING"
+                                    print(f" -- ejecutando {tag} (score={score}>={effective_threshold})")
                                     await self._send_mt5_real_order(signal)
                             except Exception as exc:
                                 print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
