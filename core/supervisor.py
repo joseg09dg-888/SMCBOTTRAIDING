@@ -388,6 +388,7 @@ class TradingSupervisor:
         self._scalp_realized_today: float = 0.0
         self._scalp_daily_hit: bool = False
         self._scalp_pnl_date: str = ""
+        self._scalp_peak_today: float = 0.0  # max alcanzado hoy — si cae a $60 cierra
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -2564,6 +2565,18 @@ class TradingSupervisor:
                 self._scalp_pnl_date       = _today_s
                 self._scalp_realized_today = 0.0
                 self._scalp_daily_hit      = False
+                self._scalp_peak_today     = 0.0
+
+            # Actualizar peak diario de scalps
+            if self._scalp_realized_today > self._scalp_peak_today:
+                self._scalp_peak_today = self._scalp_realized_today
+
+            # Si el peak pasó $60 y ahora cayó a $60 → cerrar todo para asegurar $60
+            if (self._scalp_peak_today >= SCALP_DAILY_TARGET and
+                    self._scalp_realized_today <= SCALP_DAILY_TARGET and
+                    not self._scalp_daily_hit):
+                self._scalp_daily_hit = True
+                print(f"[SCALP-META] Peak ${self._scalp_peak_today:.2f} cayó a ${self._scalp_realized_today:.2f} — asegurando $60", flush=True)
 
             # Si el TOTAL flotante de scalps llega a +$5 (tomar ganancia) o -$5 (cortar pérdida)
             scalp_total_float = sum(p.get("profit", 0.0) for p in scalp_positions)
