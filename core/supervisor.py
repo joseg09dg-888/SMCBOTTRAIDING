@@ -3330,8 +3330,8 @@ class TradingSupervisor:
 
                                     print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
 
-                                # M15 = scalping: threshold más bajo para más trades
-                                effective_threshold = MT5_SCALP_THRESHOLD if tf == "M15" else mt5_threshold
+                                # M15=scalp threshold 65, H1/H4=swing threshold 95 (solo mejores señales)
+                                effective_threshold = MT5_SCALP_THRESHOLD if tf == "M15" else 95
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
