@@ -2489,7 +2489,8 @@ class TradingSupervisor:
             hasta = datetime.now(timezone.utc)
             import MetaTrader5 as _mt5
             deals = _mt5.history_deals_get(desde, hasta)
-            closed = [d for d in (deals or []) if d.type in (0, 1) and d.entry == 1]
+            # Solo contar SWINGS (vol > 0.1L) — los micro-scalps sesgan el WR
+            closed = [d for d in (deals or []) if d.type in (0, 1) and d.entry == 1 and d.volume > 0.10]
             recent = sorted(closed, key=lambda d: d.time)[-10:]
             if len(recent) < 3:
                 # Pocos datos → threshold moderado pero no paralizar
