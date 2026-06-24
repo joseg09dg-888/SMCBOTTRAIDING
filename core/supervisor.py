@@ -94,7 +94,7 @@ MT5_SCORE_REDUCE_AFTER_H = 4
 MAX_SCALP_POSITIONS      = 10
 MAX_OPEN_POSITIONS       = 10
 MIN_RR                   = 2.5
-DAILY_PROFIT_TARGET      = 245.0
+DAILY_PROFIT_TARGET      = 250.0  # $250/dia → 5% mensual Axi Select
 INITIAL_CAPITAL          = 100_000.0
 
 # Recovery — simplificado: solo para emergencias
