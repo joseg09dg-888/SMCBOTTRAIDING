@@ -2673,7 +2673,7 @@ class TradingSupervisor:
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
             # ── 0b. Swing dollar-stop: si swing pierde más de $50 → cerrar ────
-            SWING_MAX_LOSS = -50.0  # max -$50 por swing — no llegar a -$200
+            SWING_MAX_LOSS = -10.0  # max -$10 por swing — cortar rápido
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
                 sw_ticket = sw["ticket"]
