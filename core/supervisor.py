@@ -83,6 +83,15 @@ MT5_SCORE_AUTO_REDUCE    = 75
 MT5_SCORE_REDUCE_AFTER_H = 4
 MAX_SCALP_POSITIONS      = 10   # scalp: hasta 10 simultáneas (riesgo pequeño por trade)
 SCALP_MAX_DOLLAR_RISK    = 50.0 # scalp: max $50 por trade → 100 trades × $10 = $1000
+
+# Modo Recuperación — dos triggers:
+#   1. Dia en rojo > $50  → recuperar el dia
+#   2. Balance < $100K    → recuperar capital base
+INITIAL_CAPITAL          = 100_000.0  # capital base — objetivo de recuperación
+RECOVERY_SCALP_TP        = 5.0   # +$5 TP en recovery (vs $10 normal)
+RECOVERY_SCALP_SL        = -2.0  # -$2 SL en recovery (vs -$4 normal)
+RECOVERY_MAX_SCALPS      = 15    # 15 scalps simultáneas en recovery (vs 10)
+RECOVERY_TRIGGER_LOSS    = -50.0 # trigger 1: dia en rojo > $50
 DEMO_MAX_POSITIONS       = 0    # no demo positions — 100% focus on MT5 real
 SCAN_INTERVAL_SEC        = 30
 
@@ -1600,11 +1609,17 @@ class TradingSupervisor:
         existing = await loop.run_in_executor(None, self.mt5.get_positions)
 
         # Scalp y swing tienen topes independientes
+        # Modo recuperación: permite más scalps simultáneos para recuperar más rápido
+        _current_bal_r  = self._ftmo_state.current_balance or self.capital
+        _recovery_mode  = (
+            self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS or
+            _current_bal_r < INITIAL_CAPITAL
+        ) and not self._daily_target_hit
+        _max_scalp_now = RECOVERY_MAX_SCALPS if _recovery_mode else MAX_SCALP_POSITIONS
         if _is_scalp:
-            scalp_open = [p for p in existing if p.get("timeframe") == "M15" or
-                          abs(p.get("tp", 0) - p.get("price_open", 0)) < 0.0025]
-            if len(scalp_open) >= MAX_SCALP_POSITIONS:
-                print(f"[MT5] {signal.symbol}: {len(scalp_open)} scalps abiertas (max={MAX_SCALP_POSITIONS}), skip", flush=True)
+            scalp_open = [p for p in existing if p.get("volume", 1) <= 0.10]
+            if len(scalp_open) >= _max_scalp_now:
+                print(f"[MT5] {signal.symbol}: {len(scalp_open)} scalps abiertas (max={_max_scalp_now}{'🔄RECOVERY' if _recovery_mode else ''}), skip", flush=True)
                 return
         else:
             swing_open = [p for p in existing if not (p.get("timeframe") == "M15" or
@@ -2559,8 +2574,23 @@ class TradingSupervisor:
                 return  # nada que gestionar
 
             # ── 0. Scalp gestión de P&L ───────────────────────────────────────
-            SCALP_MIN_PROFIT   =  10.0   # cerrar scalp individual en +$10
-            SCALP_MAX_LOSS     =  -4.0   # cerrar scalp individual en -$4
+            # Modo Recuperación — dos condiciones:
+            #   1. Dia en rojo > $50
+            #   2. Balance debajo del capital base $100K (recuperar lo perdido)
+            _current_bal   = self._ftmo_state.current_balance or self.capital
+            _below_capital = _current_bal < INITIAL_CAPITAL
+            _day_in_loss   = self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
+            _in_recovery   = (_day_in_loss or _below_capital) and not self._scalp_daily_hit
+
+            if _in_recovery:
+                SCALP_MIN_PROFIT = RECOVERY_SCALP_TP    # +$5 para cerrar más rápido
+                SCALP_MAX_LOSS   = RECOVERY_SCALP_SL    # -$2 para cortar antes
+                _deficit = INITIAL_CAPITAL - _current_bal
+                _reason  = f"capital -${_deficit:.0f} bajo $100K" if _below_capital else f"dia ${self._daily_realized_pnl:.2f}"
+                print(f"[RECOVERY] {_reason} — TP=$5 SL=-$2 max={RECOVERY_MAX_SCALPS} scalps", flush=True)
+            else:
+                SCALP_MIN_PROFIT =  10.0   # cerrar scalp individual en +$10
+                SCALP_MAX_LOSS   =  -4.0   # cerrar scalp individual en -$4
             SCALP_DAILY_TARGET =  60.0   # cerrar TODOS scalps cuando acumula $60 hoy
 
             # Sincronizar scalp P&L desde MT5 real cada ciclo — no confiar en contador en memoria

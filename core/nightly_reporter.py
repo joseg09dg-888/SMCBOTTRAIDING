@@ -37,19 +37,27 @@ class NightlyReporter:
         self._fired_dates.add(date_str)
 
     def generate_eod_report(self, balance: float, net_today: float, target: float = 245.0) -> str:
-        """Reporte de cierre de jornada — balance y neto del dia vs meta $250."""
+        """Reporte de cierre de jornada — balance, neto del dia y recuperacion de capital."""
+        INITIAL_CAPITAL = 100_000.0
         met = net_today >= target
-        emoji = "✅" if met else "❌"
-        pct_month = (net_today / 98000) * 100 if net_today > 0 else 0
+        emoji_day = "✅" if met else "❌"
+        pct_month = (net_today / INITIAL_CAPITAL) * 100 if net_today > 0 else 0
+        deficit = INITIAL_CAPITAL - balance
+        recovery_status = (
+            "✅ Capital base recuperado" if deficit <= 0
+            else f"🔄 Recuperando: faltan ${deficit:,.2f} para $100K"
+        )
+        mode = "🔄 RECOVERY" if deficit > 0 else "✅ NORMAL"
         return (
             f"<b>📊 CIERRE DE JORNADA</b>\n"
             f"{'─' * 25}\n"
             f"Balance: <b>${balance:,.2f}</b>\n"
             f"Neto del dia: <b>${net_today:+.2f}</b>\n"
-            f"Meta $250/dia: {emoji} {'CUMPLIDA' if met else 'NO cumplida'}\n"
+            f"Meta $250/dia: {emoji_day} {'CUMPLIDA' if met else 'NO cumplida'}\n"
             f"{'─' * 25}\n"
-            f"Aporte al 5% mensual: <b>{pct_month:.3f}%</b>\n"
-            f"Acumulado desde $100K: <b>${balance - 100000:+,.2f}</b>"
+            f"Capital base $100K: {recovery_status}\n"
+            f"Modo bot: <b>{mode}</b>\n"
+            f"Aporte al 5% mensual: <b>{pct_month:.3f}%</b>"
         )
 
     def generate_report(self, date: str) -> str:
