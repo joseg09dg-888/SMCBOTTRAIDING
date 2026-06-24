@@ -3102,58 +3102,7 @@ class TradingSupervisor:
         """Vision monitor — DESACTIVADO: sin creditos API Anthropic."""
         while self._running:
             await asyncio.sleep(86400)  # duerme 24h — efectivamente desactivado
-        return  # no ejecutar nada — evita crashes por API sin creditos
-
-            try:
-                loop = asyncio.get_event_loop()
-                report = await loop.run_in_executor(None, self._vision.monitor_and_protect)
-                analysis = report.get("analysis", {})
-                alerts = report.get("alerts", [])
-                balance = report.get("balance", 0)
-
-                # Always check balance growth vs starting capital
-                if balance > 0 and balance < _BALANCE_AT_START:
-                    deficit = _BALANCE_AT_START - balance
-                    alerts.append(
-                        f"CUENTA EN PERDIDA -- balance ${balance:,.0f} "
-                        f"(inicio ${_BALANCE_AT_START:,.0f}, -${deficit:,.0f})"
-                    )
-
-                if alerts:
-                    alert_text = "\n".join(alerts)
-                    try:
-                        await self.telegram.send_glint_alert(
-                            f"[VISION ALERT]\n{alert_text}"
-                        )
-                    except Exception:
-                        pass
-
-                # Auto-close critical positions (> $500 loss)
-                if self._mt5_available:
-                    live_positions = await asyncio.get_event_loop().run_in_executor(
-                        None, self.mt5.get_positions
-                    )
-                    # Build symbol→ticket map from live MT5 data (vision JSON may hallucinate)
-                    sym_to_ticket = {p["symbol"]: p["ticket"] for p in live_positions}
-
-                    for pos in analysis.get("posiciones", []):
-                        pnl = pos.get("pnl", 0)
-                        symbol = pos.get("symbol", "")
-                        ticket = sym_to_ticket.get(symbol)
-                        if ticket and self._vision.should_close_position(symbol, pnl):
-                            try:
-                                ok = await asyncio.get_event_loop().run_in_executor(
-                                    None,
-                                    lambda t=ticket: self.mt5.close_position(t)
-                                )
-                                msg = f"[VISION] {'Cerrada' if ok else 'Fallo cierre'} {symbol} #{ticket} perdida ${abs(pnl):.0f}"
-                                print(msg, flush=True)
-                                await self.telegram.send_glint_alert(msg)
-                            except Exception as e:
-                                print(f"[VISION] close failed {symbol}: {e}", flush=True)
-
-            except Exception as exc:
-                print(f"[VISION MONITOR] error: {exc}", flush=True)
+        return  # desactivado — sin creditos API
 
     async def _market_scan_loop(self):
 
