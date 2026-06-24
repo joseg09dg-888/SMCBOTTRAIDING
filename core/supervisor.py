@@ -87,8 +87,8 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "U
 # UN solo modo: SCALP M15 con 0.1L
 # Score >= 85 (calidad alta), TP=$10, SL=-$4, max 10 simultáneas
 # Sin swings, sin recovery modes, sin aceleración — solo scalps limpios
-MT5_REAL_SCORE_THRESHOLD = 95
-MT5_SCALP_THRESHOLD      = 95   # solo las mejores señales
+MT5_REAL_SCORE_THRESHOLD = 80   # ajustado para swing_lookback=5
+MT5_SCALP_THRESHOLD      = 80   # señales reales con lookback estricto
 MT5_SCORE_AUTO_REDUCE    = 75
 MT5_SCORE_REDUCE_AFTER_H = 4
 MAX_SCALP_POSITIONS      = 10
