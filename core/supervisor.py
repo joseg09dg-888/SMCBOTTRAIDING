@@ -3313,10 +3313,10 @@ class TradingSupervisor:
 
                                     print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
 
-                                # Solo scalps M15 — swings desactivados (señales malas)
-                                if tf != "M15":
-                                    continue  # skip H1 y H4 — no swings por ahora
-                                effective_threshold = MT5_SCALP_THRESHOLD  # 65
+                                # H1 desactivado. H4 swings: score>=95 (señales limpias). M15 scalps: score>=80
+                                if tf == "H1":
+                                    continue
+                                effective_threshold = 95 if tf == "H4" else MT5_SCALP_THRESHOLD
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
