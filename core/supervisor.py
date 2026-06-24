@@ -1213,6 +1213,20 @@ class TradingSupervisor:
 
         current_price = float(df["close"].iloc[-1])
 
+        # Confirmación de momentum: precio debe moverse en la dirección señalada
+        # Últimas 3 velas — si suben no abrir SELL, si bajan no abrir BUY
+        if len(df) >= 4:
+            _price_3_ago = float(df["close"].iloc[-4])
+            _price_now   = float(df["close"].iloc[-1])
+            _momentum    = "UP" if _price_now > _price_3_ago else "DOWN"
+            _bias        = smc.get("bias", "neutral")
+            if _bias == "bearish" and _momentum == "UP":
+                from agents.signal_agent import SignalType as _ST
+                return type('S', (), {'signal_type': _ST.WAIT, 'decision_score': 0})()
+            if _bias == "bullish" and _momentum == "DOWN":
+                from agents.signal_agent import SignalType as _ST
+                return type('S', (), {'signal_type': _ST.WAIT, 'decision_score': 0})()
+
         signal = self.signal_agent.evaluate(
 
             analysis_text=smc["analysis_text"], symbol=symbol,
