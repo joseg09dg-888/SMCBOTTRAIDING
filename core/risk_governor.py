@@ -224,7 +224,7 @@ def fetch_recent_deals_by_symbol(symbols, lookback_days=45, max_per_symbol=20) -
 
     positions: dict = {}
     for d in deals:
-        if d.entry == 1:  # OUT (close) deal
+        if d.entry == 1 and d.volume > 0.10:  # solo swings — ignorar micro-scalps
             positions.setdefault((d.symbol, d.position_id), []).append(d)
 
     by_symbol = {s: [] for s in symbols}
