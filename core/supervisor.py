@@ -1704,8 +1704,9 @@ class TradingSupervisor:
         else:
             volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
 
-        # En recovery: swing max $150 (no $400) para no borrar ganancias de scalps
-        _swing_max = 150.0 if _recovery_mode else 400.0
+        # Swing: max $100 riesgo → volumen pequeño → -$10 stop funciona sin spread
+        # Con 0.1-0.15L EURUSD: spread=$1.2, -$10=10pips real
+        _swing_max = 100.0 if _recovery_mode else 100.0
         MAX_DOLLAR_RISK = SCALP_MAX_DOLLAR_RISK if _is_scalp else _swing_max
         if volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
@@ -2673,7 +2674,7 @@ class TradingSupervisor:
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
             # ── 0b. Swing dollar-stop: si swing pierde más de $50 → cerrar ────
-            SWING_MAX_LOSS = -10.0  # max -$10 por swing — cortar rápido
+            SWING_MAX_LOSS = -10.0  # max -$10 por swing (funciona con vol<=0.15L)
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
                 sw_ticket = sw["ticket"]
