@@ -839,9 +839,9 @@ class TradingSupervisor:
 
 
 
-        # Only keep POI zones within 5% of current price — discard stale historical blocks
+        # Solo OBs dentro del 1% — OBs lejanos son irrelevantes para scalps M15
         current_close = float(df["close"].iloc[-1]) if len(df) > 0 else 0.0
-        _max_poi_dist  = current_close * 0.05 if current_close > 0 else float("inf")
+        _max_poi_dist  = current_close * 0.01 if current_close > 0 else float("inf")
         poi_zones = []
         for ob in (bull_obs + bear_obs)[:5]:
             zone_mid = (ob.get("zone_high", 0) + ob.get("zone_low", 0)) / 2.0
@@ -1097,7 +1097,16 @@ class TradingSupervisor:
 
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
             futures = [executor.submit(fn) for fn in tasks]
-            bonus = sum(f.result() for f in as_completed(futures))
+            results = [f.result() for f in as_completed(futures)]
+
+        # Mayoría de agentes debe estar de acuerdo — si >6 dan negativo, señal mala
+        positive_agents = sum(1 for r in results if isinstance(r, (int, float)) and r > 0)
+        negative_agents = sum(1 for r in results if isinstance(r, (int, float)) and r < 0)
+        if negative_agents > positive_agents:
+            # Mayoría en contra — reducir bonus significativamente
+            bonus = sum(results) * 0.3
+        else:
+            bonus = sum(results)
 
         bonus_clamped = int(max(-30, min(60, bonus)))
         base = signal.decision_score

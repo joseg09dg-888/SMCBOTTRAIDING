@@ -223,13 +223,15 @@ class SignalAgent:
         tp_mult = 3.0 if n_confluence >= 3 else (2.5 if n_confluence == 2 else 2.0)
 
         if poi_zones:
-            poi = poi_zones[0]
+            # Fix: usar OB del tipo correcto — bullish OB para LONG, bearish OB para SHORT
+            correct_type = "bullish_ob" if is_bullish else "bearish_ob"
+            aligned_pois = [p for p in poi_zones if p.get("type") == correct_type]
+            poi = aligned_pois[0] if aligned_pois else poi_zones[0]
             if is_bullish:
                 entry    = poi.get("zone_low", current_price)
                 sl_dist  = self._sl_distance(symbol, entry, _df)
                 sl       = entry - sl_dist
                 tp_raw   = entry + sl_dist * tp_mult
-                # Use nearest swing high if available and closer than tp_raw
                 tp = self._nearest_swing(entry, sl_dist, is_bullish=True, tp_raw=tp_raw, df=_df)
                 sl       = entry - sl_dist
             else:

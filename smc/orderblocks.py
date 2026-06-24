@@ -8,7 +8,7 @@ class OrderBlockDetector:
     Bearish OB: last bullish candle before a strong bearish impulse.
     """
 
-    def __init__(self, df: pd.DataFrame, impulse_threshold: float = 0.005):
+    def __init__(self, df: pd.DataFrame, impulse_threshold: float = 0.015):
         self.df = df.copy()
         self.threshold = impulse_threshold
 
