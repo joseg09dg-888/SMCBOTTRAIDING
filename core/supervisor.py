@@ -2500,21 +2500,15 @@ class TradingSupervisor:
             wins = sum(1 for d in recent if d.profit > 0)
             wr   = wins / len(recent)
             if wr >= 0.65:
-                thr = 80   # excelente WR → threshold moderado
+                thr = 80
             elif wr >= 0.55:
-                thr = 85   # buena WR → threshold alto calidad
+                thr = 82
             elif wr >= 0.40:
-                thr = 90   # WR regular → solo mejores setups
+                thr = 85
             else:
-                thr = 90   # WR baja → maxima selectividad, no bajar nunca de 90
-            print(f"[ADAPT-THR] ultimos {len(recent)} trades WR={wr*100:.0f}% → threshold={thr}", flush=True)
-            # Aplicar ajuste del learner — cap en 85 para no bloquear el bot
-            try:
-                thr = int(self._learner.effective_threshold(thr, "SMC", "unknown", "unknown"))
-                thr = min(thr, 85)  # nunca bloquear completamente — max 85
-                print(f"[ADAPT-THR] learner ajuste → threshold final={thr}", flush=True)
-            except Exception:
-                thr = min(thr, 85)
+                thr = 85   # cap duro: nunca bloquear el bot con threshold > 85
+            # No aplicar learner aqui — sube a 95 y paraliza el bot
+            print(f"[ADAPT-THR] WR={wr*100:.0f}% → threshold={thr} (cap=85)", flush=True)
             return thr
         except Exception as _e:
             return MT5_REAL_SCORE_THRESHOLD  # fallback al default
