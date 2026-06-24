@@ -76,45 +76,41 @@ from memory.episodic_db import query_similar_episodes
 
 # Score thresholds
 
-DEMO_SCORE_THRESHOLD     = 999  # DISABLED: crypto demo no cuenta para Axi Select
-MT5_REAL_SCORE_THRESHOLD = 85   # SWING: best setups H1/H4
-MT5_SCALP_THRESHOLD      = 65   # SCALP M15: más trades, TP/SL pequeños
-MT5_SCORE_AUTO_REDUCE    = 75
-MT5_SCORE_REDUCE_AFTER_H = 4
-MAX_SCALP_POSITIONS      = 10   # scalp: hasta 10 simultáneas (riesgo pequeño por trade)
-SCALP_MAX_DOLLAR_RISK    = 50.0 # scalp: max $50 por trade → 100 trades × $10 = $1000
-
-# Modo Recuperación — dos triggers:
-#   1. Dia en rojo > $50  → recuperar el dia
-#   2. Balance < $100K    → recuperar capital base
-INITIAL_CAPITAL          = 100_000.0  # capital base
-RECOVERY_SCALP_TP        = 5.0   # +$5 TP en recovery (vs $10 normal)
-RECOVERY_SCALP_SL        = -2.0  # -$2 SL en recovery (vs -$4 normal)
-RECOVERY_MAX_SCALPS      = 15    # 15 scalps simultáneas en recovery (vs 10)
-RECOVERY_TRIGGER_LOSS    = -50.0 # trigger diario: dia en rojo > $50
-RECOVERY_DRAWDOWN_FROM_PEAK = 500.0  # trigger peak: cae $500 del maximo historico
-
-# Modo Aceleración (estrategia 5) — dia muy bueno, maximizar ganancias
-ACCEL_TRIGGER_PROFIT     = 150.0  # activa cuando dia > +$150 realizado
-ACCEL_SCALP_TP           = 15.0   # +$15 TP (vs $10 normal)
-ACCEL_SCALP_SL           = -4.0   # -$4 SL (igual que normal)
-ACCEL_MAX_SCALPS         = 20     # 20 simultáneas (vs 10)
-DEMO_MAX_POSITIONS       = 0    # no demo positions — 100% focus on MT5 real
+DEMO_SCORE_THRESHOLD     = 999
+DEMO_MAX_POSITIONS       = 0
 SCAN_INTERVAL_SEC        = 30
-
-# Conservative mode disabled — 8 filters + Claude API confirmation are sufficient
-CONSERVATIVE_MODE        = False   # was True — disabled now that pipeline is complete
+CONSERVATIVE_MODE        = False
 CONSERVATIVE_SCORE_MIN   = 75
 CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
-MAX_DAILY_TRADES         = 100     # sin techo — el mercado limita, no el bot
-MAX_OPEN_POSITIONS       = 5       # 3 swing + 2 scalp simultáneas
-MIN_RR                   = 2.5    # maintain quality: RR 2.5 minimum
-DAILY_PROFIT_TARGET      = 245.0  # $245 piso → notifica Telegram, bot sigue operando
 
-# Colombia UTC-5: bot opera solo en horario NY+London cuando usuario esta despierto
-# Bloqueado: midnight-8am Colombia = 05:00-13:00 UTC (madrugada completa)
-# Activo: 8am-midnight Colombia = 13:00-05:00 UTC (NY session completa + tarde)
-DEAD_HOURS_UTC           = {5, 6, 7, 8, 9, 10, 11, 12}  # 00:00-08:00 COL bloqueado
+# ── CONFIGURACIÓN SIMPLE — solo lo esencial ──────────────────────────
+# UN solo modo: SCALP M15 con 0.1L
+# Score >= 85 (calidad alta), TP=$10, SL=-$4, max 10 simultáneas
+# Sin swings, sin recovery modes, sin aceleración — solo scalps limpios
+MT5_REAL_SCORE_THRESHOLD = 85
+MT5_SCALP_THRESHOLD      = 85   # mismo threshold para consistencia
+MT5_SCORE_AUTO_REDUCE    = 75
+MT5_SCORE_REDUCE_AFTER_H = 4
+MAX_SCALP_POSITIONS      = 10
+MAX_OPEN_POSITIONS       = 10
+MIN_RR                   = 2.5
+DAILY_PROFIT_TARGET      = 245.0
+INITIAL_CAPITAL          = 100_000.0
+
+# Recovery — simplificado: solo para emergencias
+RECOVERY_SCALP_TP        = 10.0  # igual que normal
+RECOVERY_SCALP_SL        = -4.0  # igual que normal
+RECOVERY_MAX_SCALPS      = 10
+RECOVERY_TRIGGER_LOSS    = -200.0  # solo si pierde $200 en el día
+RECOVERY_DRAWDOWN_FROM_PEAK = 2000.0
+ACCEL_TRIGGER_PROFIT     = 999999.0  # desactivado
+ACCEL_SCALP_TP           = 10.0
+ACCEL_SCALP_SL           = -4.0
+ACCEL_MAX_SCALPS         = 10
+SCALP_MAX_DOLLAR_RISK    = 50.0
+
+# Horas — midnight a 8am Colombia bloqueado
+DEAD_HOURS_UTC           = {5, 6, 7, 8, 9, 10, 11, 12}
 
 
 
