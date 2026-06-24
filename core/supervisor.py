@@ -2672,6 +2672,24 @@ class TradingSupervisor:
                             print(f"[SCALP-SL] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
+            # ── 0b. Swing dollar-stop: si swing pierde más de $50 → cerrar ────
+            SWING_MAX_LOSS = -50.0  # max -$50 por swing — no llegar a -$200
+            for sw in list(swing_positions):
+                sw_pnl    = sw.get("profit", 0.0)
+                sw_ticket = sw["ticket"]
+                sw_sym    = sw.get("symbol", "?")
+                if sw_pnl <= SWING_MAX_LOSS:
+                    ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
+                    if ok:
+                        self._position_peaks.pop(sw_ticket, None)
+                        print(f"[SWING-STOP] {sw_sym} #{sw_ticket} cerrado ${sw_pnl:+.2f} (max -$50)", flush=True)
+                        try:
+                            await self.telegram.send_glint_alert(
+                                f"<b>SWING STOP -$50</b>\n{sw_sym} #{sw_ticket}\nCerrado en ${sw_pnl:.2f}"
+                            )
+                        except Exception:
+                            pass
+
             now_utc = datetime.now(timezone.utc)
             if now_utc.weekday() == 4:  # Friday
                 past_cutoff = (now_utc.hour > FRIDAY_CLOSE_HOUR or
