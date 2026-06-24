@@ -1739,10 +1739,9 @@ class TradingSupervisor:
         else:
             volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
 
-        # Swing: max $100 riesgo → volumen pequeño → -$10 stop funciona sin spread
-        # Con 0.1-0.15L EURUSD: spread=$1.2, -$10=10pips real
-        # Scalp: 0.1L fijo, no risk-cap. Swing: max $100 riesgo.
-        MAX_DOLLAR_RISK = 100.0
+        # Swing: max $200 riesgo → TP al 3:1 = $600 potencial
+        # Meta $250/dia: 1 swing NAS100 suficiente
+        MAX_DOLLAR_RISK = 200.0
         if not _is_scalp and volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
             _sym_info = None
