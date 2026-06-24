@@ -91,8 +91,8 @@ MT5_REAL_SCORE_THRESHOLD = 80   # ajustado para swing_lookback=5
 MT5_SCALP_THRESHOLD      = 80   # señales reales con lookback estricto
 MT5_SCORE_AUTO_REDUCE    = 75
 MT5_SCORE_REDUCE_AFTER_H = 4
-MAX_SCALP_POSITIONS      = 10
-MAX_OPEN_POSITIONS       = 10
+MAX_SCALP_POSITIONS      = 3
+MAX_OPEN_POSITIONS       = 3
 MIN_RR                   = 2.5
 DAILY_PROFIT_TARGET      = 250.0  # $250/dia → 5% mensual Axi Select
 INITIAL_CAPITAL          = 100_000.0
@@ -100,7 +100,7 @@ INITIAL_CAPITAL          = 100_000.0
 # Recovery — simplificado: solo para emergencias
 RECOVERY_SCALP_TP        = 10.0  # igual que normal
 RECOVERY_SCALP_SL        = -4.0  # igual que normal
-RECOVERY_MAX_SCALPS      = 10
+RECOVERY_MAX_SCALPS      = 3
 RECOVERY_TRIGGER_LOSS    = -200.0  # solo si pierde $200 en el día
 RECOVERY_DRAWDOWN_FROM_PEAK = 2000.0
 ACCEL_TRIGGER_PROFIT     = 999999.0  # desactivado
@@ -1641,6 +1641,11 @@ class TradingSupervisor:
             scalp_open = [p for p in existing if p.get("volume", 1) <= 0.10]
             if len(scalp_open) >= _max_scalp_now:
                 print(f"[MT5] {signal.symbol}: {len(scalp_open)} scalps abiertas (max={_max_scalp_now}{'🔄RECOVERY' if _recovery_mode else ''}), skip", flush=True)
+                return
+            # Max 1 scalp por símbolo — evita apilar 3 USDCAD o 4 GBPUSD
+            sym_scalps = [p for p in scalp_open if p.get("symbol") == signal.symbol]
+            if len(sym_scalps) >= 1:
+                print(f"[MT5] {signal.symbol}: ya tiene scalp abierto — skip duplicado", flush=True)
                 return
         else:
             swing_open = [p for p in existing if not (p.get("timeframe") == "M15" or
