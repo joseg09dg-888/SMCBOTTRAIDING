@@ -1447,6 +1447,21 @@ class TradingSupervisor:
 
 
 
+        # ── FILTER 2b: Spread máximo — no entrar si spread > 3 pips ─────────
+        try:
+            import MetaTrader5 as _mt5sp
+            _tick_sp = _mt5sp.symbol_info_tick(signal.symbol)
+            if _tick_sp:
+                _spread = abs(_tick_sp.ask - _tick_sp.bid)
+                _sym_sp = _mt5sp.symbol_info(signal.symbol)
+                if _sym_sp and _sym_sp.point > 0:
+                    _spread_pips = _spread / (_sym_sp.point * 10)
+                    if _spread_pips > 3.0:
+                        print(f"[SPREAD] {signal.symbol}: spread={_spread_pips:.1f} pips > 3 max — skip", flush=True)
+                        return
+        except Exception:
+            pass
+
         # ── FILTER 3: Horario muerto ──────────────────────────────────────
 
         now_utc = datetime.now(timezone.utc)

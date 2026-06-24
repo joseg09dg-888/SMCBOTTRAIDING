@@ -31,7 +31,7 @@ class StructureResult:
 
 
 class MarketStructure:
-    def __init__(self, df: pd.DataFrame, swing_lookback: int = 1):
+    def __init__(self, df: pd.DataFrame, swing_lookback: int = 5):
         self.df = df.copy()
         self.lookback = swing_lookback
         self._swings: List[SwingPoint] = []
