@@ -1702,9 +1702,9 @@ class TradingSupervisor:
 
         # Swing: max $100 riesgo → volumen pequeño → -$10 stop funciona sin spread
         # Con 0.1-0.15L EURUSD: spread=$1.2, -$10=10pips real
-        _swing_max = 100.0 if _recovery_mode else 100.0
-        MAX_DOLLAR_RISK = SCALP_MAX_DOLLAR_RISK if _is_scalp else _swing_max
-        if volume > 0 and sl_val > 0 and _entry_for_vol > 0:
+        # Scalp: 0.1L fijo, no risk-cap. Swing: max $100 riesgo.
+        MAX_DOLLAR_RISK = 100.0
+        if not _is_scalp and volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
             _sym_info = None
             try:
