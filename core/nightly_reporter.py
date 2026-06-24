@@ -28,10 +28,29 @@ class NightlyReporter:
     def should_fire(self, now: datetime = None) -> bool:
         dt  = now or datetime.now(timezone.utc)
         key = dt.strftime("%Y-%m-%d")
-        return dt.hour == 22 and dt.minute < 5 and key not in self._fired_dates
+        # Reporte nightly 22:00 UTC (5pm Colombia) Y cierre de jornada 05:00 UTC (midnight Colombia)
+        fire_nightly  = dt.hour == 22 and dt.minute < 5
+        fire_endofday = dt.hour == 5  and dt.minute < 5
+        return (fire_nightly or fire_endofday) and key not in self._fired_dates
 
     def mark_fired(self, date_str: str):
         self._fired_dates.add(date_str)
+
+    def generate_eod_report(self, balance: float, net_today: float, target: float = 245.0) -> str:
+        """Reporte de cierre de jornada — balance y neto del dia vs meta $250."""
+        met = net_today >= target
+        emoji = "✅" if met else "❌"
+        pct_month = (net_today / 98000) * 100 if net_today > 0 else 0
+        return (
+            f"<b>📊 CIERRE DE JORNADA</b>\n"
+            f"{'─' * 25}\n"
+            f"Balance: <b>${balance:,.2f}</b>\n"
+            f"Neto del dia: <b>${net_today:+.2f}</b>\n"
+            f"Meta $250/dia: {emoji} {'CUMPLIDA' if met else 'NO cumplida'}\n"
+            f"{'─' * 25}\n"
+            f"Aporte al 5% mensual: <b>{pct_month:.3f}%</b>\n"
+            f"Acumulado desde $100K: <b>${balance - 100000:+,.2f}</b>"
+        )
 
     def generate_report(self, date: str) -> str:
         conn = self._get_conn()

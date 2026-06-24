@@ -3015,19 +3015,27 @@ class TradingSupervisor:
             await asyncio.sleep(60)  # check every 1 min
 
             try:
-
                 now = datetime.now(timezone.utc)
-
                 if self._reporter.should_fire(now):
-
                     date_str = now.strftime("%Y-%m-%d")
-
                     self._reporter.mark_fired(date_str)
 
-                    await self._reporter.send(date_str)
+                    # Cierre de jornada (05:00 UTC = midnight Colombia): reporte P&L del dia
+                    if now.hour == 5:
+                        loop = asyncio.get_running_loop()
+                        acc  = await loop.run_in_executor(None, self.mt5.get_account_info)
+                        bal  = acc.get("balance", 0) if acc else 0
+                        net  = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
+                        msg  = self._reporter.generate_eod_report(bal, net or 0)
+                        try:
+                            await self.telegram.send_glint_alert(msg)
+                            print(f"[EOD] Reporte cierre enviado: bal=${bal:.2f} net=${net:.2f}", flush=True)
+                        except Exception:
+                            pass
+                    else:
+                        await self._reporter.send(date_str)
 
             except Exception as exc:
-
                 print(f"[NIGHTLY] error: {exc}", flush=True)
 
 
