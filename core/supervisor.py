@@ -1529,11 +1529,7 @@ class TradingSupervisor:
 
         trades_today = self._daily_trades.get(today_str, 0)
 
-        if trades_today >= MAX_DAILY_TRADES:
-
-            print(f"[MT5] {signal.symbol}: {trades_today} trades hoy (max={MAX_DAILY_TRADES}), skip", flush=True)
-
-            return
+        # Sin limite de trades diarios — el mercado limita, no el contador
 
 
 
