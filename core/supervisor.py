@@ -93,6 +93,12 @@ RECOVERY_SCALP_SL        = -2.0  # -$2 SL en recovery (vs -$4 normal)
 RECOVERY_MAX_SCALPS      = 15    # 15 scalps simultáneas en recovery (vs 10)
 RECOVERY_TRIGGER_LOSS    = -50.0 # trigger diario: dia en rojo > $50
 RECOVERY_DRAWDOWN_FROM_PEAK = 500.0  # trigger peak: cae $500 del maximo historico
+
+# Modo Aceleración (estrategia 5) — dia muy bueno, maximizar ganancias
+ACCEL_TRIGGER_PROFIT     = 150.0  # activa cuando dia > +$150 realizado
+ACCEL_SCALP_TP           = 15.0   # +$15 TP (vs $10 normal)
+ACCEL_SCALP_SL           = -4.0   # -$4 SL (igual que normal)
+ACCEL_MAX_SCALPS         = 20     # 20 simultáneas (vs 10)
 DEMO_MAX_POSITIONS       = 0    # no demo positions — 100% focus on MT5 real
 SCAN_INTERVAL_SEC        = 30
 
@@ -1619,7 +1625,13 @@ class TradingSupervisor:
             _current_bal_r < INITIAL_CAPITAL or
             (self._balance_peak - _current_bal_r) >= RECOVERY_DRAWDOWN_FROM_PEAK
         ) and not self._daily_target_hit
-        _max_scalp_now = RECOVERY_MAX_SCALPS if _recovery_mode else MAX_SCALP_POSITIONS
+        _accel_mode = (
+            self._daily_realized_pnl >= ACCEL_TRIGGER_PROFIT and
+            _current_bal_r >= INITIAL_CAPITAL and not _recovery_mode
+        )
+        _max_scalp_now = (RECOVERY_MAX_SCALPS if _recovery_mode
+                          else ACCEL_MAX_SCALPS if _accel_mode
+                          else MAX_SCALP_POSITIONS)
         if _is_scalp:
             scalp_open = [p for p in existing if p.get("volume", 1) <= 0.10]
             if len(scalp_open) >= _max_scalp_now:
@@ -2593,6 +2605,14 @@ class TradingSupervisor:
             _below_peak       = (self._balance_peak - _current_bal) >= RECOVERY_DRAWDOWN_FROM_PEAK
             _in_recovery      = (_day_in_loss or _below_initial or _below_peak) and not self._scalp_daily_hit
 
+            # Estrategia 5: Modo Aceleración — dia muy bueno → maximizar
+            _in_accel = (
+                self._daily_realized_pnl >= ACCEL_TRIGGER_PROFIT and
+                _current_bal >= INITIAL_CAPITAL and
+                not _in_recovery and
+                not self._scalp_daily_hit
+            )
+
             if _in_recovery:
                 SCALP_MIN_PROFIT = RECOVERY_SCALP_TP
                 SCALP_MAX_LOSS   = RECOVERY_SCALP_SL
@@ -2603,6 +2623,10 @@ class TradingSupervisor:
                     print(f"[RECOVERY] Balance ${_current_bal:,.0f} bajo $100K — recuperando capital base", flush=True)
                 else:
                     print(f"[RECOVERY] Dia ${self._daily_realized_pnl:.2f} — recuperando el dia", flush=True)
+            elif _in_accel:
+                SCALP_MIN_PROFIT = ACCEL_SCALP_TP   # +$15
+                SCALP_MAX_LOSS   = ACCEL_SCALP_SL   # -$4
+                print(f"[ACCEL] Dia +${self._daily_realized_pnl:.2f} — modo aceleracion activo (TP=$15 max={ACCEL_MAX_SCALPS})", flush=True)
             else:
                 SCALP_MIN_PROFIT =  10.0
                 SCALP_MAX_LOSS   =  -4.0
