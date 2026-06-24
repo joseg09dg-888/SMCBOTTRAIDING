@@ -3099,15 +3099,10 @@ class TradingSupervisor:
 
 
     async def _vision_monitor_loop(self):
-        """Every 2h: capture MT5 screen (interval extended to preserve API credits)."""
-        _BALANCE_AT_START = 100_000.0  # Axi demo seed capital
-
+        """Vision monitor — DESACTIVADO: sin creditos API Anthropic."""
         while self._running:
-            interval = 7200  # 2h — preservar creditos API (era 5min)
-            await asyncio.sleep(interval)
-
-            if self._vision is None:
-                continue
+            await asyncio.sleep(86400)  # duerme 24h — efectivamente desactivado
+        return  # no ejecutar nada — evita crashes por API sin creditos
 
             try:
                 loop = asyncio.get_event_loop()
