@@ -1781,8 +1781,9 @@ class TradingSupervisor:
 
                 print(f"[EPISODIC] record error: {_ep_err}", flush=True)
 
-            # Count toward daily limit + update scan stats
-            self._daily_trades[today_str] = trades_today + 1
+            # Solo contar SWINGS en el limite diario — scalps no agotan el contador
+            if not _is_scalp:
+                self._daily_trades[today_str] = trades_today + 1
             self._save_daily_trades()
             self._scan_stats["executed"] += 1
             self._scan_stats["last_trade_ts"] = datetime.now(timezone.utc)
