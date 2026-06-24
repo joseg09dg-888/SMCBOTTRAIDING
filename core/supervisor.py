@@ -1729,7 +1729,9 @@ class TradingSupervisor:
         else:
             volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
 
-        MAX_DOLLAR_RISK = SCALP_MAX_DOLLAR_RISK if _is_scalp else 400.0
+        # En recovery: swing max $150 (no $400) para no borrar ganancias de scalps
+        _swing_max = 150.0 if _recovery_mode else 400.0
+        MAX_DOLLAR_RISK = SCALP_MAX_DOLLAR_RISK if _is_scalp else _swing_max
         if volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
             _sym_info = None
