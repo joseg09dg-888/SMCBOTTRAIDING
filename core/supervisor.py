@@ -87,11 +87,12 @@ SCALP_MAX_DOLLAR_RISK    = 50.0 # scalp: max $50 por trade → 100 trades × $10
 # Modo Recuperación — dos triggers:
 #   1. Dia en rojo > $50  → recuperar el dia
 #   2. Balance < $100K    → recuperar capital base
-INITIAL_CAPITAL          = 100_000.0  # capital base — objetivo de recuperación
+INITIAL_CAPITAL          = 100_000.0  # capital base
 RECOVERY_SCALP_TP        = 5.0   # +$5 TP en recovery (vs $10 normal)
 RECOVERY_SCALP_SL        = -2.0  # -$2 SL en recovery (vs -$4 normal)
 RECOVERY_MAX_SCALPS      = 15    # 15 scalps simultáneas en recovery (vs 10)
-RECOVERY_TRIGGER_LOSS    = -50.0 # trigger 1: dia en rojo > $50
+RECOVERY_TRIGGER_LOSS    = -50.0 # trigger diario: dia en rojo > $50
+RECOVERY_DRAWDOWN_FROM_PEAK = 500.0  # trigger peak: cae $500 del maximo historico
 DEMO_MAX_POSITIONS       = 0    # no demo positions — 100% focus on MT5 real
 SCAN_INTERVAL_SEC        = 30
 
@@ -398,6 +399,8 @@ class TradingSupervisor:
         self._scalp_daily_hit: bool = False
         self._scalp_pnl_date: str = ""
         self._scalp_peak_today: float = 0.0  # max alcanzado hoy — si cae a $60 cierra
+        # High-water mark: balance máximo histórico — recuperar si cae > $500 del pico
+        self._balance_peak: float = INITIAL_CAPITAL
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -1613,7 +1616,8 @@ class TradingSupervisor:
         _current_bal_r  = self._ftmo_state.current_balance or self.capital
         _recovery_mode  = (
             self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS or
-            _current_bal_r < INITIAL_CAPITAL
+            _current_bal_r < INITIAL_CAPITAL or
+            (self._balance_peak - _current_bal_r) >= RECOVERY_DRAWDOWN_FROM_PEAK
         ) and not self._daily_target_hit
         _max_scalp_now = RECOVERY_MAX_SCALPS if _recovery_mode else MAX_SCALP_POSITIONS
         if _is_scalp:
@@ -2578,19 +2582,30 @@ class TradingSupervisor:
             #   1. Dia en rojo > $50
             #   2. Balance debajo del capital base $100K (recuperar lo perdido)
             _current_bal   = self._ftmo_state.current_balance or self.capital
-            _below_capital = _current_bal < INITIAL_CAPITAL
-            _day_in_loss   = self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
-            _in_recovery   = (_day_in_loss or _below_capital) and not self._scalp_daily_hit
+            # Actualizar high-water mark (balance máximo histórico)
+            if _current_bal > self._balance_peak:
+                self._balance_peak = _current_bal
+                print(f"[PEAK] Nuevo máximo histórico: ${self._balance_peak:,.2f}", flush=True)
+
+            # Tres triggers de recuperación:
+            _day_in_loss      = self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
+            _below_initial    = _current_bal < INITIAL_CAPITAL
+            _below_peak       = (self._balance_peak - _current_bal) >= RECOVERY_DRAWDOWN_FROM_PEAK
+            _in_recovery      = (_day_in_loss or _below_initial or _below_peak) and not self._scalp_daily_hit
 
             if _in_recovery:
-                SCALP_MIN_PROFIT = RECOVERY_SCALP_TP    # +$5 para cerrar más rápido
-                SCALP_MAX_LOSS   = RECOVERY_SCALP_SL    # -$2 para cortar antes
-                _deficit = INITIAL_CAPITAL - _current_bal
-                _reason  = f"capital -${_deficit:.0f} bajo $100K" if _below_capital else f"dia ${self._daily_realized_pnl:.2f}"
-                print(f"[RECOVERY] {_reason} — TP=$5 SL=-$2 max={RECOVERY_MAX_SCALPS} scalps", flush=True)
+                SCALP_MIN_PROFIT = RECOVERY_SCALP_TP
+                SCALP_MAX_LOSS   = RECOVERY_SCALP_SL
+                if _below_peak and self._balance_peak > INITIAL_CAPITAL:
+                    _gap = self._balance_peak - _current_bal
+                    print(f"[RECOVERY] Cayó ${_gap:.0f} del pico ${self._balance_peak:,.0f} — recuperando", flush=True)
+                elif _below_initial:
+                    print(f"[RECOVERY] Balance ${_current_bal:,.0f} bajo $100K — recuperando capital base", flush=True)
+                else:
+                    print(f"[RECOVERY] Dia ${self._daily_realized_pnl:.2f} — recuperando el dia", flush=True)
             else:
-                SCALP_MIN_PROFIT =  10.0   # cerrar scalp individual en +$10
-                SCALP_MAX_LOSS   =  -4.0   # cerrar scalp individual en -$4
+                SCALP_MIN_PROFIT =  10.0
+                SCALP_MAX_LOSS   =  -4.0
             SCALP_DAILY_TARGET =  60.0   # cerrar TODOS scalps cuando acumula $60 hoy
 
             # Sincronizar scalp P&L desde MT5 real cada ciclo — no confiar en contador en memoria

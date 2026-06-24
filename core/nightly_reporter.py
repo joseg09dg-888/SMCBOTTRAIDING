@@ -36,18 +36,28 @@ class NightlyReporter:
     def mark_fired(self, date_str: str):
         self._fired_dates.add(date_str)
 
-    def generate_eod_report(self, balance: float, net_today: float, target: float = 245.0) -> str:
-        """Reporte de cierre de jornada — balance, neto del dia y recuperacion de capital."""
+    def generate_eod_report(self, balance: float, net_today: float,
+                            peak_balance: float = 100_000.0, target: float = 245.0) -> str:
+        """Reporte de cierre de jornada — balance, neto, capital base y high-water mark."""
         INITIAL_CAPITAL = 100_000.0
         met = net_today >= target
         emoji_day = "✅" if met else "❌"
         pct_month = (net_today / INITIAL_CAPITAL) * 100 if net_today > 0 else 0
-        deficit = INITIAL_CAPITAL - balance
-        recovery_status = (
-            "✅ Capital base recuperado" if deficit <= 0
-            else f"🔄 Recuperando: faltan ${deficit:,.2f} para $100K"
+
+        # Estado vs capital base
+        deficit_base = INITIAL_CAPITAL - balance
+        base_status = "✅ OK" if deficit_base <= 0 else f"🔄 Faltan ${deficit_base:,.0f}"
+
+        # Estado vs peak histórico
+        deficit_peak = peak_balance - balance
+        peak_status = (
+            "✅ En máximo" if deficit_peak <= 0
+            else f"🔄 Faltan ${deficit_peak:,.0f} para pico ${peak_balance:,.0f}"
         )
-        mode = "🔄 RECOVERY" if deficit > 0 else "✅ NORMAL"
+
+        in_recovery = deficit_base > 0 or deficit_peak >= 500
+        mode = "🔄 RECOVERY" if in_recovery else "✅ NORMAL"
+
         return (
             f"<b>📊 CIERRE DE JORNADA</b>\n"
             f"{'─' * 25}\n"
@@ -55,7 +65,8 @@ class NightlyReporter:
             f"Neto del dia: <b>${net_today:+.2f}</b>\n"
             f"Meta $250/dia: {emoji_day} {'CUMPLIDA' if met else 'NO cumplida'}\n"
             f"{'─' * 25}\n"
-            f"Capital base $100K: {recovery_status}\n"
+            f"Capital $100K: {base_status}\n"
+            f"Maximo historico: {peak_status}\n"
             f"Modo bot: <b>{mode}</b>\n"
             f"Aporte al 5% mensual: <b>{pct_month:.3f}%</b>"
         )
