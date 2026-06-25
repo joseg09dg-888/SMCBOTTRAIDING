@@ -290,8 +290,9 @@ class TradingSupervisor:
 
         self._demo_trades: List[DemoTrade] = self._load_demo_trades()
         self._crypto_h4_trend: Dict[str, str] = {}  # symbol → "LONG" | "SHORT"
-        self._mt5_h4_direction: Dict[str, str] = {}  # symbol → "LONG" | "SHORT" | "WAIT"
-        self._mt5_d1_trend: Dict[str, str] = {}     # symbol → "LONG" | "SHORT" (D1 50EMA)
+        self._mt5_h4_direction: Dict[str, str] = {}       # symbol → "LONG" | "SHORT" | "WAIT"
+        self._mt5_h4_just_confirmed: Dict[str, bool] = {}  # symbol → True si H4 acaba de confirmar
+        self._mt5_d1_trend: Dict[str, str] = {}            # symbol → "LONG" | "SHORT" (D1 50EMA)
 
         self.mode    = config.operation_mode
 
@@ -3292,8 +3293,18 @@ class TradingSupervisor:
                                 print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="", flush=True)
 
                                 # Siempre actualizar cache H4 — incluso en WAIT para no dejar stale
+                                # APRENDIZAJE 24-Jun: guardar H4 anterior para detectar confirmación reciente
                                 if tf == "H4":
-                                    self._mt5_h4_direction[symbol] = bias  # LONG, SHORT, o WAIT
+                                    _h4_prev = self._mt5_h4_direction.get(symbol, "WAIT")
+                                    self._mt5_h4_direction[symbol] = bias
+                                    # Si H4 acaba de confirmar (WAIT→LONG/SHORT): marcar como nuevo
+                                    if _h4_prev == "WAIT" and bias in ("LONG", "SHORT"):
+                                        self._mt5_h4_just_confirmed[symbol] = True
+                                        print(f"[H4-NEW] {symbol}: H4 acaba de confirmar {bias} — 1 ciclo de espera", flush=True)
+                                    elif bias == "WAIT":
+                                        self._mt5_h4_just_confirmed.pop(symbol, None)
+                                    else:
+                                        self._mt5_h4_just_confirmed.pop(symbol, None)  # confirmado 2+ ciclos
 
                                 # TRIPLE confirm: D1 + H4 + H1 deben coincidir
                                 if signal.signal_type != SignalType.WAIT:
@@ -3313,6 +3324,12 @@ class TradingSupervisor:
                                     # H4 solo bloquea si explicitamente en contra (LONG vs SHORT)
                                     if tf in ("H1", "M15") and h4_dir in ("LONG", "SHORT") and h4_dir != bias:
                                         print(f" -- [H4-FILTER] {tf}={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
+                                        continue
+
+                                    # APRENDIZAJE 24-Jun: H4 recién confirmado (WAIT→DIR) = esperar 1 ciclo
+                                    # Evita swing chase cuando H4 acaba de girar (AUDUSD -$12.54)
+                                    if self._mt5_h4_just_confirmed.get(symbol):
+                                        print(f" -- [H4-NEW] {symbol} H4 recién confirmó — esperando 1 ciclo", flush=True)
                                         continue
 
                                     print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
