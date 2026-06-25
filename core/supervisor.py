@@ -392,6 +392,9 @@ class TradingSupervisor:
         self._position_peaks: Dict[int, float] = {}
         # Time-close retry cooldown: ticket → last attempt timestamp
         self._close_attempted: Dict[int, float] = {}
+        # Symbol cooldown tras SL: (symbol, direction) → timestamp del SL
+        # Evita reentradas inmediatas en el mismo par/dirección tras pérdida
+        self._symbol_sl_time: Dict[str, float] = {}  # "EURUSD_SHORT" → timestamp
         # Daily profit target tracking
         self._daily_pnl_date: str = ""           # "YYYY-MM-DD" UTC
         self._daily_realized_pnl: float = 0.0   # closed trades today
@@ -1412,6 +1415,16 @@ class TradingSupervisor:
         tp_val = signal.take_profit if signal.take_profit else 0.0
 
 
+
+        # Cooldown tras SL: mismo símbolo+dirección no abre por 4 horas
+        import time as _time_mod
+        _sl_key = f"{signal.symbol}_{order_type}"
+        _sl_ts  = self._symbol_sl_time.get(_sl_key, 0.0)
+        _cooldown_h = 4.0
+        if _time_mod.time() - _sl_ts < _cooldown_h * 3600:
+            _mins_left = int((_cooldown_h * 3600 - (_time_mod.time() - _sl_ts)) / 60)
+            print(f"[COOLDOWN] {signal.symbol} {order_type}: SL reciente — espera {_mins_left}min", flush=True)
+            return
 
         # Meta swing $245 cumplida → SOLO scalps (M15) el resto del día
         # Los swings ya aseguraron el mínimo — no abrir más swings que se coman la ganancia
@@ -2800,7 +2813,10 @@ class TradingSupervisor:
                     ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
                     if ok:
                         self._position_peaks.pop(sw_ticket, None)
-                        print(f"[SWING-STOP] {sw_sym} #{sw_ticket} cerrado ${sw_pnl:+.2f} (max -$50)", flush=True)
+                        # Registrar cooldown: no reabrir este par/dirección por 4 horas
+                        import time as _t; _sw_dir = "BUY" if sw.get("type") == "BUY" else "SELL"
+                        self._symbol_sl_time[f"{sw_sym}_{_sw_dir}"] = _t.time()
+                        print(f"[SWING-STOP] {sw_sym} #{sw_ticket} cerrado ${sw_pnl:+.2f} → COOLDOWN 4h", flush=True)
                         try:
                             await self.telegram.send_glint_alert(
                                 f"<b>SWING STOP -$50</b>\n{sw_sym} #{sw_ticket}\nCerrado en ${sw_pnl:.2f}"
