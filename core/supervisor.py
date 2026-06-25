@@ -2740,6 +2740,30 @@ class TradingSupervisor:
                             print(f"[SCALP-SL] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
+            # ── 0b-TRAIL: Swing trailing profit lock — protege el 50% del peak ─
+            # AUDUSD tuvo +$62 peak → devolvió $49 sin protección (24-Jun)
+            # Fix: si profit cae >50% desde el peak (min $15) → cerrar y asegurar
+            for sw in list(swing_positions):
+                sw_pnl    = sw.get("profit", 0.0)
+                sw_ticket = sw["ticket"]
+                sw_sym    = sw.get("symbol", "?")
+                if sw_pnl > 0:
+                    _peak = self._position_peaks.get(sw_ticket, 0.0)
+                    self._position_peaks[sw_ticket] = max(_peak, sw_pnl)
+                    _peak = self._position_peaks[sw_ticket]
+                    if _peak >= 15.0 and sw_pnl <= _peak * 0.5:
+                        ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
+                        if ok:
+                            self._position_peaks.pop(sw_ticket, None)
+                            print(f"[SWING-TRAIL] {sw_sym} #{sw_ticket} ${sw_pnl:+.2f} cayó 50% del peak ${_peak:.2f} → asegurado", flush=True)
+                            try:
+                                await self.telegram.send_glint_alert(
+                                    f"<b>SWING TRAIL LOCK</b>\n{sw_sym} #{sw_ticket}\n"
+                                    f"Profit: ${sw_pnl:.2f} | Peak: ${_peak:.2f}\nAsegurado al 50% del máximo ✅"
+                                )
+                            except Exception:
+                                pass
+
             # ── 0b. Swing dollar-stop: si swing pierde más de $50 → cerrar ────
             SWING_MAX_LOSS = -10.0  # max -$10 por swing (funciona con vol<=0.15L)
             for sw in list(swing_positions):
