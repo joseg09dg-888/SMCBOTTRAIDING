@@ -2743,29 +2743,45 @@ class TradingSupervisor:
                             print(f"[SCALP-SL] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
-            # ── 0b-TRAIL: Swing trailing profit lock — protege el 50% del peak ─
-            # AUDUSD tuvo +$62 peak → devolvió $49 sin protección (24-Jun)
-            # Fix: si profit cae >50% desde el peak (min $15) → cerrar y asegurar
+            # ── 0b-TRAIL: Swing trailing — SL físico en MT5 al superar $10 peak ─
+            # Problema: bot cicla cada 30s, precio puede caer de +$18 a +$1 en segundos
+            # Solución: cuando peak >= $10 → mover SL MT5 a entry (breakeven) inmediato
+            # Esto protege a nivel broker, independiente del ciclo del bot
+            _be_moved = self.__dict__.setdefault("_breakeven_set", set())
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
                 sw_ticket = sw["ticket"]
                 sw_sym    = sw.get("symbol", "?")
-                if sw_pnl > 0:
-                    _peak = self._position_peaks.get(sw_ticket, 0.0)
-                    self._position_peaks[sw_ticket] = max(_peak, sw_pnl)
-                    _peak = self._position_peaks[sw_ticket]
-                    if _peak >= 15.0 and sw_pnl <= _peak * 0.5:
-                        ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
-                        if ok:
-                            self._position_peaks.pop(sw_ticket, None)
-                            print(f"[SWING-TRAIL] {sw_sym} #{sw_ticket} ${sw_pnl:+.2f} cayó 50% del peak ${_peak:.2f} → asegurado", flush=True)
-                            try:
-                                await self.telegram.send_glint_alert(
-                                    f"<b>SWING TRAIL LOCK</b>\n{sw_sym} #{sw_ticket}\n"
-                                    f"Profit: ${sw_pnl:.2f} | Peak: ${_peak:.2f}\nAsegurado al 50% del máximo ✅"
-                                )
-                            except Exception:
-                                pass
+                sw_entry  = sw.get("price_open", 0.0)
+                sw_type   = sw.get("type", "BUY")
+                sw_tp     = sw.get("tp", 0.0)
+                # Actualizar peak
+                _peak = self._position_peaks.get(sw_ticket, 0.0)
+                if sw_pnl > _peak:
+                    self._position_peaks[sw_ticket] = sw_pnl
+                _peak = self._position_peaks[sw_ticket]
+                # Cuando peak >= $10 → mover SL a breakeven en MT5 (una sola vez)
+                if _peak >= 10.0 and sw_ticket not in _be_moved and sw_entry > 0:
+                    _be_ok = await loop.run_in_executor(
+                        None, lambda t=sw_ticket, e=sw_entry, tp=sw_tp: self.mt5.modify_position_sl_tp(t, e, tp)
+                    )
+                    if _be_ok:
+                        _be_moved.add(sw_ticket)
+                        print(f"[BE-SET] {sw_sym} #{sw_ticket} peak=${_peak:.2f} → SL MT5 movido a entry {sw_entry:.5f}", flush=True)
+                # Cierre por software como respaldo (50% del peak, min $15)
+                if _peak >= 15.0 and sw_pnl > 0 and sw_pnl <= _peak * 0.5:
+                    ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
+                    if ok:
+                        self._position_peaks.pop(sw_ticket, None)
+                        _be_moved.discard(sw_ticket)
+                        print(f"[SWING-TRAIL] {sw_sym} #{sw_ticket} ${sw_pnl:+.2f} cayó 50% del peak ${_peak:.2f} → asegurado", flush=True)
+                        try:
+                            await self.telegram.send_glint_alert(
+                                f"<b>SWING TRAIL LOCK</b>\n{sw_sym} #{sw_ticket}\n"
+                                f"Profit: ${sw_pnl:.2f} | Peak: ${_peak:.2f}\nAsegurado al 50% del máximo ✅"
+                            )
+                        except Exception:
+                            pass
 
             # ── 0b. Swing dollar-stop: si swing pierde más de $50 → cerrar ────
             SWING_MAX_LOSS = -10.0  # max -$10 por swing (funciona con vol<=0.15L)
