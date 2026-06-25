@@ -101,12 +101,12 @@ INITIAL_CAPITAL          = 100_000.0
 RECOVERY_SCALP_TP        = 10.0  # igual que normal
 RECOVERY_SCALP_SL        = -4.0  # igual que normal
 RECOVERY_MAX_SCALPS      = 3
-RECOVERY_TRIGGER_LOSS    = -200.0  # solo si pierde $200 en el día
-RECOVERY_DRAWDOWN_FROM_PEAK = 2000.0
-ACCEL_TRIGGER_PROFIT     = 999999.0  # desactivado
+RECOVERY_TRIGGER_LOSS    = -50.0   # recovery si pierde $50 en el día
+RECOVERY_DRAWDOWN_FROM_PEAK = 500.0
+ACCEL_TRIGGER_PROFIT     = 50.0   # aceleración si gana $50 en el día
 ACCEL_SCALP_TP           = 10.0
 ACCEL_SCALP_SL           = -4.0
-ACCEL_MAX_SCALPS         = 10
+ACCEL_MAX_SCALPS         = 5
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
 # Horas — midnight a 8am Colombia bloqueado
