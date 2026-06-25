@@ -1555,6 +1555,14 @@ class TradingSupervisor:
                 tp_dist = abs(_entry_ref - tp_val)
                 rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
                 _min_rr_req = 1.5 if _is_scalp else MIN_RR - 0.01
+                # BUG #12: Si RR bajo → ajustar TP para garantizar mínimo (no skip)
+                # NAS100 al abrir: ATR enorme → SL wide → TP del signal queda cerca → RR=0.33
+                if rr < _min_rr_req and sl_dist > 0 and not _is_scalp:
+                    tp_val = round((_entry_ref + sl_dist * _min_rr_req) if order_type == "BUY"
+                                   else (_entry_ref - sl_dist * _min_rr_req), 5)
+                    tp_dist = abs(_entry_ref - tp_val)
+                    rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
+                    print(f"[TP-ADJ] {signal.symbol}: TP ajustado → RR={rr:.2f}", flush=True)
                 if rr < _min_rr_req:
                     print(f"[MT5] {signal.symbol}: RR={rr:.2f} < {_min_rr_req} minimo, skip", flush=True)
                     return
@@ -3299,7 +3307,9 @@ class TradingSupervisor:
                                 # Siempre actualizar cache H4 — incluso en WAIT para no dejar stale
                                 # APRENDIZAJE 24-Jun: guardar H4 anterior para detectar confirmación reciente
                                 if tf == "H4":
-                                    _h4_prev = self._mt5_h4_direction.get(symbol, "WAIT")
+                                    # "UNKNOWN" = nunca visto (post-restart). "WAIT" = visto y en espera.
+                                    # Solo H4-NEW si el cambio fue WAIT→DIR, no UNKNOWN→DIR (restart)
+                                    _h4_prev = self._mt5_h4_direction.get(symbol, "UNKNOWN")
                                     self._mt5_h4_direction[symbol] = bias
                                     # Si H4 acaba de confirmar (WAIT→LONG/SHORT): marcar como nuevo
                                     if _h4_prev == "WAIT" and bias in ("LONG", "SHORT"):
