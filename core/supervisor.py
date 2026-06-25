@@ -3317,10 +3317,20 @@ class TradingSupervisor:
 
                                     print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
 
-                                # H1 desactivado. H4 swings: score>=95 (señales limpias). M15 scalps: score>=80
+                                # H1 desactivado. H4 swings: score>=95. M15 scalps: threshold por calidad H4
+                                # APRENDIZAJE 24-Jun: H4=WAIT → señal débil, fluctúa rojo/verde sin dirección
+                                # H4=LONG/SHORT confirmado → señal fuerte, opera con threshold normal
                                 if tf == "H1":
                                     continue
-                                effective_threshold = 95 if tf == "H4" else MT5_SCALP_THRESHOLD
+                                if tf == "H4":
+                                    effective_threshold = 95
+                                elif tf == "M15":
+                                    _h4_now = self._mt5_h4_direction.get(symbol, "WAIT")
+                                    if _h4_now == "WAIT":
+                                        effective_threshold = 92  # H4 no confirma: necesita score alto
+                                        print(f" [H4=WAIT→thr=92]", end="", flush=True)
+                                    else:
+                                        effective_threshold = MT5_SCALP_THRESHOLD  # H4 confirma: normal
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
