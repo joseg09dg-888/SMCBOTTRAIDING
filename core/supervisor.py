@@ -1558,8 +1558,11 @@ class TradingSupervisor:
                 # BUG #12: Si RR bajo → ajustar TP para garantizar mínimo (no skip)
                 # NAS100 al abrir: ATR enorme → SL wide → TP del signal queda cerca → RR=0.33
                 if rr < _min_rr_req and sl_dist > 0 and not _is_scalp:
-                    tp_val = round((_entry_ref + sl_dist * _min_rr_req) if order_type == "BUY"
-                                   else (_entry_ref - sl_dist * _min_rr_req), 5)
+                    # Usar _min_rr_req + 0.1 para que el TP calculado supere el threshold
+                    # aunque haya rounding de float (1.90 < 1.9 = False gracias al margen)
+                    _tp_rr = _min_rr_req + 0.1
+                    tp_val = round((_entry_ref + sl_dist * _tp_rr) if order_type == "BUY"
+                                   else (_entry_ref - sl_dist * _tp_rr), 5)
                     tp_dist = abs(_entry_ref - tp_val)
                     rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
                     print(f"[TP-ADJ] {signal.symbol}: TP ajustado → RR={rr:.2f}", flush=True)
