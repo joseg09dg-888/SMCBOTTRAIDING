@@ -1554,7 +1554,7 @@ class TradingSupervisor:
                 sl_dist = abs(_entry_ref - sl_val)
                 tp_dist = abs(_entry_ref - tp_val)
                 rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
-                _min_rr_req = 1.5 if _is_scalp else 2.0  # swings: RR>=2.0 fijo, sin floating point
+                _min_rr_req = 1.5 if _is_scalp else 1.9  # swings: RR>=1.9 (evita floating point con 2.00)
                 # BUG #12: Si RR bajo → ajustar TP para garantizar mínimo (no skip)
                 # NAS100 al abrir: ATR enorme → SL wide → TP del signal queda cerca → RR=0.33
                 if rr < _min_rr_req and sl_dist > 0 and not _is_scalp:
