@@ -2125,7 +2125,7 @@ class TradingSupervisor:
 
         while self._running:
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.1)  # 100ms — prácticamente tiempo real
             _log_counter += 1
 
             if not self._mt5_available:
@@ -2403,7 +2403,7 @@ class TradingSupervisor:
 
                 # ── Log open positions (cada 10 ciclos = 30s para no spam) ──
 
-                if positions and _log_counter % 10 == 0:
+                if positions and _log_counter % 300 == 0:  # log cada 30s (300 × 0.1s)
 
                     total_pnl = sum(p.get("profit", 0.0) for p in positions)
                     _bal_ref  = self._ftmo_state.current_balance or self.capital
