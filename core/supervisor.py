@@ -1448,7 +1448,9 @@ class TradingSupervisor:
 
 
 
-        # ── FILTER 2b: Spread máximo — no entrar si spread > 3 pips ─────────
+        # ── FILTER 2b: Spread máximo — límite por tipo de instrumento ───────
+        # BUG #11: NAS100 al abrir tiene spread normal de 20-50pts — no usar límite forex
+        # Forex: max 3 pips | Índices (NAS100/US30): max 80 pips
         try:
             import MetaTrader5 as _mt5sp
             _tick_sp = _mt5sp.symbol_info_tick(signal.symbol)
@@ -1457,8 +1459,10 @@ class TradingSupervisor:
                 _sym_sp = _mt5sp.symbol_info(signal.symbol)
                 if _sym_sp and _sym_sp.point > 0:
                     _spread_pips = _spread / (_sym_sp.point * 10)
-                    if _spread_pips > 3.0:
-                        print(f"[SPREAD] {signal.symbol}: spread={_spread_pips:.1f} pips > 3 max — skip", flush=True)
+                    _is_index = any(x in signal.symbol for x in ("NAS", "US30", "SPX", "DAX", "UK100"))
+                    _max_spread = 80.0 if _is_index else 3.0
+                    if _spread_pips > _max_spread:
+                        print(f"[SPREAD] {signal.symbol}: spread={_spread_pips:.1f} > {_max_spread} max — skip", flush=True)
                         return
         except Exception:
             pass
