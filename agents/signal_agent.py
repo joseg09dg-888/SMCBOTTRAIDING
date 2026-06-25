@@ -129,6 +129,12 @@ class SignalAgent:
                 atr14 = float(tr.rolling(14).mean().iloc[-1])
                 if atr14 > 0:
                     atr_sl = atr14 * 1.5  # 1.5x ATR: balance entre ruido y SL razonable
+                    # Cap SL indices: NAS100/US30 ATR nocturno puede ser 3000+ pts
+                    # Con SL=3000pts el risk-cap reduce vol a 0.01L mínimo inútil
+                    # Cap 150pts → vol razonable (~0.2-0.5L) para meta $250/día
+                    _index_sl_cap = {"NAS100": 150.0, "NAS100.fs": 150.0, "US30": 200.0}
+                    if symbol in _index_sl_cap:
+                        atr_sl = min(atr_sl, _index_sl_cap[symbol])
                     min_dist = self._MIN_SL_DIST.get(symbol, entry * 0.008)
                     return max(atr_sl, min_dist)
             except Exception:
