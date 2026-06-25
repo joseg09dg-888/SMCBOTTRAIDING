@@ -2664,13 +2664,16 @@ class TradingSupervisor:
             if _in_recovery:
                 SCALP_MIN_PROFIT = RECOVERY_SCALP_TP
                 SCALP_MAX_LOSS   = RECOVERY_SCALP_SL
-                if _below_peak and self._balance_peak > INITIAL_CAPITAL:
-                    _gap = self._balance_peak - _current_bal
-                    print(f"[RECOVERY] Cayó ${_gap:.0f} del pico ${self._balance_peak:,.0f} — recuperando", flush=True)
-                elif _below_initial:
-                    print(f"[RECOVERY] Balance ${_current_bal:,.0f} bajo $100K — recuperando capital base", flush=True)
-                else:
-                    print(f"[RECOVERY] Dia ${self._daily_realized_pnl:.2f} — recuperando el dia", flush=True)
+                # Log RECOVERY solo cada 300 ciclos (~30s) para no spam con monitor 100ms
+                if getattr(self, "_recovery_log_count", 0) % 300 == 0:
+                    if _below_peak and self._balance_peak > INITIAL_CAPITAL:
+                        _gap = self._balance_peak - _current_bal
+                        print(f"[RECOVERY] Cayó ${_gap:.0f} del pico ${self._balance_peak:,.0f} — recuperando", flush=True)
+                    elif _below_initial:
+                        print(f"[RECOVERY] Balance ${_current_bal:,.0f} bajo $100K — recuperando capital base", flush=True)
+                    else:
+                        print(f"[RECOVERY] Dia ${self._daily_realized_pnl:.2f} — recuperando el dia", flush=True)
+                self._recovery_log_count = getattr(self, "_recovery_log_count", 0) + 1
             elif _in_accel:
                 SCALP_MIN_PROFIT = ACCEL_SCALP_TP   # +$15
                 SCALP_MAX_LOSS   = ACCEL_SCALP_SL   # -$4
@@ -2763,7 +2766,7 @@ class TradingSupervisor:
                 _peak = self._position_peaks.get(sw_ticket, 0.0)
                 if sw_pnl > _peak:
                     self._position_peaks[sw_ticket] = sw_pnl
-                _peak = self._position_peaks[sw_ticket]
+                    _peak = sw_pnl
                 # Cuando peak >= $10 → mover SL a breakeven en MT5 (una sola vez)
                 if _peak >= 10.0 and sw_ticket not in _be_moved and sw_entry > 0:
                     _be_ok = await loop.run_in_executor(
@@ -3073,7 +3076,8 @@ class TradingSupervisor:
                             print(f"[TIME-CLOSE] {sym} #{ticket} close FALLO — reintento en 5min", flush=True)
 
         except Exception as _me:
-            print(f"[AUTO-CLOSE] error monitor: {_me}", flush=True)
+            import traceback
+            print(f"[AUTO-CLOSE] error monitor: {_me}\n{traceback.format_exc()[:300]}", flush=True)
 
     # -- Autonomous background loops ----------------------------------------
 
