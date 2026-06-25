@@ -1509,6 +1509,10 @@ class TradingSupervisor:
         # ── SCALP M15: volumen fijo 0.1L, SL=4pips($4), TP=12pips($12) ─────────
         # 0.1L: pip=$1 → SL=4pips=$4 max loss, TP=12pips=$12, cerrar en $10
         if _is_scalp:
+            # Índices NO permiten scalp M15 — SL de 4 pips inválido (necesita 50+ pts)
+            if any(x in signal.symbol for x in ("NAS100", "US30", "SPX", "DAX", "UK100")):
+                print(f"[SKIP-IDX] {signal.symbol}: índice no permite scalp M15", flush=True)
+                return
             try:
                 import MetaTrader5 as _mt5s
                 _tick_s = _mt5s.symbol_info_tick(signal.symbol)
