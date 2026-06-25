@@ -2113,16 +2113,20 @@ class TradingSupervisor:
 
     async def _position_monitor_loop(self):
 
-        """Every 60s: log open positions + detect closures → update learning + FTMO."""
+        """Every 3s: log open positions + detect closures → update learning + FTMO.
+        CRITICO: 3s para detectar movimientos rapidos y proteger profits con BE/TRAIL.
+        Era 60s — demasiado lento para mercados que mueven $18→$1 en segundos."""
 
         _known_tickets: set = set()
         # Tickets flagged for close-on-market-open (positions with no SL)
         # Populated dynamically: any position with SL=0 gets auto-closed on next open
         _close_when_open: set = set()
+        _log_counter: int = 0  # solo imprime posiciones cada 10 ciclos (30s)
 
         while self._running:
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(1)
+            _log_counter += 1
 
             if not self._mt5_available:
 
@@ -2397,9 +2401,9 @@ class TradingSupervisor:
 
 
 
-                # ── Log open positions ────────────────────────────────────
+                # ── Log open positions (cada 10 ciclos = 30s para no spam) ──
 
-                if positions:
+                if positions and _log_counter % 10 == 0:
 
                     total_pnl = sum(p.get("profit", 0.0) for p in positions)
                     _bal_ref  = self._ftmo_state.current_balance or self.capital
