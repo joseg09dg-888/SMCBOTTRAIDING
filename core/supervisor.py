@@ -110,7 +110,7 @@ ACCEL_MAX_SCALPS         = 5
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
 # Horas — midnight a 8am Colombia bloqueado
-DEAD_HOURS_UTC           = {5, 6, 7, 8, 9, 10, 11, 12}
+DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}  # bloqueado 7pm-8am Colombia (era solo 5-12)
 
 
 
@@ -321,6 +321,8 @@ class TradingSupervisor:
             # Tiers calibrados para Axi (max drawdown 10%):
             # >= 7% → 0.25x | >= 4% → 0.5x | <4% → 1.0x (full)
             dd_tiers=((0.07, 0.25), (0.04, 0.5)),
+            min_trades=12,       # era 8: necesita más trades antes de suspender
+            suspend_wr=0.15,     # era 0.25: solo suspende si WR < 15% (no 25%)
             initial_suspended={
                 "USDJPY": (
                     "Auditoria 2026-06-14: WR 6.2% en 130 trades (60% del volumen), "
@@ -1427,7 +1429,7 @@ class TradingSupervisor:
         import time as _time_mod
         _sl_key = f"{signal.symbol}_{order_type}"
         _sl_ts  = self._symbol_sl_time.get(_sl_key, 0.0)
-        _cooldown_h = 4.0
+        _cooldown_h = 1.0
         if _time_mod.time() - _sl_ts < _cooldown_h * 3600:
             _mins_left = int((_cooldown_h * 3600 - (_time_mod.time() - _sl_ts)) / 60)
             print(f"[COOLDOWN] {signal.symbol} {order_type}: SL reciente — espera {_mins_left}min", flush=True)
@@ -1700,10 +1702,21 @@ class TradingSupervisor:
             pos = sym_open[0]
             pnl_live = pos.get("profit", 0.0)
             pos_dir = pos.get("type", "").upper()
-            # Scalp puede abrir en mismo simbolo si hay swing en MISMA direccion
-            # Swing no puede abrir si ya hay posicion abierta en ese simbolo
             if _is_scalp and pos_dir == order_type:
-                pass  # permitir scalp adicional en misma direccion
+                pass  # scalp puede abrir junto a swing de misma direccion
+            elif not _is_scalp:
+                # Swing: solo bloquear si ya hay OTRA swing abierta (no scalps)
+                sym_swings = [p for p in sym_open
+                              if abs(p.get("tp", 0) - p.get("price_open", 0)) >= 0.0025]
+                if sym_swings:
+                    sw = sym_swings[0]
+                    print(
+                        f"[MT5] {signal.symbol}: swing ya abierta "
+                        f"({sw.get('profit',0):+.2f} USD) -- skip",
+                        flush=True,
+                    )
+                    return
+                # Si solo hay scalps → permitir abrir swing
             else:
                 print(
                     f"[MT5] {signal.symbol}: posicion {pos_dir} ya abierta "
@@ -2799,8 +2812,8 @@ class TradingSupervisor:
                     if _be_ok:
                         _be_moved.add(sw_ticket)
                         print(f"[BE-SET] {sw_sym} #{sw_ticket} peak=${_peak:.2f} → SL MT5 movido a entry {sw_entry:.5f}", flush=True)
-                # Cierre por software como respaldo (50% del peak, min $15)
-                if _peak >= 15.0 and sw_pnl > 0 and sw_pnl <= _peak * 0.5:
+                # Cierre por software como respaldo (50% del peak, min $100 para swings grandes)
+                if _peak >= 100.0 and sw_pnl > 0 and sw_pnl <= _peak * 0.5:
                     ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
                     if ok:
                         self._position_peaks.pop(sw_ticket, None)
@@ -2814,8 +2827,9 @@ class TradingSupervisor:
                         except Exception:
                             pass
 
-            # ── 0b. Swing dollar-stop: si swing pierde más de $50 → cerrar ────
-            SWING_MAX_LOSS = -10.0  # max -$10 por swing (funciona con vol<=0.15L)
+            # ── 0b. Swing dollar-stop: confiar en el SL de MT5 (ATR-based)
+            # MAX_DOLLAR_RISK ya limita el riesgo al abrir — no cerrar antes del SL
+            SWING_MAX_LOSS = -200.0  # igual que MAX_DOLLAR_RISK: dejar que el SL de MT5 actúe
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
                 sw_ticket = sw["ticket"]
@@ -2928,8 +2942,7 @@ class TradingSupervisor:
 
                 # ── 0b. No SL protection: retry setting SL if it's missing ───
                 if sl_cur == 0.0 and tp_cur > 0 and entry > 0:
-                    import time as _t
-                    _t.sleep(1.0)
+                    await asyncio.sleep(1.0)
                     ok = await loop.run_in_executor(
                         None,
                         lambda t=ticket, e=entry, tp=tp_cur, ib=is_buy:
@@ -3014,6 +3027,8 @@ class TradingSupervisor:
                 # ── 2-3. Trailing stop (only for winning positions) ────────
                 if entry > 0 and sl_cur > 0:
                     sl_dist = abs(entry - sl_cur)  # 1R distance
+                    if sl_dist < 0.0001:           # SL ya en breakeven o muy cerca → skip trailing
+                        sl_dist = 0.0              # fuerza skip del bloque abajo
                     if sl_dist > 0:
                         tick = _mt5.symbol_info_tick(sym)
                         if tick is not None:
