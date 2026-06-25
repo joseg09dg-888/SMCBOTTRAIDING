@@ -58,7 +58,8 @@ class TestEnrichWithAgents:
         signal = _make_signal(score=90)
         df = _make_df(n=200)
         bonus = supervisor._enrich_with_agents(signal, df)
-        assert bonus <= 60
+        # Agent bonuses capped at 60; trader-rules bonus (Soros/ICT) can add up to +13
+        assert bonus <= 75
 
     def test_bonus_floor_at_minus_20(self, supervisor):
         # Chaotic (flat) market should not drop below -20

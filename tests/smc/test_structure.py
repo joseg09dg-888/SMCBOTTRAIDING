@@ -20,7 +20,7 @@ def bearish_trend_data():
 
 
 def test_detects_bullish_trend(bullish_trend_data):
-    ms = MarketStructure(bullish_trend_data)
+    ms = MarketStructure(bullish_trend_data, swing_lookback=1)
     result = ms.analyze()
     assert result.structure_type == StructureType.BULLISH_TREND
     assert result.higher_highs > 0
@@ -28,7 +28,7 @@ def test_detects_bullish_trend(bullish_trend_data):
 
 
 def test_detects_bearish_trend(bearish_trend_data):
-    ms = MarketStructure(bearish_trend_data)
+    ms = MarketStructure(bearish_trend_data, swing_lookback=1)
     result = ms.analyze()
     assert result.structure_type == StructureType.BEARISH_TREND
     assert result.lower_highs > 0
@@ -36,7 +36,7 @@ def test_detects_bearish_trend(bearish_trend_data):
 
 
 def test_detects_bos(bullish_trend_data):
-    ms = MarketStructure(bullish_trend_data)
+    ms = MarketStructure(bullish_trend_data, swing_lookback=1)
     bos_list = ms.detect_bos()
     assert len(bos_list) > 0
     assert bos_list[0]["type"] == "BOS"
@@ -45,7 +45,7 @@ def test_detects_bos(bullish_trend_data):
 def test_detects_choch(bearish_trend_data):
     extra = pd.DataFrame({"high": [115], "low": [108], "close": [113]})
     data = pd.concat([bearish_trend_data, extra], ignore_index=True)
-    ms = MarketStructure(data)
+    ms = MarketStructure(data, swing_lookback=1)
     choch_list = ms.detect_choch()
     assert len(choch_list) > 0
     assert choch_list[0]["type"] == "CHoCH"

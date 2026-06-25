@@ -88,7 +88,7 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "U
 # Score >= 85 (calidad alta), TP=$10, SL=-$4, max 10 simultáneas
 # Sin swings, sin recovery modes, sin aceleración — solo scalps limpios
 MT5_REAL_SCORE_THRESHOLD = 80   # ajustado para swing_lookback=5
-MT5_SCALP_THRESHOLD      = 80   # señales reales con lookback estricto
+MT5_SCALP_THRESHOLD      = 100  # era 80: solo scalps de alta calidad
 MT5_SCORE_AUTO_REDUCE    = 75
 MT5_SCORE_REDUCE_AFTER_H = 4
 MAX_SCALP_POSITIONS      = 3
@@ -110,7 +110,7 @@ ACCEL_MAX_SCALPS         = 5
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
 # Horas — midnight a 8am Colombia bloqueado
-DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}  # bloqueado 7pm-8am Colombia (era solo 5-12)
+DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16}  # bloqueado Asia+NY lunch
 
 
 
@@ -1126,12 +1126,34 @@ class TradingSupervisor:
             contrib_str = " ".join(f"{k}={v:+d}" for k, v in contribs.items())
             print(f"[ENRICH-CONTRIB] {signal.symbol}: {contrib_str}", flush=True)
 
+        # ── Top trader rules bonus (Druckenmiller / PTJ / Soros / ICT) ─────
+        trader_bonus = 0
+        import datetime as _dt
+        _hour_utc = _dt.datetime.utcnow().hour
+        _bias = signal.signal_type
+        # Soros: momentum fuerte H4 (3+ velas consecutivas mismo lado) = +8
+        if not df.empty and len(df) >= 4:
+            last3 = df["close"].iloc[-3:].values
+            if _bias == SignalType.LONG and all(last3[i] < last3[i+1] for i in range(2)):
+                trader_bonus += 8
+            elif _bias == SignalType.SHORT and all(last3[i] > last3[i+1] for i in range(2)):
+                trader_bonus += 8
+        # ICT: NY kill zone 12-15 UTC = +5
+        if 12 <= _hour_utc <= 15:
+            trader_bonus += 5
+        # London kill zone 07-10 UTC = +3
+        elif 7 <= _hour_utc <= 10:
+            trader_bonus += 3
+        if trader_bonus > 0:
+            print(f"[TRADER-RULES] {signal.symbol}: +{trader_bonus}pts (momentum+killzone)", flush=True)
+        final_bonus = bonus_clamped + trader_bonus
+
         print(
-            f"[ENRICH] {signal.symbol} base={base} bonus={bonus_clamped:+d} "
-            f"final={base + bonus_clamped} | {signal.signal_type.value.upper()}",
+            f"[ENRICH] {signal.symbol} base={base} bonus={final_bonus:+d} "
+            f"final={base + final_bonus} | {signal.signal_type.value.upper()}",
             flush=True,
         )
-        return bonus_clamped
+        return final_bonus
 
 
 
@@ -1522,15 +1544,15 @@ class TradingSupervisor:
                 _sym_s = _mt5s.symbol_info(signal.symbol)
                 if _scalp_price > 0 and _sym_s:
                     _pip = _sym_s.point * 10  # 1 pip = 10 points (5-digit broker)
-                    _sl_pips  = 4   # 4 pips SL = $4 max loss a 0.1L
-                    _tp_pips  = 12  # 12 pips TP = $12, monitor cierra en $10
+                    _sl_pips  = 8   # 8 pips SL = $8 max loss a 0.1L (era 4, muy ajustado)
+                    _tp_pips  = 24  # 24 pips TP = $24, RR=3:1 (era 12)
                     if order_type == "BUY":
                         sl_val = round(_scalp_price - _sl_pips * _pip, 5)
                         tp_val = round(_scalp_price + _tp_pips * _pip, 5)
                     else:
                         sl_val = round(_scalp_price + _sl_pips * _pip, 5)
                         tp_val = round(_scalp_price - _tp_pips * _pip, 5)
-                    print(f"[SCALP] {signal.symbol} {order_type} @{_scalp_price:.5f} SL={sl_val:.5f} TP={tp_val:.5f} (4pip/$4 SL, 12pip/$12 TP)", flush=True)
+                    print(f"[SCALP] {signal.symbol} {order_type} @{_scalp_price:.5f} SL={sl_val:.5f} TP={tp_val:.5f} (8pip/$8 SL, 24pip/$24 TP)", flush=True)
             except Exception as _se:
                 print(f"[SCALP] error calculando SL/TP: {_se}", flush=True)
 
@@ -1792,9 +1814,17 @@ class TradingSupervisor:
         else:
             volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
 
-        # Swing: max $200 riesgo → TP al 3:1 = $600 potencial
-        # Meta $250/dia: 1 swing NAS100 suficiente
-        MAX_DOLLAR_RISK = 200.0
+        # Swing: riesgo adaptativo según déficit diario
+        _shortfall = DAILY_PROFIT_TARGET - self._daily_realized_pnl
+        _now_h = __import__('datetime').datetime.utcnow().hour
+        if _shortfall > 200 and _now_h >= 13:
+            # Detrás de meta por >$200 en horario activo: escalar riesgo
+            MAX_DOLLAR_RISK = min(400.0, 200.0 + _shortfall * 0.3)
+            print(f"[ADAPTIVE-SIZE] Deficit=${_shortfall:.0f} → MAX_RISK=${MAX_DOLLAR_RISK:.0f}", flush=True)
+        elif _shortfall <= 0:
+            MAX_DOLLAR_RISK = 100.0  # meta cumplida: proteger ganancias
+        else:
+            MAX_DOLLAR_RISK = 200.0
         if not _is_scalp and volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
             _sym_info = None
@@ -3489,10 +3519,10 @@ class TradingSupervisor:
                                 elif tf == "M15":
                                     _h4_now = self._mt5_h4_direction.get(symbol, "WAIT")
                                     if _h4_now == "WAIT":
-                                        effective_threshold = 92  # H4 no confirma: necesita score alto
-                                        print(f" [H4=WAIT→thr=92]", end="", flush=True)
+                                        effective_threshold = max(MT5_SCALP_THRESHOLD, 105)  # H4 WAIT: exige mas que threshold normal
+                                        print(f" [H4=WAIT→thr={effective_threshold}]", end="", flush=True)
                                     else:
-                                        effective_threshold = MT5_SCALP_THRESHOLD  # H4 confirma: normal
+                                        effective_threshold = MT5_SCALP_THRESHOLD  # H4 confirma: threshold configurado
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
