@@ -1416,6 +1416,13 @@ class TradingSupervisor:
 
 
 
+        # Índices (NAS100/US30) NO scalp M15 — SL de 4 pips inválido (min 50pts)
+        # NAS100 solo opera swings H4 con SL basado en ATR
+        _is_index = any(x in signal.symbol for x in ("NAS100", "US30", "SPX", "DAX"))
+        if _is_scalp and _is_index:
+            print(f"[SKIP] {signal.symbol}: índice no permite scalp M15 (SL inválido)", flush=True)
+            return
+
         # Cooldown tras SL: mismo símbolo+dirección no abre por 4 horas
         import time as _time_mod
         _sl_key = f"{signal.symbol}_{order_type}"
