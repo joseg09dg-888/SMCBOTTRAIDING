@@ -3416,6 +3416,25 @@ class TradingSupervisor:
                                         print(f" -- [H4-NEW] {symbol} H4 recién confirmó — esperando 1 ciclo", flush=True)
                                         continue
 
+                                    # MOMENTUM CHECK para swings H4: precio debe moverse hacia la señal
+                                    # Si últimas 3 velas H4 van CONTRA la dirección → skip
+                                    # Evita abrir EURUSD SELL cuando precio sube (múltiples pérdidas 25-Jun)
+                                    if tf == "H4":
+                                        try:
+                                            _h4_df = await loop.run_in_executor(None, lambda s=symbol: self.mt5.get_ohlcv(s, "H4", 10))
+                                            if _h4_df is not None and len(_h4_df) >= 4:
+                                                _c_now  = float(_h4_df["close"].iloc[-1])
+                                                _c_3ago = float(_h4_df["close"].iloc[-4])
+                                                _h4_mom = "UP" if _c_now > _c_3ago else "DOWN"
+                                                if bias == "SHORT" and _h4_mom == "UP":
+                                                    print(f" -- [MOM-H4] SELL pero H4 subiendo — skip", flush=True)
+                                                    continue
+                                                if bias == "LONG" and _h4_mom == "DOWN":
+                                                    print(f" -- [MOM-H4] BUY pero H4 bajando — skip", flush=True)
+                                                    continue
+                                        except Exception:
+                                            pass
+
                                     print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
 
                                 # H1 desactivado. H4 swings: score>=95. M15 scalps: threshold por calidad H4
