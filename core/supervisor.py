@@ -81,7 +81,7 @@ DEMO_MAX_POSITIONS       = 0
 SCAN_INTERVAL_SEC        = 30
 CONSERVATIVE_MODE        = False
 CONSERVATIVE_SCORE_MIN   = 75
-CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "US30"]
+CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY"]
 
 # ── CONFIGURACIÓN SIMPLE — solo lo esencial ──────────────────────────
 # UN solo modo: SCALP M15 con 0.1L
@@ -101,7 +101,7 @@ INITIAL_CAPITAL          = 100_000.0
 RECOVERY_SCALP_TP        = 10.0  # igual que normal
 RECOVERY_SCALP_SL        = -4.0  # igual que normal
 RECOVERY_MAX_SCALPS      = 3
-RECOVERY_TRIGGER_LOSS    = -50.0   # recovery si pierde $50 en el día
+RECOVERY_TRIGGER_LOSS    = -150.0  # recovery si pierde $150 en el día (era -50: demasiado agresivo)
 RECOVERY_DRAWDOWN_FROM_PEAK = 500.0
 ACCEL_TRIGGER_PROFIT     = 50.0   # aceleración si gana $50 en el día
 ACCEL_SCALP_TP           = 10.0
@@ -110,7 +110,7 @@ ACCEL_MAX_SCALPS         = 5
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
 # Horas — midnight a 8am Colombia bloqueado
-DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16}  # bloqueado Asia+NY lunch
+DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}  # bloqueado midnight-8am Colombia
 
 
 
@@ -131,7 +131,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "XAUUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NAS100.fs", "US30"]
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NAS100.fs"]
 MT5_TIMEFRAMES   = ["H4", "H1", "M15"]  # H4 trend → H1 swing → M15 scalp
 
 MT5_MIN_VOLUME   = 0.01
@@ -3528,8 +3528,12 @@ class TradingSupervisor:
                                     print(f" -- sin setup (threshold={effective_threshold})")
                                 else:
                                     tag = "SCALP" if tf == "M15" else "SWING"
-                                    print(f" -- ejecutando {tag} (score={score}>={effective_threshold})")
-                                    await self._send_mt5_real_order(signal)
+                                    # Circuit breaker: si scalps perdieron >$100 hoy, no abrir más scalps
+                                    if tag == "SCALP" and self._scalp_realized_today < -100.0:
+                                        print(f" -- [SCALP-CIRCUIT] bloqueado (scalp P&L=${self._scalp_realized_today:.2f} < -$100)", flush=True)
+                                    else:
+                                        print(f" -- ejecutando {tag} (score={score}>={effective_threshold})")
+                                        await self._send_mt5_real_order(signal)
                             except Exception as exc:
                                 print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
                             await asyncio.sleep(0.5)
