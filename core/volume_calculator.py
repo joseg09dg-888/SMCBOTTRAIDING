@@ -54,6 +54,11 @@ class VolumeCalculator:
         "US30":   1.0,
     }
 
+    @staticmethod
+    def _norm(symbol: str) -> str:
+        """Strip broker suffixes like .fs, .pro, .i — 'NAS100.fs' → 'NAS100'."""
+        return symbol.split(".")[0]
+
     _MIN_VOL = 0.01
     _MAX_VOL = 2.0  # global safety cap for any unlisted symbol
 
@@ -69,11 +74,12 @@ class VolumeCalculator:
         if sl_distance == 0.0:
             return 0.0  # SL invalido — no operar
 
-        pip_size  = self._PIP_SIZE.get(symbol, 0.0001)
-        pip_value = self._PIP_VALUE.get(symbol, 10.0)
+        base = self._norm(symbol)  # strip broker suffix (e.g. NAS100.fs → NAS100)
+        pip_size  = self._PIP_SIZE.get(base, 0.0001)
+        pip_value = self._PIP_VALUE.get(base, 10.0)
 
         # Dynamic pip value for JPY pairs: (pip_size * lot_size) / rate
-        if symbol in ("USDJPY", "GBPJPY", "EURJPY") and entry > 0:
+        if base in ("USDJPY", "GBPJPY", "EURJPY") and entry > 0:
             pip_value = (pip_size * 100_000) / entry
 
         if pip_size == 0.0:
@@ -84,8 +90,8 @@ class VolumeCalculator:
             return 0.0
         volume   = risk_usd / (pips * pip_value)
 
-        min_vol = self._MIN_VOL_BY_SYMBOL.get(symbol, self._MIN_VOL)
-        max_vol = self._MAX_VOL_BY_SYMBOL.get(symbol, self._MAX_VOL)
+        min_vol = self._MIN_VOL_BY_SYMBOL.get(base, self._MIN_VOL)
+        max_vol = self._MAX_VOL_BY_SYMBOL.get(base, self._MAX_VOL)
         volume  = max(min_vol, min(max_vol, volume))
 
         # Safety check: if broker minimum forces >2.5x allowed risk, skip the trade

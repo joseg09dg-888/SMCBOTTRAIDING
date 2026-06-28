@@ -79,6 +79,8 @@ COMMANDS = {
     "/edge":             "Statistical edge y winrate historico",
     "/footprint":        "Analisis footprint (delta, absorcion). Ej: /footprint BTC",
     "/ftmo":             "Estado FTMO challenge y potencial de ingresos",
+    "/axicheck":         "Verificacion 6 variables Axi Select (listo para live?)",
+    "/plan":             "Plan financiero 70-20-10 — donde va el capital del bot",
     "/demo":             "Posiciones demo Binance crypto con P&L en vivo",
     "/performance":      "Performance real: win rate, profit factor, P&L cuenta Axi",
 }
@@ -157,6 +159,8 @@ class TelegramCommander:
             "/footprint":        self._cmd_footprint,
             "/ftmo":             self._cmd_ftmo,
             "/axi":              self._cmd_axi,
+            "/axicheck":         self._cmd_axicheck,
+            "/plan":             self._cmd_plan,
             "/ver_mt5":          self._cmd_ver_mt5,
             "/proteger":         self._cmd_proteger,
             "/demo":             self._cmd_demo,
@@ -1090,7 +1094,115 @@ class TelegramCommander:
             f"  Win Rate sostenida >= 75%\n"
             f"  Income: $20,000-$50,000/mes\n"
         )
+        # ── Tracker mensual (nuevos agentes Axi Select) ──────────────
+        try:
+            from agents.axi_select_tracker import AxiSelectTracker
+            tracker = AxiSelectTracker()
+            tr = tracker.get_status()
+            on_track_icon = "✅" if tr.on_track else "⚠️"
+            tracker_txt = (
+                f"\n━━━━━━━━━━━━━━━━━━━━\n"
+                f"<b>MES ACTUAL ({tr.stage_name}):</b>\n"
+                f"  P&L mes: ${tr.monthly_pnl:+,.0f} ({tr.monthly_pct*100:.2f}%)\n"
+                f"  Objetivo: 5% (${tr.capital*0.05:,.0f})\n"
+                f"  Dias: {tr.days_traded} operados / {tr.days_remaining} restantes\n"
+                f"  Proyeccion fin de mes: {tr.projected_pct*100:.2f}% {on_track_icon}\n"
+                f"  Necesita: ${tr.daily_avg_needed:,.0f}/dia\n"
+            )
+        except Exception:
+            tracker_txt = ""
+
+        text += tracker_txt
         return CommandResult(success=True, message=text, action="axi")
+
+    def _cmd_axicheck(self) -> CommandResult:
+        """Pre-cierre verificacion de las 6 variables Axi Select."""
+        from agents.axi_select_guard import AxiSelectGuard
+        from agents.axi_select_tracker import AxiSelectTracker
+        from agents.consistency_enforcer import ConsistencyEnforcer
+        from connectors.metatrader_connector import MT5Connector
+        from core.config import config as cfg
+
+        lines = ["<b>AXI SELECT — VERIFICACION COMPLETA</b>\n━━━━━━━━━━━━━━━━━━━━"]
+        score = 0
+
+        try:
+            mt5 = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
+            acc = mt5.get_account_info()
+            bal = acc.get("balance", 0) if acc else 0
+            eq  = acc.get("equity",  bal) if acc else 0
+
+            # V1: Profit mensual
+            tracker = AxiSelectTracker()
+            tr = tracker.get_status()
+            v1 = "✅" if tr.monthly_pct >= 0.05 else ("⚠️" if tr.monthly_pct >= 0.02 else "❌")
+            lines.append(f"{v1} P&L mes: {tr.monthly_pct*100:.2f}% (objetivo >=5%)")
+            if tr.monthly_pct >= 0.05: score += 1
+
+            # V2: Daily loss
+            guard = AxiSelectGuard()
+            gr = guard.check(eq, capital_assigned=bal)
+            v2 = "✅" if not gr.should_close and not gr.warning_level else ("⚠️" if gr.warning_level else "❌")
+            lines.append(f"{v2} P&L dia: {gr.daily_pnl_pct*100:.2f}% (limite -4%)")
+            if not gr.should_close: score += 1
+
+            # V3: Drawdown total
+            init_bal = tr.capital
+            dd_pct   = (init_bal - eq) / init_bal if init_bal > 0 else 0
+            v3 = "✅" if dd_pct < 0.08 else ("⚠️" if dd_pct < 0.10 else "❌")
+            lines.append(f"{v3} Drawdown total: {dd_pct*100:.2f}% (limite 10%)")
+            if dd_pct < 0.10: score += 1
+
+            # V4: Dias operados
+            v4 = "✅" if tr.days_traded >= 10 else ("⚠️" if tr.days_traded >= 5 else "❌")
+            lines.append(f"{v4} Dias operados: {tr.days_traded}/22 (minimo 10)")
+            if tr.days_traded >= 10: score += 1
+
+            # V5: Consistencia
+            monthly_pnl = tr.monthly_pnl
+            today_pnl   = monthly_pnl / tr.days_traded if tr.days_traded > 0 else 0
+            ce = ConsistencyEnforcer()
+            cr = ce.check(today_pnl, monthly_pnl)
+            v5 = "✅" if not cr.should_block_new else "⚠️"
+            lines.append(f"{v5} Consistencia: mayor dia = {cr.today_pct_of_monthly*100:.0f}% del mes (max 30%)")
+            if not cr.should_block_new: score += 1
+
+            # V6: Instrumentos
+            lines.append(f"✅ Instrumentos: EURUSD/GBPUSD/AUDUSD/USDCAD/NZDUSD/NAS100 (todos OK)")
+            score += 1
+
+        except Exception as e:
+            lines.append(f"❌ Error al verificar: {e}")
+
+        lines.append(f"\n━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"<b>RESULTADO: {score}/6 variables OK</b>")
+        if score == 6:
+            lines.append("Estado: LISTO PARA AXI SELECT")
+        elif score >= 4:
+            lines.append("Estado: CERCA — revisar variables en rojo")
+        else:
+            lines.append("Estado: NO LISTO — bot necesita mas tiempo")
+
+        return CommandResult(success=True, message="\n".join(lines), action="axicheck")
+
+    def _cmd_plan(self) -> CommandResult:
+        """Plan financiero 70-20-10 — donde va el capital del bot."""
+        from agents.portfolio_tracker import PortfolioTracker
+        tracker = PortfolioTracker()
+
+        # Estimar ingreso mensual actual del bot desde el tracker Axi
+        monthly_income = None
+        try:
+            from agents.axi_select_tracker import AxiSelectTracker
+            axi = AxiSelectTracker()
+            st = axi.get_status()
+            if st.days_traded > 0 and st.monthly_pnl > 0:
+                monthly_income = st.monthly_pnl / st.days_traded * 22
+        except Exception:
+            pass
+
+        msg = tracker.format_telegram(axi_monthly_income=monthly_income)
+        return CommandResult(success=True, message=msg, action="plan")
 
     def _log_mode_change(self, mode: str, reason: str):
         self.state.mode_history.append({

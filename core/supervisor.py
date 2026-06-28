@@ -70,6 +70,10 @@ from agents.retail_psychology_agent import RetailPsychologyAgent
 from agents.alternative_data_agent import AlternativeDataAgent
 from agents.energy_frequency_agent import EnergyFrequencyAgent
 from agents.axi_vision_agent import AxiVisionAgent
+from agents.axi_select_guard import AxiSelectGuard
+from agents.axi_select_tracker import AxiSelectTracker
+from agents.axi_capital_adjuster import AxiCapitalAdjuster
+from agents.consistency_enforcer import ConsistencyEnforcer
 from memory.episodic_db import query_similar_episodes
 
 
@@ -109,8 +113,12 @@ ACCEL_SCALP_SL           = -4.0
 ACCEL_MAX_SCALPS         = 5
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
-# Horas — midnight a 8am Colombia bloqueado
-DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}  # bloqueado midnight-8am Colombia
+# Horas bloqueadas — backtest 2 años (700 dias, 6 pares) demuestra:
+# 13:00 UTC = WR 29%, avg -$97/trade (1,223 trades) → SEÑALES RANCIAS overnight → BLOQUEAR
+# 14:00 UTC = WR 61%, avg +$102/trade (578 trades) → NY open GOLD window
+# 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading, reducir trades
+# Estrategia: iniciar a 14:00 UTC (9am Colombia) cuando NY open momentum confirma BOS real
+DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}  # 14:00 UTC = inicio real
 
 
 
@@ -131,8 +139,8 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NAS100.fs"]
-MT5_TIMEFRAMES   = ["H4", "H1", "M15"]  # H4 trend → H1 swing → M15 scalp
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NZDUSD", "NAS100.fs"]
+MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 swing principal | H1 swing adicional | M15 scalps DESACTIVADOS (destruian capital)
 
 MT5_MIN_VOLUME   = 0.01
 
@@ -338,6 +346,13 @@ class TradingSupervisor:
         self._daily_trades: Dict[str, int] = self._load_daily_trades()
 
         # FTMO / Axi rules enforcement
+
+        # Axi Select runtime guards
+        self._axi_guard      = AxiSelectGuard()
+        self._axi_tracker    = AxiSelectTracker()
+        self._axi_adjuster   = AxiCapitalAdjuster()
+        self._axi_enforcer   = ConsistencyEnforcer()
+        self._axi_paused_today = False   # True si guard disparo emergency close
 
         self._ftmo_agent = FTMOAgent()
 
@@ -1248,6 +1263,16 @@ class TradingSupervisor:
         self._df_cache[symbol] = df  # available for _claude_confirm_trade
         smc = self._run_smc_lite(df)
 
+        # H4 structural direction cache — actualizado desde análisis SMC ANTES del momentum filter
+        # Esto evita que el momentum filter (pullback temporal) setee H4=WAIT cuando la estructura es LONG/SHORT
+        if timeframe == "H4":
+            _smc_struct = smc.get("bias", "neutral")
+            if _smc_struct == "bullish":
+                self._mt5_h4_direction[symbol] = "LONG"
+            elif _smc_struct == "bearish":
+                self._mt5_h4_direction[symbol] = "SHORT"
+            # Si neutral: no actualizar (preservar dirección previa conocida)
+
         current_price = float(df["close"].iloc[-1])
 
         # Confirmación de momentum: precio debe moverse en la dirección señalada
@@ -1438,7 +1463,41 @@ class TradingSupervisor:
 
         tp_val = signal.take_profit if signal.take_profit else 0.0
 
+        # ── 8D DIM 8: Portfolio correlation guard ──────────────────────
+        # Blocks duplicate USD exposure (e.g. EURUSD + GBPUSD + AUDUSD all BUY)
+        try:
+            if not hasattr(self, "_eight_dim_agent"):
+                from agents.eight_dim_agent import EightDimensionAgent
+                self._eight_dim_agent = EightDimensionAgent()
+            loop8 = __import__("asyncio").get_event_loop()
+            _open8 = await loop8.run_in_executor(None, self.mt5.get_positions)
+            _8d_result = self._eight_dim_agent.analyze(
+                signal.symbol, None, _open8 or [], direction=order_type
+            )
+            if not _8d_result.allowed:
+                print(f"[8D-BLOCK] {signal.symbol}: {_8d_result.reason}", flush=True)
+                return
+            _8d_regime = f"vol={_8d_result.vol_regime} trend={_8d_result.trend_regime}"
+            print(f"[8D] {signal.symbol}: score_mult={_8d_result.score_mult:.2f} {_8d_regime}", flush=True)
+        except Exception as _8d_exc:
+            print(f"[8D] error (no bloqueo): {_8d_exc}", flush=True)
 
+        # ── AXI SELECT GUARDS ──────────────────────────────────────────
+        # Guard 1: emergency daily loss limit (-4%)
+        if self._axi_paused_today:
+            print(f"[AXI-GUARD] {signal.symbol}: bot pausado — limite diario alcanzado hoy", flush=True)
+            return
+        # Guard 2: consistency rule — ningún día > 30% del profit mensual
+        try:
+            _ce_result = self._axi_enforcer.check(
+                today_pnl    = self._daily_realized_pnl,
+                monthly_pnl  = self._axi_tracker.get_status().monthly_pnl,
+            )
+            if _ce_result.should_block_new and not _is_scalp:
+                print(f"[AXI-CONSISTENCY] {signal.symbol}: {_ce_result.reason}", flush=True)
+                return
+        except Exception as _ce_exc:
+            print(f"[AXI-CONSISTENCY] error (no bloqueo): {_ce_exc}", flush=True)
 
         # Índices (NAS100/US30) NO scalp M15 — SL de 4 pips inválido (min 50pts)
         # NAS100 solo opera swings H4 con SL basado en ATR
@@ -1691,7 +1750,6 @@ class TradingSupervisor:
         _current_bal_r  = self._ftmo_state.current_balance or self.capital
         _recovery_mode  = (
             self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS or
-            _current_bal_r < INITIAL_CAPITAL or
             (self._balance_peak - _current_bal_r) >= RECOVERY_DRAWDOWN_FROM_PEAK
         ) and not self._daily_target_hit
         _accel_mode = (
@@ -1753,7 +1811,7 @@ class TradingSupervisor:
         if existing:
             _bal = self._ftmo_state.current_balance or self.capital
             _total_pnl = sum(p.get("profit", 0.0) for p in existing)
-            _loss_limit = _bal * 0.01  # bloquear nuevas entradas si portfolio pierde >1%
+            _loss_limit = _bal * 0.025  # bloquear nuevas entradas si portfolio pierde >2.5% ($2,425 con $97K)
             for p in existing:
                 _pnl  = p.get("profit", 0.0)
                 _pct  = abs(_pnl) / _bal * 100 if _bal > 0 else 0
@@ -1762,7 +1820,7 @@ class TradingSupervisor:
             if _total_pnl < -_loss_limit:
                 print(
                     f"[FILTER-LOSS] {signal.symbol}: skip -- "
-                    f"portfolio perdiendo ${abs(_total_pnl):.2f} (limite=${_loss_limit:.0f} = 1% balance)",
+                    f"portfolio perdiendo ${abs(_total_pnl):.2f} (limite=${_loss_limit:.0f} = 2.5% balance)",
                     flush=True,
                 )
                 return
@@ -1813,6 +1871,9 @@ class TradingSupervisor:
             volume = 0.1
         else:
             volume = vc.calculate_volume(live_capital, _entry_for_vol, sl_val, signal.symbol, risk_pct=risk_pct)
+            if volume == 0.0:
+                print(f"[SKIP-VOL] {signal.symbol}: VolumeCalculator devolvio 0 (capital={live_capital:.0f}) — skip", flush=True)
+                return
 
         # Swing: riesgo adaptativo según déficit diario
         _shortfall = DAILY_PROFIT_TARGET - self._daily_realized_pnl
@@ -1842,6 +1903,10 @@ class TradingSupervisor:
                     # Round DOWN to valid step, then enforce minimum
                     volume = max(round(int(_raw_vol / _step) * _step, 8), _sym_info.volume_min)
                     print(f"[RISK-CAP] {signal.symbol}: riesgo estimado ${_dollar_risk:.0f} > ${MAX_DOLLAR_RISK} cap — vol ajustado a {volume} (step={_step})", flush=True)
+        # Proteccion: swing con vol<0.11L seria tratado como scalp por el monitor — skip
+        if not _is_scalp and volume < 0.11:
+            print(f"[SKIP-MINVOL] {signal.symbol}: vol={volume:.2f}L < 0.11 minimo swing — skip (evita que monitor lo cierre como scalp)", flush=True)
+            return
 
         print(f"[MT5 ORDER] Enviando {signal.symbol} {order_type} vol={volume} sl={sl_val:.5f} tp={tp_val:.5f}", flush=True)
 
@@ -2288,17 +2353,32 @@ class TradingSupervisor:
                             if ok:
                                 self._partial_closed.add(ticket)
                                 pnl_now = p.get("profit", 0.0)
-                                print(
-                                    f"[PARTIAL] {symbol} #{ticket} — cerrado 50% ({half_vol}L) "
-                                    f"al 1:1 RR | P&L parcial ${pnl_now/2:.2f}",
-                                    flush=True,
-                                )
+                                # Move SL to breakeven immediately (not at 1.5R) — reduces
+                                # variance: remaining 50% is now risk-free after partial close
+                                _be_sl = entry + 0.0001 * sl_dist if ptype == "BUY" else entry - 0.0001 * sl_dist
+                                try:
+                                    await loop.run_in_executor(
+                                        None,
+                                        lambda t=ticket, be=round(_be_sl, 5), tp=cur_tp:
+                                        self.mt5.modify_position_sl_tp(t, be, tp)
+                                    )
+                                    print(
+                                        f"[PARTIAL+BE] {symbol} #{ticket} — cerrado 50% ({half_vol}L) "
+                                        f"al 1:1 RR | SL movido a BE {_be_sl:.5f} | P&L parcial ${pnl_now/2:.2f}",
+                                        flush=True,
+                                    )
+                                except Exception:
+                                    print(
+                                        f"[PARTIAL] {symbol} #{ticket} — cerrado 50% ({half_vol}L) "
+                                        f"al 1:1 RR | P&L parcial ${pnl_now/2:.2f}",
+                                        flush=True,
+                                    )
                                 try:
                                     await self.telegram.send_glint_alert(
-                                        f"<b>CIERRE PARCIAL 50% ✅</b>\n"
+                                        f"<b>CIERRE PARCIAL 50% + BE ✅</b>\n"
                                         f"{symbol} #{ticket} — 1:1 RR alcanzado\n"
                                         f"Cerrado {half_vol}L | P&amp;L asegurado: ${pnl_now/2:.2f}\n"
-                                        f"Resto del trade: corriendo libre con SL en breakeven"
+                                        f"SL movido a breakeven — resto del trade GRATIS"
                                     )
                                 except Exception:
                                     pass
@@ -2716,9 +2796,8 @@ class TradingSupervisor:
 
             # Tres triggers de recuperación:
             _day_in_loss      = self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
-            _below_initial    = _current_bal < INITIAL_CAPITAL
             _below_peak       = (self._balance_peak - _current_bal) >= RECOVERY_DRAWDOWN_FROM_PEAK
-            _in_recovery      = (_day_in_loss or _below_initial or _below_peak) and not self._scalp_daily_hit
+            _in_recovery      = (_day_in_loss or _below_peak) and not self._scalp_daily_hit
 
             # Estrategia 5: Modo Aceleración — dia muy bueno → maximizar
             _in_accel = (
@@ -3415,6 +3494,50 @@ class TradingSupervisor:
                 except Exception as _e:
                     print(f"[DEMO-MONITOR] Error: {_e}", flush=True)
 
+                # ── AXI SELECT: chequeo de capital y guard diario ──────────
+                if self._mt5_available:
+                    try:
+                        _acc = await asyncio.get_running_loop().run_in_executor(
+                            None, self.mt5.get_account_info
+                        )
+                        if _acc and _acc.get("equity", 0) > 0:
+                            _eq  = _acc["equity"]
+                            _bal = _acc.get("balance", _eq)
+                            # AxiSelectGuard: emergencia si dia cae -4%
+                            self._axi_guard.set_day_start(_bal)
+                            _guard = self._axi_guard.check(_eq)
+                            if _guard.should_close and not self._axi_paused_today:
+                                self._axi_paused_today = True
+                                print(f"[AXI-GUARD] EMERGENCY CLOSE: {_guard.reason}", flush=True)
+                                try:
+                                    await asyncio.get_running_loop().run_in_executor(
+                                        None, self.mt5.close_all_positions
+                                    )
+                                    await self.telegram.send_glint_alert(
+                                        f"<b>AXI GUARD — LIMITE DIARIO</b>\n{_guard.reason}\nBot pausado hasta manana."
+                                    )
+                                except Exception:
+                                    pass
+                            elif _guard.warning_level:
+                                print(f"[AXI-GUARD] {_guard.reason}", flush=True)
+                            # Reset pausa al inicio del nuevo dia
+                            if self._axi_guard._day_start_date != getattr(self, "_axi_last_reset_date", None):
+                                self._axi_paused_today = False
+                                self._axi_last_reset_date = self._axi_guard._day_start_date
+                            # AxiCapitalAdjuster: detecta si Axi escalo capital
+                            _adj = self._axi_adjuster.check(_bal)
+                            if _adj.adjusted:
+                                print(f"[AXI-CAPITAL] {_adj.reason}", flush=True)
+                                self._axi_tracker.set_capital(_bal)
+                                try:
+                                    await self.telegram.send_glint_alert(
+                                        self._axi_adjuster.format_telegram(_adj)
+                                    )
+                                except Exception:
+                                    pass
+                    except Exception as _axi_chk_exc:
+                        print(f"[AXI-CHECK] error: {_axi_chk_exc}", flush=True)
+
                 # MT5 forex scan (real orders on demo account -- bypass demo slot limit)
 
                 if self._mt5_available:
@@ -3446,20 +3569,23 @@ class TradingSupervisor:
                                 bias  = signal.signal_type.value.upper()
                                 print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="", flush=True)
 
-                                # Siempre actualizar cache H4 — incluso en WAIT para no dejar stale
-                                # APRENDIZAJE 24-Jun: guardar H4 anterior para detectar confirmación reciente
+                                # Cache H4: actualizado desde análisis estructural en _scan_mt5_symbol.
+                                # Aquí solo gestionamos el flag H4-NEW y evitamos sobreescribir con WAIT.
                                 if tf == "H4":
-                                    # "UNKNOWN" = nunca visto (post-restart). "WAIT" = visto y en espera.
-                                    # Solo H4-NEW si el cambio fue WAIT→DIR, no UNKNOWN→DIR (restart)
                                     _h4_prev = self._mt5_h4_direction.get(symbol, "UNKNOWN")
-                                    self._mt5_h4_direction[symbol] = bias
+                                    if bias in ("LONG", "SHORT"):
+                                        # Señal con dirección clara → actualizar siempre
+                                        self._mt5_h4_direction[symbol] = bias
+                                    elif _h4_prev == "UNKNOWN":
+                                        # Primera vez que se ve: setear WAIT
+                                        self._mt5_h4_direction[symbol] = "WAIT"
+                                    # Si bias==WAIT pero prev==LONG/SHORT → preservar dirección estructural
+                                    # (el momentum filter bloqueó la señal pero la estructura sigue igual)
                                     # Si H4 acaba de confirmar (WAIT→LONG/SHORT): marcar como nuevo
-                                    if _h4_prev == "WAIT" and bias in ("LONG", "SHORT"):
+                                    if _h4_prev in ("WAIT", "UNKNOWN") and bias in ("LONG", "SHORT"):
                                         self._mt5_h4_just_confirmed[symbol] = True
                                         print(f"[H4-NEW] {symbol}: H4 acaba de confirmar {bias} — 1 ciclo de espera", flush=True)
-                                    elif bias == "WAIT":
-                                        self._mt5_h4_just_confirmed.pop(symbol, None)
-                                    else:
+                                    elif bias in ("LONG", "SHORT"):
                                         self._mt5_h4_just_confirmed.pop(symbol, None)  # confirmado 2+ ciclos
 
                                 # TRIPLE confirm: D1 + H4 + H1 deben coincidir
@@ -3509,31 +3635,31 @@ class TradingSupervisor:
 
                                     print(f" -- [D1={d1_dir} H4={h4_dir or '?'}] OK", end="", flush=True)
 
-                                # H1 desactivado. H4 swings: score>=95. M15 scalps: threshold por calidad H4
-                                # APRENDIZAJE 24-Jun: H4=WAIT → señal débil, fluctúa rojo/verde sin dirección
-                                # H4=LONG/SHORT confirmado → señal fuerte, opera con threshold normal
-                                if tf == "H1":
-                                    continue
+                                # Solo swings: H4 (principal) y H1 (adicional)
+                                # M15 DESACTIVADO — scalps destruian capital (Jun 25: 79 trades, -$336)
+                                # Backtest 6meses: threshold=80 da 6-7 señales/dia, P(dia>=$250)=46%
+                                # vs threshold=100 que da 2 señales/dia, P(dia>=$250)=31%
                                 if tf == "H4":
-                                    effective_threshold = 95
-                                elif tf == "M15":
+                                    effective_threshold = 85   # era 95 — permite más setups H4
+                                elif tf == "H1":
+                                    # H1 swing: preferible con H4 confirmado, pero permite con score alto
                                     _h4_now = self._mt5_h4_direction.get(symbol, "WAIT")
                                     if _h4_now == "WAIT":
-                                        effective_threshold = max(MT5_SCALP_THRESHOLD, 105)  # H4 WAIT: exige mas que threshold normal
-                                        print(f" [H4=WAIT→thr={effective_threshold}]", end="", flush=True)
+                                        if score >= 100:
+                                            effective_threshold = 100  # D1+H1 triple confirm sin H4
+                                        else:
+                                            print(f" -- [H1-SKIP] H4=WAIT, score {score}<100 sin confirmacion")
+                                            continue
                                     else:
-                                        effective_threshold = MT5_SCALP_THRESHOLD  # H4 confirma: threshold configurado
+                                        effective_threshold = 80   # era 100 — backtest óptimo es 75-80
+                                else:
+                                    continue  # M15 y cualquier otro TF: skip
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
                                 else:
-                                    tag = "SCALP" if tf == "M15" else "SWING"
-                                    # Circuit breaker: si scalps perdieron >$100 hoy, no abrir más scalps
-                                    if tag == "SCALP" and self._scalp_realized_today < -100.0:
-                                        print(f" -- [SCALP-CIRCUIT] bloqueado (scalp P&L=${self._scalp_realized_today:.2f} < -$100)", flush=True)
-                                    else:
-                                        print(f" -- ejecutando {tag} (score={score}>={effective_threshold})")
-                                        await self._send_mt5_real_order(signal)
+                                    print(f" -- ejecutando SWING (score={score}>={effective_threshold})")
+                                    await self._send_mt5_real_order(signal)
                             except Exception as exc:
                                 print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
                             await asyncio.sleep(0.5)

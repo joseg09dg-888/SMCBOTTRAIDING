@@ -168,8 +168,13 @@ class ResearchAgent:
         },
     ]
 
+    _credit_fail_ts: float = 0.0  # cooldown 24h tras error de credito API
+
     def _generate_claude_insight(self) -> list:
         """Genera insight de trading usando Claude API cuando internet falla."""
+        import time
+        if time.time() - self.__class__._credit_fail_ts < 86400:
+            return []  # 24h cooldown tras error de credito
         try:
             import anthropic, os, datetime
             client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
@@ -197,7 +202,11 @@ class ResearchAgent:
                     "relevance": 0.85,
                 }]
         except Exception as e:
-            print(f"[RESEARCH] claude insight error: {e}", flush=True)
+            if "credit balance" in str(e).lower():
+                self.__class__._credit_fail_ts = time.time()
+                print(f"[RESEARCH] Claude API sin credito — pausando 24h", flush=True)
+            else:
+                print(f"[RESEARCH] claude insight error: {e}", flush=True)
         return []
 
     def run_cycle(self):

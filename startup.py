@@ -92,10 +92,10 @@ async def send_welcome(supervisor: TradingSupervisor, capital: float, auto: bool
                 capital = balance
                 print(f"[OK] Capital detectado desde MT5: ${capital:,.2f}", flush=True)
             else:
-                capital = 10_000.0
+                capital = 97_000.0  # fallback conservador: balance real Axi (~$97K)
                 print(f"[WARN] No se pudo leer balance MT5, usando ${capital:,.0f}", flush=True)
         except Exception as e:
-            capital = 10_000.0
+            capital = 97_000.0  # fallback conservador: balance real Axi (~$97K)
             print(f"[WARN] Error leyendo MT5 balance: {e} — usando ${capital:,.0f}", flush=True)
 
     supervisor.capital = capital

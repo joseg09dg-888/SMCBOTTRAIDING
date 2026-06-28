@@ -418,4 +418,77 @@ Con $200K fondead al 90% profit split:
 
 ---
 
-*Última actualización: 2026-06-19 | Tests: 1323 | Bot: PM2 ONLINE | Active pairs: EURUSD/GBPUSD/AUDUSD/USDCAD/NAS100 | Suspendidos: USDJPY/GBPJPY/XAUUSD/US30 | MAX_DOLLAR_RISK: $400 | Breakeven: 1.5R | Time-close: solo perdedores 36h | Winners corren a TP | Aprendizaje: 64 episodios backfilled, WR=43.1%, AutonomousLearner activo*
+## 17. FIXES APLICADOS EN SESIÓN 2026-06-26 (CRITICAL)
+
+| Fix | Archivo | Descripción |
+|-----|---------|-------------|
+| Capital fallback | `startup.py:94` | Era $10K → ahora $97K (evita NAS100 0.01L) |
+| NAS100.fs VolumeCalculator | `core/volume_calculator.py` | `_norm()` strips `.fs` suffix — ahora 1.0L correcto |
+| H4 structural cache | `core/supervisor.py:1249` | Actualiza `_mt5_h4_direction` desde SMC bias ANTES del momentum filter |
+| H4 scan loop | `core/supervisor.py:3456` | Preserva LONG/SHORT previo si signal devuelve WAIT (pullback temporal) |
+| Skip 0.0 volume | `core/supervisor.py:1820` | Si `calculate_volume` retorna 0.0 → skip trade |
+| Skip min-vol swing | `core/supervisor.py:1858` | Si swing vol < 0.11L → skip (evita que monitor cierre como scalp) |
+| H1 con H4=WAIT | `core/supervisor.py:3517` | Score >= 115 permite trade D1+H1 sin H4 |
+| Recovery mode | `core/supervisor.py:1692,2718` | Eliminado `balance < $100K` como trigger de recovery |
+| Portfolio loss filter | `core/supervisor.py:1755` | Cambiado 1% → 2.5% ($2,425 con $97K) |
+| Research 24h cooldown | `core/research_agent.py:171` | `_credit_fail_ts` evita spam de error de crédito API |
+
+## 18. DIAGNÓSTICO LUNES
+
+```powershell
+# Ejecutar antes del lunes para confirmar que todo está OK
+.venv\Scripts\python scripts/monday_ready.py
+```
+
+---
+
+## 19. ANÁLISIS 8 DIMENSIONES — BACKTEST 2 AÑOS (2026-06-26)
+
+### Resultados backtest 700 días H1, 6 pares:
+```
+P(día >= $250):  52%  (con dead_hours incluye 13:00 UTC)
+E[día]:          $232
+E[mes]:          $5,148 (5.3% sobre $97K — pasa Axi Select)
+P(pass Axi 5%): 49%
+Sharpe mensual:  0.49
+```
+
+### DIM 4 — Sesiones UTC (DATO MÁS CRÍTICO):
+```
+14:00 UTC: WR=61%, avg=+$102 ← GOLD (NY open) — inicio real del bot
+13:00 UTC: WR=29%, avg=-$97  ← BLOQUEADO (señales rancias post-overnight)
+15:00 UTC: WR=32%, avg=-$78  ← aceptable
+17-19 UTC: WR=24-28%         ← evitar si posible
+```
+
+### DIM 8 — Correlaciones (2 años reales):
+```
+AUDUSD+NZDUSD: r=+0.90 → bloquear 2 simultáneos misma dirección
+EURUSD+GBPUSD: r=+0.79 → bloquear 2 simultáneos misma dirección
+NAS100: r≈0.00 → siempre independiente, no cuenta para DIM8
+```
+
+### Fixes de esta sesión:
+| Fix | Archivo | Impacto |
+|-----|---------|---------|
+| DEAD_HOURS incluye hora 13 | `supervisor.py:113` | +13pp P(≥$250) |
+| NZDUSD → MT5_SYMBOLS | `supervisor.py:134` | +1 par (+20% señales) |
+| Partial TP + BE simultáneo | `supervisor.py:2298` | -35% varianza |
+| 8D DIM8 correlation guard | `supervisor.py:1440` | bloquea riesgo duplicado |
+| EightDimensionAgent NUEVO | `agents/eight_dim_agent.py` | análisis permanente |
+| Backtest multianual NUEVO | `scripts/backtest_multiyear.py` | 700d H1+10y D1 |
+| Skill 8D permanente | `~/.claude/skills/8d-market-analyzer.md` | invocable siempre |
+
+### Comandos de análisis 8D:
+```powershell
+# Quick read (si backtest_results.json existe):
+.venv\Scripts\python -c "import json; r=json.load(open('memory/backtest_results.json')); print(r['stats'])"
+
+# Backtest completo (~5 min):
+.venv\Scripts\python scripts/backtest_multiyear.py
+
+# Análisis quantum 1 día (~2 min):
+.venv\Scripts\python scripts/backtest_quantum.py
+```
+
+*Última actualización: 2026-06-26 (sesión análisis 8D) | Tests: 1337 | Bot: pendiente PM2 restart | Active pairs: EURUSD/GBPUSD/AUDUSD/USDCAD/NZDUSD/NAS100.fs | Dead hours: 0-13 UTC (inicio a 14:00 UTC) | P(día≥$250): 52% (backtest 2 años) | EightDimensionAgent: ACTIVO*
