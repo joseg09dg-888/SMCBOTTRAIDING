@@ -113,6 +113,17 @@ def test_status_contains_mode(commander):
     assert len(result.message) > 5
 
 
+def test_session_command_returns_snapshot(commander):
+    result = commander.handle_command("/session")
+    assert result.success is True
+    assert result.action == "session"
+    msg = result.message
+    assert "SESSION" in msg
+    assert "$250" in msg
+    assert "DIM6" in msg
+    assert "Meta" in msg or "META" in msg
+
+
 def test_demo_command_no_supervisor(commander):
     """Without supervisor, /demo returns graceful empty message."""
     commander._supervisor = None

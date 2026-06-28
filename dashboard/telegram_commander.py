@@ -83,6 +83,7 @@ COMMANDS = {
     "/plan":             "Plan financiero 70-20-10 — donde va el capital del bot",
     "/demo":             "Posiciones demo Binance crypto con P&L en vivo",
     "/performance":      "Performance real: win rate, profit factor, P&L cuenta Axi",
+    "/session":          "Snapshot de sesion en vivo: P&L, posiciones, target $250, DIM6",
 }
 
 
@@ -161,6 +162,7 @@ class TelegramCommander:
             "/axi":              self._cmd_axi,
             "/axicheck":         self._cmd_axicheck,
             "/plan":             self._cmd_plan,
+            "/session":          self._cmd_session,
             "/ver_mt5":          self._cmd_ver_mt5,
             "/proteger":         self._cmd_proteger,
             "/demo":             self._cmd_demo,
@@ -1203,6 +1205,119 @@ class TelegramCommander:
 
         msg = tracker.format_telegram(axi_monthly_income=monthly_income)
         return CommandResult(success=True, message=msg, action="plan")
+
+    def _cmd_session(self) -> CommandResult:
+        """Snapshot de sesion en vivo: P&L, posiciones, progreso a $250, DIM6."""
+        import datetime as _dt
+        from core.config import config as cfg
+
+        now_utc = _dt.datetime.now(_dt.timezone.utc)
+        session_start = now_utc.replace(hour=13, minute=0, second=0, microsecond=0)
+        if now_utc.hour < 13:
+            session_start -= _dt.timedelta(days=1)
+        elapsed = now_utc - session_start
+        h, rem = divmod(int(elapsed.total_seconds()), 3600)
+        m = rem // 60
+
+        # MT5 data
+        bal = eq = float_pnl = 0.0
+        positions_txt = ""
+        day_realized = 0.0
+        try:
+            import MetaTrader5 as _mt5lib
+            import os as _os
+            from dotenv import load_dotenv as _lde
+            _lde()
+            _mt5lib.initialize()
+            _mt5lib.login(
+                int(_os.getenv("MT5_LOGIN", "0")),
+                _os.getenv("MT5_PASSWORD", ""),
+                _os.getenv("MT5_SERVER", ""),
+            )
+            acc = _mt5lib.account_info()
+            if acc:
+                bal       = acc.balance
+                eq        = acc.equity
+                float_pnl = acc.profit
+            # Today's realized P&L
+            today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            deals = _mt5lib.history_deals_get(today_start, now_utc) or []
+            day_realized = sum(d.profit + d.swap + d.commission for d in deals if d.entry == 1)
+            # Open positions
+            for p in (_mt5lib.positions_get() or []):
+                side   = "BUY" if p.type == 0 else "SELL"
+                profit = p.profit
+                icon   = "🟢" if profit >= 0 else "🔴"
+                sl_d   = abs(p.price_current - p.sl) if p.sl else 0
+                tp_d   = abs(p.tp - p.price_current) if p.tp else 0
+                positions_txt += (
+                    f"  {icon} {p.symbol} {side} {p.volume}L "
+                    f"P&amp;L: <code>${profit:+.2f}</code> "
+                    f"SL:{sl_d:.1f} TP:{tp_d:.1f}\n"
+                )
+            _mt5lib.shutdown()
+        except Exception as e:
+            positions_txt = f"  MT5: {e}\n"
+
+        if not positions_txt:
+            positions_txt = "  Sin posiciones abiertas\n"
+
+        # Progreso hacia meta $250
+        net_session = day_realized + float_pnl
+        progress = min(100, max(0, net_session / 250 * 100))
+        bar_filled = int(progress / 10)
+        bar = "█" * bar_filled + "░" * (10 - bar_filled)
+        target_icon = "✅" if net_session >= 250 else ("🟡" if net_session >= 125 else "🔴")
+
+        # DIM6 status desde scan_stats
+        dim6_txt = "Sin datos"
+        try:
+            import json, os
+            stats_f = os.path.join("memory", "scan_stats.json")
+            if os.path.exists(stats_f):
+                st = json.load(open(stats_f))
+                consec_loss = st.get("consecutive_losses", 0)
+                wr5 = st.get("wr_last5", None)
+                monthly_pct = st.get("monthly_profit_pct", 0.0)
+                dim6_icon = "🟢" if consec_loss < 3 else "🚨"
+                wr_txt = f"WR5: {wr5:.0%}" if wr5 is not None else "WR5: N/A"
+                dim6_txt = f"{dim6_icon} Perdidas consec: {consec_loss}/3 | {wr_txt} | Mes: {monthly_pct:.1f}%"
+        except Exception:
+            pass
+
+        # Axi Select tracker
+        axi_txt = ""
+        try:
+            from agents.axi_select_tracker import AxiSelectTracker
+            axi = AxiSelectTracker()
+            st = axi.get_status()
+            days_left = max(0, 30 - st.days_traded)
+            axi_txt = (
+                f"<b>Axi Select:</b> Dia {st.days_traded}/30 | "
+                f"P&amp;L: <code>${st.monthly_pnl:+.2f}</code> | "
+                f"DD: <code>{st.max_drawdown_pct:.1f}%</code> | "
+                f"{days_left}d restantes\n"
+            )
+        except Exception:
+            pass
+
+        msg = (
+            f"<b>SESSION LIVE — {now_utc.strftime('%H:%M')} UTC "
+            f"(+{h}h{m:02d}m)</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>Cuenta:</b> Balance <code>${bal:,.2f}</code> | "
+            f"Equity <code>${eq:,.2f}</code>\n"
+            f"\n<b>Posiciones:</b>\n{positions_txt}"
+            f"\n<b>Meta dia $250:</b>\n"
+            f"  [{bar}] {progress:.0f}%\n"
+            f"  {target_icon} Realizado+Float: <code>${net_session:+.2f}</code> / $250\n"
+            f"  Realizado: <code>${day_realized:+.2f}</code> | Float: <code>${float_pnl:+.2f}</code>\n"
+            f"\n<b>DIM6 Circuit:</b> {dim6_txt}\n"
+            f"\n{axi_txt}"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<i>/session para actualizar • /close_all para cerrar todo</i>"
+        )
+        return CommandResult(success=True, message=msg, action="session")
 
     def _log_mode_change(self, mode: str, reason: str):
         self.state.mode_history.append({
