@@ -3014,14 +3014,17 @@ class TradingSupervisor:
                         except Exception:
                             pass
 
-            # ── 0b. Swing dollar-stop: confiar en el SL de MT5 (ATR-based)
-            # MAX_DOLLAR_RISK ya limita el riesgo al abrir — no cerrar antes del SL
-            SWING_MAX_LOSS = -200.0  # igual que MAX_DOLLAR_RISK: dejar que el SL de MT5 actúe
+            # ── 0b. Swing dollar-stop: cierre automatico sin preguntar
+            SWING_MAX_LOSS = -75.0   # era -200: cierra solo a -$75 sin intervención humana
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
                 sw_ticket = sw["ticket"]
                 sw_sym    = sw.get("symbol", "?")
-                if sw_pnl <= SWING_MAX_LOSS:
+                # Auto-close si pierde $75 O si lleva >45min perdiendo >$30
+                sw_open_time = sw.get("open_time", 0)
+                sw_mins_open = (time.time() - sw_open_time) / 60 if sw_open_time else 0
+                sw_auto_close = sw_pnl <= SWING_MAX_LOSS or (sw_pnl < -30.0 and sw_mins_open > 45)
+                if sw_auto_close:
                     ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
                     if ok:
                         self._position_peaks.pop(sw_ticket, None)
