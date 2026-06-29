@@ -2823,6 +2823,11 @@ class TradingSupervisor:
             mt5_daily = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
             if mt5_daily is not None:
                 self._daily_realized_pnl = float(mt5_daily)
+                # Si el PnL REAL está bajo el target (ej: ganó $277 luego NAS100 -$212 → $65)
+                # el flag se resetea para que el bot pueda seguir operando y llegar a $250
+                if self._daily_target_hit and self._daily_realized_pnl < DAILY_PROFIT_TARGET:
+                    self._daily_target_hit = False
+                    print(f"[META-RESET] PnL=${self._daily_realized_pnl:.2f} bajo meta $250 — bot puede operar swings", flush=True)
 
             # ── Swing profit target: cierra SWINGS cuando llegan a $245 juntos ──
             # Los scalps siguen corriendo para acumular más ganancia.
