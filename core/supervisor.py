@@ -91,7 +91,7 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY"]
 # UN solo modo: SCALP M15 con 0.1L
 # Score >= 85 (calidad alta), TP=$10, SL=-$4, max 10 simultáneas
 # Sin swings, sin recovery modes, sin aceleración — solo scalps limpios
-MT5_REAL_SCORE_THRESHOLD = 80   # ajustado para swing_lookback=5
+MT5_REAL_SCORE_THRESHOLD = 75   # threshold base — ADAPT-THR lo sube segun WR
 MT5_SCALP_THRESHOLD      = 100  # era 80: solo scalps de alta calidad
 MT5_SCORE_AUTO_REDUCE    = 75
 MT5_SCORE_REDUCE_AFTER_H = 4
@@ -2775,15 +2775,15 @@ class TradingSupervisor:
             wins = sum(1 for d in recent if d.profit > 0)
             wr   = wins / len(recent)
             if wr >= 0.65:
-                thr = 80
+                thr = 75
             elif wr >= 0.55:
-                thr = 82
+                thr = 77
             elif wr >= 0.40:
-                thr = 85
+                thr = 80
             else:
-                thr = 85   # cap duro: nunca bloquear el bot con threshold > 85
+                thr = 80   # cap duro: nunca subir mas de 80 — evitar paralizar el bot
             # No aplicar learner aqui — sube a 95 y paraliza el bot
-            print(f"[ADAPT-THR] WR={wr*100:.0f}% → threshold={thr} (cap=85)", flush=True)
+            print(f"[ADAPT-THR] WR={wr*100:.0f}% → threshold={thr} (cap=80)", flush=True)
             return thr
         except Exception as _e:
             return MT5_REAL_SCORE_THRESHOLD  # fallback al default
