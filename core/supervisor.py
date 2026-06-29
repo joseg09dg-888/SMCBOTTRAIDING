@@ -139,7 +139,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "AUDUSD", "USDCAD", "NZDUSD"]  # NAS100 bloqueado: 12 SL hoy
+MT5_SYMBOLS      = ["USDCAD", "EURUSD"]  # SOLO pares rentables (30d: USDCAD WR=57% net=+$66, EURUSD WR=34% net=+$131)
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 swing principal | H1 swing adicional | M15 scalps DESACTIVADOS (destruian capital)
 
 MT5_MIN_VOLUME   = 0.01
@@ -3019,16 +3019,15 @@ class TradingSupervisor:
                         except Exception:
                             pass
 
-            # ── 0b. Swing dollar-stop: cierre automatico sin preguntar
-            SWING_MAX_LOSS = -75.0   # era -200: cierra solo a -$75 sin intervención humana
+            # ── 0b. Swing dollar-stop: solo cierre de emergencia — dejar que SL del broker actúe
+            # No cerrar antes del SL: los swings USDCAD necesitan tiempo para llegar al TP (+$247)
+            # El broker SL ya protege el capital. Auto-close solo si falla el broker SL (emergencia).
+            SWING_MAX_LOSS = -150.0  # emergencia si broker SL falla — no interferir antes
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
                 sw_ticket = sw["ticket"]
                 sw_sym    = sw.get("symbol", "?")
-                # Auto-close si pierde $75 O si lleva >45min perdiendo >$30
-                sw_open_time = sw.get("open_time", 0)
-                sw_mins_open = (time.time() - sw_open_time) / 60 if sw_open_time else 0
-                sw_auto_close = sw_pnl <= SWING_MAX_LOSS or (sw_pnl < -30.0 and sw_mins_open > 45)
+                sw_auto_close = sw_pnl <= SWING_MAX_LOSS  # solo emergencia — NO cerrar por tiempo
                 if sw_auto_close:
                     ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
                     if ok:
