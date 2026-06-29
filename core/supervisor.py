@@ -1322,6 +1322,22 @@ class TradingSupervisor:
                 from agents.signal_agent import SignalType as _ST
                 return type('S', (), {'signal_type': _ST.WAIT, 'decision_score': 0})()
 
+        # Hard trend filter: SMA50 vs SMA200 on current timeframe data
+        # Only trade WITH the dominant trend — never against it
+        if len(df) >= 200:
+            _sma50  = float(df["close"].rolling(50).mean().iloc[-1])
+            _sma200 = float(df["close"].rolling(200).mean().iloc[-1])
+            _real_trend = "UP" if _sma50 > _sma200 else "DOWN"
+            _smc_bias = smc.get("bias", "neutral")
+            if _real_trend == "UP" and _smc_bias == "bearish":
+                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bearish pero SMA50>{_sma200:.5f} — tendencia REAL es UP, bloqueando SELL", flush=True)
+                from agents.signal_agent import SignalType as _ST2
+                return type('S', (), {'signal_type': _ST2.WAIT, 'decision_score': 0})()
+            if _real_trend == "DOWN" and _smc_bias == "bullish":
+                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bullish pero SMA50<{_sma200:.5f} — tendencia REAL es DOWN, bloqueando BUY", flush=True)
+                from agents.signal_agent import SignalType as _ST2
+                return type('S', (), {'signal_type': _ST2.WAIT, 'decision_score': 0})()
+
         signal = self.signal_agent.evaluate(
 
             analysis_text=smc["analysis_text"], symbol=symbol,
