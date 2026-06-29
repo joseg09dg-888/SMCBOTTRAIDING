@@ -261,6 +261,17 @@ class MT5Connector:
                     elif ot == mt5.ORDER_TYPE_SELL and tp >= price - safe_dist:
                         tp = round(price - safe_dist, info.digits)
 
+            # Detect supported filling mode — NAS100/indices on some brokers only support FOK or RETURN
+            _sym_fill = mt5.symbol_info(symbol)
+            _fill_mode_order = mt5.ORDER_FILLING_IOC
+            if _sym_fill:
+                _fm = _sym_fill.filling_mode
+                if _fm & 0x01:
+                    _fill_mode_order = mt5.ORDER_FILLING_FOK
+                elif _fm & 0x02:
+                    _fill_mode_order = mt5.ORDER_FILLING_IOC
+                elif _fm & 0x04:
+                    _fill_mode_order = mt5.ORDER_FILLING_RETURN
             request = {
                 "action":       mt5.TRADE_ACTION_DEAL,
                 "symbol":       symbol,
@@ -273,7 +284,7 @@ class MT5Connector:
                 "magic":        234000,
                 "comment":      "SMC Bot",
                 "type_time":    mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "type_filling": _fill_mode_order,
             }
             result = mt5.order_send(request)
             if result is None:
@@ -328,22 +339,33 @@ class MT5Connector:
                     _close_type = mt5.ORDER_TYPE_SELL if ot == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
                     _close_tick = mt5.symbol_info_tick(symbol)
                     _close_price = _close_tick.bid if ot == mt5.ORDER_TYPE_BUY else _close_tick.ask
+                    # Detect supported filling mode for this symbol to avoid retcode=10013
+                    _sym_fill_info = mt5.symbol_info(symbol)
+                    _fill_mode = mt5.ORDER_FILLING_IOC
+                    if _sym_fill_info:
+                        _fm = _sym_fill_info.filling_mode
+                        if _fm & 0x01:
+                            _fill_mode = mt5.ORDER_FILLING_FOK
+                        elif _fm & 0x02:
+                            _fill_mode = mt5.ORDER_FILLING_IOC
+                        elif _fm & 0x04:
+                            _fill_mode = mt5.ORDER_FILLING_RETURN
                     _close_req = {
                         "action":       mt5.TRADE_ACTION_DEAL,
                         "symbol":       symbol,
                         "volume":       volume,
                         "type":         _close_type,
-                        "position":     result.order,
+                        "position":     _pos_ticket,
                         "price":        _close_price,
                         "deviation":    100,
                         "magic":        234000,
                         "comment":      "SMC Bot NoSL Close",
                         "type_time":    mt5.ORDER_TIME_GTC,
-                        "type_filling": mt5.ORDER_FILLING_IOC,
+                        "type_filling": _fill_mode,
                     }
                     _cr = mt5.order_send(_close_req)
                     if _cr and _cr.retcode == mt5.TRADE_RETCODE_DONE:
-                        logger.error(f"MT5 NoSL position #{result.order} CLOSED immediately.")
+                        logger.error(f"MT5 NoSL position #{_pos_ticket} CLOSED immediately.")
                         return {"error": f"SL/TP failed — position closed immediately to avoid exposure"}
                     else:
                         logger.error(f"MT5 NoSL close FAILED retcode={_cr.retcode if _cr else 'None'} — MANUAL INTERVENTION REQUIRED")

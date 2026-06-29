@@ -710,8 +710,41 @@ class TradingSupervisor:
             # Without this, bot could open new trades even if today's target was already hit.
             _today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             _realized  = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
+            _realized_val = float(_realized) if (_realized is not None and float(_realized) != 0.0) else None
+
+            # Fallback: if MT5 history returns 0 on restart, use balance-based estimate.
+            # Saves today's start balance on first startup; subsequent restarts use the diff.
+            _start_bal_file = os.path.join("memory", "daily_start_balance.json")
+            try:
+                _start_data = json.load(open(_start_bal_file)) if os.path.exists(_start_bal_file) else {}
+            except Exception:
+                _start_data = {}
+            if _start_data.get("date") != _today_str:
+                # First startup of the day — save starting balance
+                _start_data = {"date": _today_str, "balance": bal}
+                try:
+                    json.dump(_start_data, open(_start_bal_file, "w"))
+                except Exception:
+                    pass
+            if _realized_val is None:
+                # MT5 history returned 0 — read real balance directly to compute diff.
+                # `bal` above may be a connector fallback; read account_info raw here.
+                try:
+                    import MetaTrader5 as _mt5raw
+                    _raw_info = _mt5raw.account_info()
+                    _real_bal = float(_raw_info.balance) if _raw_info else None
+                except Exception:
+                    _real_bal = None
+                _start_bal = _start_data.get("balance", 0.0)
+                if _real_bal and _real_bal > 0 and _start_bal > 0:
+                    _realized_val = max(0.0, _real_bal - _start_bal)
+                    if _realized_val > 0:
+                        print(f"[STARTUP] PnL via balance-diff: ${_realized_val:.2f} (bal=${_real_bal:.0f} start=${_start_bal:.0f})", flush=True)
+                if not _realized_val:
+                    _realized_val = 0.0
+
             self._daily_pnl_date     = _today_str
-            self._daily_realized_pnl = float(_realized) if _realized is not None else 0.0
+            self._daily_realized_pnl = _realized_val if _realized_val is not None else 0.0
             if self._daily_realized_pnl >= DAILY_PROFIT_TARGET:
                 self._daily_target_hit = True
                 print(f"[STARTUP] Meta diaria ya cumplida: ${self._daily_realized_pnl:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — sin trades hoy", flush=True)
@@ -1895,14 +1928,18 @@ class TradingSupervisor:
             except Exception:
                 pass
             if _sym_info:
-                _pip_val = _sym_info.trade_contract_size * _sym_info.point
-                _dollar_risk = volume * (_sl_pips / _sym_info.point) * _pip_val
-                if _dollar_risk > MAX_DOLLAR_RISK and _sl_pips > 0:
-                    _raw_vol = MAX_DOLLAR_RISK / ((_sl_pips / _sym_info.point) * _pip_val)
+                # Use VolumeCalculator pip tables to avoid 100x error on NAS100/US30
+                from core.volume_calculator import VolumeCalculator as _VC
+                _base = _VC._norm(signal.symbol)
+                _vc_pip_size  = _VC._PIP_SIZE.get(_base, _sym_info.point)
+                _vc_pip_value = _VC._PIP_VALUE.get(_base, _sym_info.trade_contract_size * _sym_info.point)
+                _sl_in_pips   = _sl_pips / _vc_pip_size
+                _dollar_risk  = volume * _sl_in_pips * _vc_pip_value
+                if _dollar_risk > MAX_DOLLAR_RISK and _sl_in_pips > 0:
+                    _raw_vol = MAX_DOLLAR_RISK / (_sl_in_pips * _vc_pip_value)
                     _step = _sym_info.volume_step if _sym_info.volume_step > 0 else 0.01
-                    # Round DOWN to valid step, then enforce minimum
                     volume = max(round(int(_raw_vol / _step) * _step, 8), _sym_info.volume_min)
-                    print(f"[RISK-CAP] {signal.symbol}: riesgo estimado ${_dollar_risk:.0f} > ${MAX_DOLLAR_RISK} cap — vol ajustado a {volume} (step={_step})", flush=True)
+                    print(f"[RISK-CAP] {signal.symbol}: riesgo ${_dollar_risk:.0f} > ${MAX_DOLLAR_RISK} — vol={volume}L", flush=True)
         # Proteccion: swing con vol<0.11L seria tratado como scalp por el monitor — skip
         if not _is_scalp and volume < 0.11:
             print(f"[SKIP-MINVOL] {signal.symbol}: vol={volume:.2f}L < 0.11 minimo swing — skip (evita que monitor lo cierre como scalp)", flush=True)
@@ -2815,7 +2852,7 @@ class TradingSupervisor:
                     if _below_peak and self._balance_peak > INITIAL_CAPITAL:
                         _gap = self._balance_peak - _current_bal
                         print(f"[RECOVERY] Cayó ${_gap:.0f} del pico ${self._balance_peak:,.0f} — recuperando", flush=True)
-                    elif _below_initial:
+                    elif _current_bal < INITIAL_CAPITAL:
                         print(f"[RECOVERY] Balance ${_current_bal:,.0f} bajo $100K — recuperando capital base", flush=True)
                     else:
                         print(f"[RECOVERY] Dia ${self._daily_realized_pnl:.2f} — recuperando el dia", flush=True)
