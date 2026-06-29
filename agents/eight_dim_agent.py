@@ -398,13 +398,16 @@ class EightDimensionAgent:
             pos_type = str(pos.get("type", "")).upper()  # "BUY" or "SELL" or "LONG" or "SHORT"
             pos_dir = self._normalize_dir(pos_type)
 
+            # Same symbol: MAX_OPEN handles position count — DIM8 is for CROSS-PAIR correlation
+            if pos_sym == sym_base:
+                continue
+
             for g_idx, group in enumerate(_CORR_GROUPS):
                 if g_idx == 2:
                     continue  # indices don't count
                 if pos_sym in group and g_idx == new_group:
-                    # Same correlation group!
+                    # Same correlation group, DIFFERENT symbol = DUPLICATE RISK
                     if pos_dir == new_dir:
-                        # Same direction = DUPLICATE RISK
                         return False, (
                             f"DIM8-BLOCK: {sym_base} {new_dir} = same USD exposure as "
                             f"{pos_sym} {pos_dir} (corr group {g_idx}) — skipping to avoid doubled risk"
