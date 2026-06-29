@@ -3735,7 +3735,7 @@ class TradingSupervisor:
                                 # Backtest 6meses: threshold=80 da 6-7 señales/dia, P(dia>=$250)=46%
                                 # vs threshold=100 que da 2 señales/dia, P(dia>=$250)=31%
                                 if tf == "H4":
-                                    effective_threshold = 85   # era 95 — permite más setups H4
+                                    effective_threshold = mt5_threshold  # ADAPT-THR dinamico (75-80)
                                 elif tf == "H1":
                                     # H1 swing: preferible con H4 confirmado, pero permite con score alto
                                     _h4_now = self._mt5_h4_direction.get(symbol, "WAIT")
@@ -3746,7 +3746,7 @@ class TradingSupervisor:
                                             print(f" -- [H1-SKIP] H4=WAIT, score {score}<100 sin confirmacion")
                                             continue
                                     else:
-                                        effective_threshold = 80   # era 100 — backtest óptimo es 75-80
+                                        effective_threshold = max(75, mt5_threshold - 5)  # H1 siempre 5pts menos que H4
                                 else:
                                     continue  # M15 y cualquier otro TF: skip
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
