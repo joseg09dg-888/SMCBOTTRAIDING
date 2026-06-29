@@ -139,7 +139,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY", "AUDUSD", "USDCAD", "NZDUSD", "NAS100.fs"]
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "AUDUSD", "USDCAD", "NZDUSD", "NAS100.fs"]
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 swing principal | H1 swing adicional | M15 scalps DESACTIVADOS (destruian capital)
 
 MT5_MIN_VOLUME   = 0.01
@@ -410,8 +410,14 @@ class TradingSupervisor:
         # Time-close retry cooldown: ticket → last attempt timestamp
         self._close_attempted: Dict[int, float] = {}
         # Symbol cooldown tras SL: (symbol, direction) → timestamp del SL
-        # Evita reentradas inmediatas en el mismo par/dirección tras pérdida
-        self._symbol_sl_time: Dict[str, float] = {}  # "EURUSD_SHORT" → timestamp
+        # Persiste en disco para sobrevivir reinicios
+        _sl_time_file = os.path.join("memory", "sl_cooldown_state.json")
+        try:
+            _sl_raw = json.load(open(_sl_time_file)) if os.path.exists(_sl_time_file) else {}
+            import time as _tsl; _now = _tsl.time()
+            self._symbol_sl_time: Dict[str, float] = {k: v for k, v in _sl_raw.items() if _now - v < 14400}
+        except Exception:
+            self._symbol_sl_time: Dict[str, float] = {}
         # Daily profit target tracking
         self._daily_pnl_date: str = ""           # "YYYY-MM-DD" UTC
         self._daily_realized_pnl: float = 0.0   # closed trades today
@@ -3003,7 +3009,11 @@ class TradingSupervisor:
                         # Registrar cooldown: no reabrir este par/dirección por 4 horas
                         import time as _t; _sw_dir = "BUY" if sw.get("type") == "BUY" else "SELL"
                         self._symbol_sl_time[f"{sw_sym}_{_sw_dir}"] = _t.time()
-                        print(f"[SWING-STOP] {sw_sym} #{sw_ticket} cerrado ${sw_pnl:+.2f} → COOLDOWN 4h", flush=True)
+                        try:
+                            json.dump(self._symbol_sl_time, open(os.path.join("memory", "sl_cooldown_state.json"), "w"))
+                        except Exception:
+                            pass
+                        print(f"[SWING-STOP] {sw_sym} #{sw_ticket} cerrado ${sw_pnl:+.2f} → COOLDOWN 4h (persistido)", flush=True)
                         try:
                             await self.telegram.send_glint_alert(
                                 f"<b>SWING STOP -$50</b>\n{sw_sym} #{sw_ticket}\nCerrado en ${sw_pnl:.2f}"
