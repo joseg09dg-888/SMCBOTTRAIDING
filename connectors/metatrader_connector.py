@@ -551,12 +551,22 @@ class MT5Connector:
             if price <= 0:
                 logger.error(f"close_position: precio invalido ({price}) para {p.symbol}")
                 return False
+            _sym_fill = mt5.symbol_info(p.symbol)
+            _fill_mode = mt5.ORDER_FILLING_IOC
+            if _sym_fill:
+                _fm = _sym_fill.filling_mode
+                if _fm & 0x01:
+                    _fill_mode = mt5.ORDER_FILLING_FOK
+                elif _fm & 0x02:
+                    _fill_mode = mt5.ORDER_FILLING_IOC
+                elif _fm & 0x04:
+                    _fill_mode = mt5.ORDER_FILLING_RETURN
             request = {
                 "action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol,
                 "volume": p.volume, "type": close_type,
                 "position": ticket, "price": price,
                 "deviation": 20, "comment": "SMC Bot Close",
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "type_filling": _fill_mode,
             }
             result = mt5.order_send(request)
             return result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
@@ -588,12 +598,22 @@ class MT5Connector:
             if tick is None:
                 return False
             price = tick.bid if close_type == mt5.ORDER_TYPE_SELL else tick.ask
+            _sym_fill2 = mt5.symbol_info(p.symbol)
+            _fill_mode2 = mt5.ORDER_FILLING_IOC
+            if _sym_fill2:
+                _fm2 = _sym_fill2.filling_mode
+                if _fm2 & 0x01:
+                    _fill_mode2 = mt5.ORDER_FILLING_FOK
+                elif _fm2 & 0x02:
+                    _fill_mode2 = mt5.ORDER_FILLING_IOC
+                elif _fm2 & 0x04:
+                    _fill_mode2 = mt5.ORDER_FILLING_RETURN
             request = {
                 "action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol,
                 "volume": vol, "type": close_type,
                 "position": ticket, "price": price,
                 "deviation": 20, "comment": "SMC PartialClose 50%",
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "type_filling": _fill_mode2,
             }
             result = mt5.order_send(request)
             ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
@@ -606,3 +626,15 @@ class MT5Connector:
         except Exception as e:
             logger.error(f"MT5 partial_close error: {e}")
             return False
+
+    def close_all_positions(self) -> int:
+        """Close all open positions. Returns number successfully closed."""
+        if not HAS_MT5:
+            return 0
+        positions = self.get_positions()
+        closed = 0
+        for p in positions:
+            ticket = p.get("ticket", 0)
+            if ticket and self.close_position(ticket):
+                closed += 1
+        return closed

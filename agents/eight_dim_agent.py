@@ -53,7 +53,7 @@ _REGIME_MULT: Dict[Tuple[str,str], float] = {
 # London/NY overlap 13-16 UTC = gold; late NY 16-20 = good; Asia = avoid
 _SESSION_MULT: Dict[int, Tuple[float, str]] = {
     12: (0.85, "OK"),
-    13: (1.20, "GOLD"),   # NY open — highest institutional flow
+    13: (0.60, "POOR"),   # Bloqueado en DEAD_HOURS: WR real=29%, avg=-$97/trade (backtest 2y)
     14: (1.25, "GOLD"),   # NY open — strongest momentum
     15: (1.15, "GOLD"),   # London close / NY mid
     16: (1.05, "GOOD"),   # London closed, NY still active

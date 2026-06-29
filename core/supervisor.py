@@ -1,5 +1,5 @@
 import asyncio
-
+import json
 import logging
 
 import os
@@ -139,7 +139,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "AUDUSD", "USDCAD", "NZDUSD", "NAS100.fs"]
+MT5_SYMBOLS      = ["EURUSD", "GBPUSD", "AUDUSD", "USDCAD", "NZDUSD"]  # NAS100 bloqueado: 12 SL hoy
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 swing principal | H1 swing adicional | M15 scalps DESACTIVADOS (destruian capital)
 
 MT5_MIN_VOLUME   = 0.01
@@ -1291,6 +1291,21 @@ class TradingSupervisor:
 
         """Fetch MT5 OHLCV, run SMC lite, return signal or None."""
 
+        # Hard cooldown check from disk — survives restarts
+        import time as _tsc
+        _cd_file = os.path.join("memory", "sl_cooldown_state.json")
+        try:
+            _cd_data = json.load(open(_cd_file)) if os.path.exists(_cd_file) else {}
+            for _cd_key, _cd_ts in _cd_data.items():
+                if _cd_key.startswith(symbol + "_"):
+                    _elapsed = _tsc.time() - _cd_ts
+                    if _elapsed < 14400:  # 4 hours
+                        _left = int((14400 - _elapsed) / 60)
+                        print(f"[COOLDOWN] {symbol}: bloqueado {_left}min (cooldown disco)", flush=True)
+                        return None
+        except Exception:
+            pass
+
         loop = asyncio.get_event_loop()
 
         df = await loop.run_in_executor(None, lambda: self.mt5.get_ohlcv(symbol, timeframe, 200))
@@ -1527,7 +1542,10 @@ class TradingSupervisor:
             loop8 = __import__("asyncio").get_event_loop()
             _open8 = await loop8.run_in_executor(None, self.mt5.get_positions)
             _8d_result = self._eight_dim_agent.analyze(
-                signal.symbol, None, _open8 or [], direction=order_type
+                signal.symbol,
+                self._df_cache.get(signal.symbol),
+                _open8 or [],
+                direction=order_type
             )
             if not _8d_result.allowed:
                 print(f"[8D-BLOCK] {signal.symbol}: {_8d_result.reason}", flush=True)
@@ -2500,6 +2518,7 @@ class TradingSupervisor:
                 for ticket in closed:
 
                     episode_id = self._open_episodes.pop(ticket, None)
+                    self._partial_closed.discard(ticket)
                     self._save_open_episodes()
 
                     deal = await loop.run_in_executor(
@@ -3486,6 +3505,11 @@ class TradingSupervisor:
                 if not hasattr(self, '_last_ftmo_day') or self._last_ftmo_day != _today_utc:
                     self._ftmo_agent.new_trading_day(self._ftmo_state)
                     self._last_ftmo_day = _today_utc
+                    self._daily_target_hit  = False
+                    self._daily_protect_hit = False
+                    self._axi_paused_today  = False
+                    self._scalp_daily_hit   = False
+                    self._scalp_realized_today = 0.0
                     print(f"[FTMO] Nuevo dia {_today_utc} -- daily_pnl reseteado (streak preservado)", flush=True)
                     try:
                         _loop_ref = asyncio.get_running_loop()
