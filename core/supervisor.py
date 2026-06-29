@@ -1555,6 +1555,11 @@ class TradingSupervisor:
         except Exception as _8d_exc:
             print(f"[8D] error (no bloqueo): {_8d_exc}", flush=True)
 
+        # ── PAUSA MANUAL (Telegram /pause) ────────────────────────────
+        if getattr(self.commander, "state", None) and getattr(self.commander.state, "paused", False):
+            print(f"[PAUSE] {signal.symbol}: bot pausado manualmente via Telegram — skip", flush=True)
+            return
+
         # ── AXI SELECT GUARDS ──────────────────────────────────────────
         # Guard 1: emergency daily loss limit (-4%)
         if self._axi_paused_today:
