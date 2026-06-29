@@ -1858,14 +1858,21 @@ class TradingSupervisor:
             if _is_scalp and pos_dir == order_type:
                 pass  # scalp puede abrir junto a swing de misma direccion
             elif not _is_scalp:
-                # Swing: solo bloquear si ya hay OTRA swing abierta (no scalps)
+                # Swing: permitir hasta 2 swings por par (escalado cuando hay señal fuerte)
                 sym_swings = [p for p in sym_open
                               if abs(p.get("tp", 0) - p.get("price_open", 0)) >= 0.0025]
-                if sym_swings:
+                if len(sym_swings) >= 2:
+                    print(
+                        f"[MT5] {signal.symbol}: 2 swings ya abiertas -- skip",
+                        flush=True,
+                    )
+                    return
+                # Si hay 1 swing → permitir segunda solo si score >= 120
+                if len(sym_swings) == 1 and signal.decision_score < 120:
                     sw = sym_swings[0]
                     print(
-                        f"[MT5] {signal.symbol}: swing ya abierta "
-                        f"({sw.get('profit',0):+.2f} USD) -- skip",
+                        f"[MT5] {signal.symbol}: swing ya abierta ({sw.get('profit',0):+.2f} USD)"
+                        f" score={signal.decision_score}<120 -- skip",
                         flush=True,
                     )
                     return
