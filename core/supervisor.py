@@ -2647,21 +2647,23 @@ class TradingSupervisor:
 
                     print("\n".join(lines), flush=True)
 
-                    # ── META DIARIA: realizado + float >= $250 → cerrar todo ─
-                    # El bot decide solo basado en el objetivo $250/día
+                    # ── META DIARIA: realizado + float >= $250 → solo cerrar SCALPS
+                    # Los SWINGS continuan hasta su TP — son los que dan $247+ por trade
                     _neto_dia = self._daily_realized_pnl + total_pnl
                     if not self._daily_target_hit and _neto_dia >= DAILY_PROFIT_TARGET:
                         self._daily_target_hit = True
-                        print(f"[META-DIA] Neto ${_neto_dia:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — cerrando todo", flush=True)
+                        print(f"[META-DIA] Neto ${_neto_dia:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — cerrando solo scalps, swings siguen al TP", flush=True)
                         for _p in list(positions):
-                            try:
-                                _ok = await loop.run_in_executor(None, lambda t=_p["ticket"]: self.mt5.close_position(t))
-                                print(f"[META-DIA] Cerrado {_p['symbol']} #{_p['ticket']} PnL=${_p.get('profit',0):.2f}", flush=True)
-                            except Exception:
-                                pass
+                            # Solo cerrar scalps (vol <= 0.1L) — swings siguen corriendo
+                            if _p.get("volume", 0) <= 0.10:
+                                try:
+                                    _ok = await loop.run_in_executor(None, lambda t=_p["ticket"]: self.mt5.close_position(t))
+                                    print(f"[META-DIA] Scalp cerrado {_p['symbol']} #{_p['ticket']} PnL=${_p.get('profit',0):.2f}", flush=True)
+                                except Exception:
+                                    pass
                         try:
                             await self.telegram.send_glint_alert(
-                                f"<b>META DIARIA $250 ALCANZADA</b>\nNeto: ${_neto_dia:.2f}\nTodas las posiciones cerradas ✅"
+                                f"<b>META DIARIA $250 ALCANZADA</b>\nNeto: ${_neto_dia:.2f}\nSwings activos hasta TP ✅"
                             )
                         except Exception:
                             pass

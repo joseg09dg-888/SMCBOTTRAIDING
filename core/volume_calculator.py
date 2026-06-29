@@ -17,6 +17,7 @@ class VolumeCalculator:
         "EURUSD": 0.0001, "GBPUSD": 0.0001,
         "USDCHF": 0.0001, "AUDUSD": 0.0001,
         "NZDUSD": 0.0001, "EURGBP": 0.0001,
+        "USDCAD": 0.0001,
         "USDJPY": 0.01,   "GBPJPY": 0.01,
         "EURJPY": 0.01,
         "XAUUSD": 1.0,    # 1 price unit = 1 pip ($1 move)
@@ -25,9 +26,11 @@ class VolumeCalculator:
     }
 
     # USD value per lot per pip: XAUUSD 1lot=100oz, 1pip=$1 -> $100/lot/pip
+    # USDCAD: 1pip=0.0001 CAD → $10/1.41rate ≈ $7.09 USD per lot
     _PIP_VALUE = {
         "EURUSD": 10.0,  "GBPUSD": 10.0,
         "USDCHF": 10.0,  "AUDUSD": 10.0,
+        "USDCAD": 7.1,
         "NZDUSD": 10.0,  "EURGBP": 10.0,
         "USDJPY": 6.3,   "GBPJPY": 6.3,
         "EURJPY": 6.3,
