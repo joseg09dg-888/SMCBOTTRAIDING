@@ -106,7 +106,7 @@ RECOVERY_SCALP_TP        = 10.0  # igual que normal
 RECOVERY_SCALP_SL        = -4.0  # igual que normal
 RECOVERY_MAX_SCALPS      = 3
 RECOVERY_TRIGGER_LOSS    = -150.0  # recovery si pierde $150 en el día (era -50: demasiado agresivo)
-RECOVERY_DRAWDOWN_FROM_PEAK = 500.0
+RECOVERY_DRAWDOWN_FROM_PEAK = 3000.0  # Axi 5% daily = $4,850 — solo recovery en emergencia real
 ACCEL_TRIGGER_PROFIT     = 50.0   # aceleración si gana $50 en el día
 ACCEL_SCALP_TP           = 10.0
 ACCEL_SCALP_SL           = -4.0
@@ -1901,7 +1901,7 @@ class TradingSupervisor:
         ) and not self._daily_target_hit
         _accel_mode = (
             self._daily_realized_pnl >= ACCEL_TRIGGER_PROFIT and
-            _current_bal_r >= INITIAL_CAPITAL and not _recovery_mode
+            _current_bal_r >= self.capital * 0.98 and not _recovery_mode
         )
         _max_scalp_now = (RECOVERY_MAX_SCALPS if _recovery_mode
                           else ACCEL_MAX_SCALPS if _accel_mode
@@ -2971,7 +2971,7 @@ class TradingSupervisor:
             # Estrategia 5: Modo Aceleración — dia muy bueno → maximizar
             _in_accel = (
                 self._daily_realized_pnl >= ACCEL_TRIGGER_PROFIT and
-                _current_bal >= INITIAL_CAPITAL and
+                _current_bal >= self.capital * 0.98 and
                 not _in_recovery and
                 not self._scalp_daily_hit
             )
