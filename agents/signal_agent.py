@@ -228,7 +228,7 @@ class SignalAgent:
         ])
         tp_mult = 3.0 if n_confluence >= 3 else (2.5 if n_confluence == 2 else 2.0)
 
-        if poi_zones:
+        if poi_zones is not None and (isinstance(poi_zones, list) and len(poi_zones) > 0):
             # Fix: usar OB del tipo correcto — bullish OB para LONG, bearish OB para SHORT
             correct_type = "bullish_ob" if is_bullish else "bearish_ob"
             aligned_pois = [p for p in poi_zones if p.get("type") == correct_type]
