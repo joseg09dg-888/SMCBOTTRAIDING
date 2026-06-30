@@ -2922,11 +2922,14 @@ class TradingSupervisor:
             float_pnl   = sum(p.get("profit", 0.0) for p in (positions or []))
             total_today = self._daily_realized_pnl + float_pnl
 
-            if not self._daily_target_hit and swing_float >= DAILY_PROFIT_TARGET:
+            # META = realizados + flotantes >= $250 — el bot incluye lo ya ganado hoy
+            _total_combined = self._daily_realized_pnl + swing_float
+            if not self._daily_target_hit and _total_combined >= DAILY_PROFIT_TARGET:
                 self._daily_target_hit = True
                 print(
-                    f"[META-SWING] swing_float=${swing_float:.2f} >= ${DAILY_PROFIT_TARGET:.0f}"
-                    f" — META CUMPLIDA, cerrando SWINGS, scalps siguen",
+                    f"[META-SWING] realizado=${self._daily_realized_pnl:.2f} + float=${swing_float:.2f}"
+                    f" = ${_total_combined:.2f} >= ${DAILY_PROFIT_TARGET:.0f}"
+                    f" — META CUMPLIDA, cerrando SWINGS",
                     flush=True,
                 )
                 for sp in list(swing_positions):
