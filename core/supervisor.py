@@ -118,7 +118,8 @@ SCALP_MAX_DOLLAR_RISK    = 50.0
 # 14:00 UTC = WR 61%, avg +$102/trade (578 trades) → NY open GOLD window
 # 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading, reducir trades
 # Estrategia: iniciar a 14:00 UTC (9am Colombia) cuando NY open momentum confirma BOS real
-DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}  # 14:00 UTC = inicio real
+DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+                             17, 18, 19}  # 14-17 UTC ventana de oro. 17-19 WR=24-28% bloqueado
 
 
 
