@@ -427,7 +427,8 @@ class TradingSupervisor:
         self._scalp_pnl_date: str = ""
         self._scalp_peak_today: float = 0.0  # max alcanzado hoy — si cae a $60 cierra
         # High-water mark: balance máximo histórico — recuperar si cae > $500 del pico
-        self._balance_peak: float = INITIAL_CAPITAL
+        # Usar capital real de startup, no INITIAL_CAPITAL=$100K (que nunca tuvimos)
+        self._balance_peak: float = self.capital
 
     # Callbacks from TelegramCommander â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 

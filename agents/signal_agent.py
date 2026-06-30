@@ -135,6 +135,15 @@ class SignalAgent:
                     _index_sl_cap = {"NAS100": 150.0, "NAS100.fs": 150.0, "US30": 200.0}
                     if symbol in _index_sl_cap:
                         atr_sl = min(atr_sl, _index_sl_cap[symbol])
+                    # Cap SL forex H1: ATR puede dar 100+ pips → TP inalcanzable mismo día
+                    # 40 pips max → TP=100pips (2.5 RR) alcanzable en sesión NY
+                    _is_jpy = "JPY" in symbol
+                    _pip = 0.01 if _is_jpy else 0.0001
+                    _forex_sl_cap_pips = {"EURUSD": 40, "GBPUSD": 40, "USDCAD": 40,
+                                          "AUDUSD": 35, "NZDUSD": 35, "USDJPY": 40,
+                                          "GBPJPY": 60}
+                    if symbol in _forex_sl_cap_pips:
+                        atr_sl = min(atr_sl, _forex_sl_cap_pips[symbol] * _pip)
                     min_dist = self._MIN_SL_DIST.get(symbol, entry * 0.008)
                     return max(atr_sl, min_dist)
             except Exception:
