@@ -57,3 +57,25 @@ def session_score(dt: datetime = None) -> Tuple[int, str]:
         return 3, "Sesión Tokyo — liquidez reducida (mejor para JPY/AUD)"
 
     return 2, f"Sesión fuera de hora óptima: {active}"
+
+
+def session_multiplier(dt: datetime = None) -> float:
+    """Hour-quality multiplier for threshold adjustment.
+    Based on 2-year backtest WR per hour UTC + ICT killzone data.
+    Threshold = base_threshold / multiplier  (higher mult = lower bar = more trades)
+    """
+    dt = dt or datetime.now(timezone.utc)
+    h = dt.hour
+    _HOUR_MULT = {
+        14: 1.30,  # NY open — WR=61% gold hour
+        15: 1.20,  # NY continuation
+        16: 1.10,  # London close / NY active
+        17: 0.85,  # NY mid — WR drops per backtest
+        18: 0.80,  # NY mid — worst hour in backtest
+        19: 1.00,  # NY late PM
+        20: 1.05,  # NY closing
+        21: 0.90,  # NY end
+        22: 0.95,  # After NY
+        23: 0.90,  # Late session
+    }
+    return _HOUR_MULT.get(h, 0.90)

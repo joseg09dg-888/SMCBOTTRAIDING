@@ -954,7 +954,31 @@ class TradingSupervisor:
 
         has_bos = bool(bos_list)
 
-        has_setup = (is_bullish or is_bearish) and (has_ob or has_fvg or has_bos)
+        # Premium/Discount Zone Filter — solo comprar en descuento, vender en premium
+        # Bloquea entradas long cuando precio ya subio (zona premium) y viceversa
+        _pd_ok = True
+        if len(df) >= 50 and current_close > 0:
+            _range_high = float(df["high"].rolling(50).max().iloc[-1])
+            _range_low  = float(df["low"].rolling(50).min().iloc[-1])
+            _range_mid  = (_range_high + _range_low) / 2.0
+            if is_bullish and current_close > _range_mid:
+                _pd_ok = False  # No comprar en zona premium
+            if is_bearish and current_close < _range_mid:
+                _pd_ok = False  # No vender en zona descuento
+
+        # Liquidity Sweep Detection — precio barro equal highs/lows y revirtio
+        # Confirmacion institucional: el sweep precede al movimiento real
+        _has_sweep = False
+        if len(df) >= 20:
+            _rh = df["high"].rolling(20).max()
+            _rl = df["low"].rolling(20).min()
+            _swept_high = (float(df["high"].iloc[-1]) > float(_rh.iloc[-2])) and \
+                          (float(df["close"].iloc[-1]) < float(_rh.iloc[-2]))
+            _swept_low  = (float(df["low"].iloc[-1]) < float(_rl.iloc[-2])) and \
+                          (float(df["close"].iloc[-1]) > float(_rl.iloc[-2]))
+            _has_sweep = (is_bearish and _swept_high) or (is_bullish and _swept_low)
+
+        has_setup = (is_bullish or is_bearish) and (has_ob or has_fvg or has_bos) and _pd_ok
 
 
 
@@ -969,6 +993,10 @@ class TradingSupervisor:
         if has_ob:     analysis_text += " order block presente"
 
         if has_fvg:    analysis_text += " FVG presente"
+
+        if _has_sweep: analysis_text += " liquidity_sweep_confirmado"
+
+        if not _pd_ok: analysis_text += " zona_premium_descuento_bloqueado"
 
         if has_setup:  analysis_text += " setup valido"
 
@@ -987,6 +1015,10 @@ class TradingSupervisor:
             "has_choch": bool(choch_list),
 
             "has_setup": has_setup,
+
+            "has_sweep": _has_sweep,
+
+            "pd_ok":     _pd_ok,
 
             "poi_zones": poi_zones,
 
@@ -3749,6 +3781,14 @@ class TradingSupervisor:
                                         effective_threshold = max(75, mt5_threshold - 5)  # H1 siempre 5pts menos que H4
                                 else:
                                     continue  # M15 y cualquier otro TF: skip
+                                # Killzone multiplier: threshold mas bajo en horas gold (14-16 UTC),
+                                # mas alto en horas debiles (17-18 UTC) — backtest WR 61% vs 24-28%
+                                from core.session_manager import session_multiplier as _kz_mult
+                                _kz = _kz_mult()
+                                _kz_threshold = max(70, int(effective_threshold / _kz))
+                                if _kz != 1.0:
+                                    print(f" -- [KZ] hora={__import__('datetime').datetime.now(__import__('datetime').timezone.utc).hour}UTC mult={_kz:.2f} thr={effective_threshold}->{_kz_threshold}", end="", flush=True)
+                                    effective_threshold = _kz_threshold
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
