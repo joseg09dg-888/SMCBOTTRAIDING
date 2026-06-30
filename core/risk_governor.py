@@ -31,7 +31,7 @@ class RiskGovernor:
         min_trades=8,
         suspend_wr=0.25,
         cooldown_hours=168,  # 7 days
-        dd_tiers=((0.04, 0.25), (0.02, 0.5)),  # (drawdown_pct, multiplier), desc by threshold
+        dd_tiers=(),  # drawdown tiers desactivados — volumen fijo para cumplir objetivo $250/dia
         initial_suspended=None,
     ):
         self.all_symbols = list(all_symbols)
