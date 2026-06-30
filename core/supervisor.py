@@ -327,8 +327,8 @@ class TradingSupervisor:
         self.risk_governor = RiskGovernor(
             all_symbols=MT5_SYMBOLS,
             dd_tiers=(),         # volumen fijo — sin reduccion por drawdown
-            min_trades=12,       # era 8: necesita más trades antes de suspender
-            suspend_wr=0.15,     # era 0.25: solo suspende si WR < 15% (no 25%)
+            min_trades=30,       # necesita 30 trades antes de suspender (evita suspension por 1 mal dia)
+            suspend_wr=0.10,     # solo suspende si WR < 10% sostenido
             initial_suspended={
                 "USDJPY": (
                     "Auditoria 2026-06-14: WR 6.2% en 130 trades (60% del volumen), "
