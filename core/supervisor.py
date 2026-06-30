@@ -1658,7 +1658,7 @@ class TradingSupervisor:
         import time as _time_mod
         _sl_key = f"{signal.symbol}_{order_type}"
         _sl_ts  = self._symbol_sl_time.get(_sl_key, 0.0)
-        _cooldown_h = 1.0
+        _cooldown_h = 2.0
         if _time_mod.time() - _sl_ts < _cooldown_h * 3600:
             _mins_left = int((_cooldown_h * 3600 - (_time_mod.time() - _sl_ts)) / 60)
             print(f"[COOLDOWN] {signal.symbol} {order_type}: SL reciente — espera {_mins_left}min", flush=True)
@@ -1926,38 +1926,14 @@ class TradingSupervisor:
 
         sym_open = [p for p in existing if p["symbol"] == signal.symbol]
         if sym_open:
-            pos = sym_open[0]
-            pnl_live = pos.get("profit", 0.0)
-            pos_dir = pos.get("type", "").upper()
-            if _is_scalp and pos_dir == order_type:
-                pass  # scalp puede abrir junto a swing de misma direccion
-            elif not _is_scalp:
-                # Swing: permitir hasta 2 swings por par (escalado cuando hay señal fuerte)
-                sym_swings = [p for p in sym_open
-                              if abs(p.get("tp", 0) - p.get("price_open", 0)) >= 0.0025]
-                if len(sym_swings) >= 2:
-                    print(
-                        f"[MT5] {signal.symbol}: 2 swings ya abiertas -- skip",
-                        flush=True,
-                    )
-                    return
-                # Si hay 1 swing → permitir segunda solo si score >= 120
-                if len(sym_swings) == 1 and signal.decision_score < 120:
-                    sw = sym_swings[0]
-                    print(
-                        f"[MT5] {signal.symbol}: swing ya abierta ({sw.get('profit',0):+.2f} USD)"
-                        f" score={signal.decision_score}<120 -- skip",
-                        flush=True,
-                    )
-                    return
-                # Si solo hay scalps → permitir abrir swing
-            else:
-                print(
-                    f"[MT5] {signal.symbol}: posicion {pos_dir} ya abierta "
-                    f"({pnl_live:+.2f} USD) -- skip",
-                    flush=True,
-                )
-                return
+            # MAX 1 POSICION POR SIMBOLO — sin excepciones, sin "segunda a score>=120"
+            # El "escalado" causó duplicados USDCAD y EURUSD que destruyeron ganancias
+            pnl_live = sym_open[0].get("profit", 0.0)
+            print(
+                f"[MT5] {signal.symbol}: posicion ya abierta ({pnl_live:+.2f} USD) -- skip duplicado",
+                flush=True,
+            )
+            return
 
 
 
@@ -2408,6 +2384,7 @@ class TradingSupervisor:
         Era 60s — demasiado lento para mercados que mueven $18→$1 en segundos."""
 
         _known_tickets: set = set()
+        _ticket_info: dict = {}  # ticket → (symbol, direction) para cooldown al cerrar
         # Tickets flagged for close-on-market-open (positions with no SL)
         # Populated dynamically: any position with SL=0 gets auto-closed on next open
         _close_when_open: set = set()
@@ -2436,6 +2413,8 @@ class TradingSupervisor:
                 for p in positions:
                     if p.get("sl", 0.0) == 0.0 and p.get("symbol", "") in _INDEX_SYMBOLS:
                         _close_when_open.add(p["ticket"])
+                    # Track ticket → (symbol, direction) for cooldown on close
+                    _ticket_info[p["ticket"]] = (p.get("symbol", ""), p.get("type", "BUY"))
                 # Remove tickets that are no longer open (already closed externally)
                 _close_when_open -= (set(_close_when_open) - current_tickets)
 
@@ -2597,6 +2576,19 @@ class TradingSupervisor:
                 closed = _known_tickets - current_tickets
 
                 for ticket in closed:
+                    # Cooldown 2h en cualquier cierre (SL, TP, o manual)
+                    # Evita que el bot re-abra inmediatamente el mismo par
+                    _closed_sym, _closed_dir = _ticket_info.pop(ticket, ("", "BUY"))
+                    if _closed_sym:
+                        import time as _tc
+                        _cd_key = f"{_closed_sym}_{_closed_dir}"
+                        self._symbol_sl_time[_cd_key] = _tc.time()
+                        try:
+                            json.dump(self._symbol_sl_time,
+                                      open(os.path.join("memory", "sl_cooldown_state.json"), "w"))
+                        except Exception:
+                            pass
+                        print(f"[COOLDOWN-SET] {_closed_sym} {_closed_dir}: 2h cooldown (posicion cerrada)", flush=True)
 
                     episode_id = self._open_episodes.pop(ticket, None)
                     self._partial_closed.discard(ticket)
