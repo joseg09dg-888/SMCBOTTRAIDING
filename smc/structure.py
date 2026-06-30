@@ -88,30 +88,55 @@ class MarketStructure:
 
         return StructureResult(stype, hh, hl, lh, ll, swings, bias)
 
+    def _atr(self, period: int = 14) -> float:
+        """Average True Range — mide rango promedio de velas."""
+        df = self.df
+        if len(df) < period + 1:
+            return float(df["high"].iloc[-1] - df["low"].iloc[-1])
+        tr = pd.concat([
+            df["high"] - df["low"],
+            (df["high"] - df["close"].shift(1)).abs(),
+            (df["low"]  - df["close"].shift(1)).abs(),
+        ], axis=1).max(axis=1)
+        return float(tr.rolling(period).mean().iloc[-1])
+
     def detect_bos(self) -> List[dict]:
         swings = self._find_swings() if not self._swings else self._swings
         closes = self.df["close"].values
+        highs  = self.df["high"].values
+        lows   = self.df["low"].values
+        opens  = self.df["open"].values if "open" in self.df.columns else closes
+        atr    = self._atr()
         bos_events = []
 
         for swing in swings:
             if swing.swing_type == "HH":
                 for j in range(swing.index + 1, len(closes)):
                     if closes[j] > swing.price:
+                        candle_range = highs[j] - lows[j]
+                        candle_body  = abs(closes[j] - opens[j])
+                        # Displacement: rango expandido Y cierre fuerte (cuerpo > 60% del rango)
+                        is_disp = (candle_range >= atr * 1.5) and (candle_body >= candle_range * 0.6)
                         bos_events.append({
                             "type": "BOS",
                             "direction": "bullish",
                             "level": swing.price,
                             "confirmed_at": j,
+                            "is_displacement": is_disp,
                         })
                         break
             elif swing.swing_type == "LL":
                 for j in range(swing.index + 1, len(closes)):
                     if closes[j] < swing.price:
+                        candle_range = highs[j] - lows[j]
+                        candle_body  = abs(closes[j] - opens[j])
+                        is_disp = (candle_range >= atr * 1.5) and (candle_body >= candle_range * 0.6)
                         bos_events.append({
                             "type": "BOS",
                             "direction": "bearish",
                             "level": swing.price,
                             "confirmed_at": j,
+                            "is_displacement": is_disp,
                         })
                         break
 

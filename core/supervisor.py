@@ -978,6 +978,32 @@ class TradingSupervisor:
                           (float(df["close"].iloc[-1]) > float(_rl.iloc[-2]))
             _has_sweep = (is_bearish and _swept_high) or (is_bullish and _swept_low)
 
+        # Displacement Candle en BOS reciente — filtra BOS falsos causados por velas pequenas
+        # Solo cuenta un BOS como valido si fue roto por una vela de rango expandido (>1.5x ATR)
+        _has_displacement_bos = any(b.get("is_displacement", False) for b in bos_list)
+
+        # OTE Zone (Optimal Trade Entry) — Fibonacci 62-79% del swing que creo el OB
+        # ICT Unicorn: solo entrar cuando precio retrocede al 62-79% del impulso bullish/bearish
+        # Sin OTE = entrada prematura (precio no llego al punto institucional)
+        _in_ote = False
+        if poi_zones and len(df) >= 5:
+            _poi = poi_zones[0]
+            _ob_idx = _poi.get("index", 0)
+            if _ob_idx > 0 and _ob_idx + 1 < len(df):
+                # El impulso que creo el OB: desde el OB hasta el maximo del swing siguiente
+                if is_bullish:
+                    _swing_low  = float(df["low"].iloc[_ob_idx])
+                    _swing_high = float(df["high"].iloc[_ob_idx:_ob_idx+10].max()) if _ob_idx+10 <= len(df) else float(df["high"].iloc[_ob_idx:].max())
+                    _ote_low  = _swing_high - (_swing_high - _swing_low) * 0.79
+                    _ote_high = _swing_high - (_swing_high - _swing_low) * 0.62
+                    _in_ote   = _ote_low <= current_close <= _ote_high
+                else:
+                    _swing_high = float(df["high"].iloc[_ob_idx])
+                    _swing_low  = float(df["low"].iloc[_ob_idx:_ob_idx+10].min()) if _ob_idx+10 <= len(df) else float(df["low"].iloc[_ob_idx:].min())
+                    _ote_low  = _swing_low + (_swing_high - _swing_low) * 0.62
+                    _ote_high = _swing_low + (_swing_high - _swing_low) * 0.79
+                    _in_ote   = _ote_low <= current_close <= _ote_high
+
         has_setup = (is_bullish or is_bearish) and (has_ob or has_fvg or has_bos) and _pd_ok
 
 
@@ -994,11 +1020,11 @@ class TradingSupervisor:
 
         if has_fvg:    analysis_text += " FVG presente"
 
-        if _has_sweep: analysis_text += " liquidity_sweep_confirmado"
-
-        if not _pd_ok: analysis_text += " zona_premium_descuento_bloqueado"
-
-        if has_setup:  analysis_text += " setup valido"
+        if _has_sweep:             analysis_text += " liquidity_sweep_confirmado"
+        if _has_displacement_bos:  analysis_text += " displacement_BOS_confirmado"
+        if _in_ote:                analysis_text += " OTE_zone_activa"
+        if not _pd_ok:             analysis_text += " zona_premium_descuento_bloqueado"
+        if has_setup:              analysis_text += " setup valido"
 
 
 
@@ -1014,11 +1040,15 @@ class TradingSupervisor:
 
             "has_choch": bool(choch_list),
 
-            "has_setup": has_setup,
+            "has_setup":           has_setup,
 
-            "has_sweep": _has_sweep,
+            "has_sweep":           _has_sweep,
 
-            "pd_ok":     _pd_ok,
+            "has_displacement_bos": _has_displacement_bos,
+
+            "in_ote":              _in_ote,
+
+            "pd_ok":               _pd_ok,
 
             "poi_zones": poi_zones,
 
@@ -1228,8 +1258,27 @@ class TradingSupervisor:
         # London kill zone 07-10 UTC = +3
         elif 7 <= _hour_utc <= 10:
             trader_bonus += 3
+        # ICT Confluence bonuses — investigacion bots rentables (Unicorn, DRL 70%+ WR)
+        _smc_cache = self._df_cache.get(signal.symbol)
+        if _smc_cache is not None:
+            try:
+                _smc_lite = self._run_smc_lite(_smc_cache)
+                # OTE Zone (Fibonacci 62-79%) — ICT Unicorn: +20pts
+                if _smc_lite.get("in_ote"):
+                    trader_bonus += 20
+                    print(f"[ICT-OTE] {signal.symbol}: precio en zona 62-79% Fib +20pts", flush=True)
+                # Displacement BOS — BOS roto por vela institucional: +15pts
+                if _smc_lite.get("has_displacement_bos"):
+                    trader_bonus += 15
+                    print(f"[ICT-DISP] {signal.symbol}: BOS con displacement candle +15pts", flush=True)
+                # Liquidity Sweep confirmado: +10pts (ya calcula en sweep gate)
+                if _smc_lite.get("has_sweep"):
+                    trader_bonus += 10
+                    print(f"[ICT-SWEEP] {signal.symbol}: liquidity sweep confirmado +10pts", flush=True)
+            except Exception:
+                pass
         if trader_bonus > 0:
-            print(f"[TRADER-RULES] {signal.symbol}: +{trader_bonus}pts (momentum+killzone)", flush=True)
+            print(f"[TRADER-RULES] {signal.symbol}: +{trader_bonus}pts (momentum+killzone+ICT)", flush=True)
         final_bonus = bonus_clamped + trader_bonus
 
         print(
