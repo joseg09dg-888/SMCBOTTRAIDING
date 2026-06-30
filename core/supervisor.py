@@ -326,9 +326,7 @@ class TradingSupervisor:
         # drawdown-based risk multiplier, persisted across restarts.
         self.risk_governor = RiskGovernor(
             all_symbols=MT5_SYMBOLS,
-            # Tiers calibrados para Axi (max drawdown 10%):
-            # >= 7% → 0.25x | >= 4% → 0.5x | <4% → 1.0x (full)
-            dd_tiers=((0.07, 0.25), (0.04, 0.5)),
+            dd_tiers=(),         # volumen fijo — sin reduccion por drawdown
             min_trades=12,       # era 8: necesita más trades antes de suspender
             suspend_wr=0.15,     # era 0.25: solo suspende si WR < 15% (no 25%)
             initial_suspended={
