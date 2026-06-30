@@ -1896,8 +1896,7 @@ class TradingSupervisor:
         # Modo recuperación: permite más scalps simultáneos para recuperar más rápido
         _current_bal_r  = self._ftmo_state.current_balance or self.capital
         _recovery_mode  = (
-            self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS or
-            (self._balance_peak - _current_bal_r) >= RECOVERY_DRAWDOWN_FROM_PEAK
+            self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
         ) and not self._daily_target_hit
         _accel_mode = (
             self._daily_realized_pnl >= ACCEL_TRIGGER_PROFIT and
@@ -2963,10 +2962,11 @@ class TradingSupervisor:
                 self._balance_peak = _current_bal
                 print(f"[PEAK] Nuevo máximo histórico: ${self._balance_peak:,.2f}", flush=True)
 
-            # Tres triggers de recuperación:
+            # Recovery solo por pérdida real del día — _below_peak eliminado porque
+            # FTMOAgent inicia current_balance=$100K causando falso drawdown desde día 1
+            # La protección multi-día ya la cubre: RiskGovernor + FTMOAgent drawdown limits
             _day_in_loss      = self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
-            _below_peak       = (self._balance_peak - _current_bal) >= RECOVERY_DRAWDOWN_FROM_PEAK
-            _in_recovery      = (_day_in_loss or _below_peak) and not self._scalp_daily_hit
+            _in_recovery      = _day_in_loss and not self._scalp_daily_hit
 
             # Estrategia 5: Modo Aceleración — dia muy bueno → maximizar
             _in_accel = (
