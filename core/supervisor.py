@@ -1186,11 +1186,11 @@ class TradingSupervisor:
                     return 0
             return _wrapped
 
-        def _lunar():   return self._lunar.score_adjustment(bias)
+        def _lunar():   return 0  # ELIMINADO: sin evidencia estadistica de edge real
         def _elliott():
             e = self._elliott.analyze(df, bias)
             return e.score_bonus
-        def _chaos():   return self._chaos.score_adjustment(df)
+        def _chaos():   return 0  # ELIMINADO: sin evidencia estadistica de edge real
         def _edge():
             edge = self._edge.calculate_full_edge(symbol=signal.symbol, prices=prices)
             return self._edge.get_decision_pts(edge)
@@ -1209,10 +1209,7 @@ class TradingSupervisor:
         def _geo():      return self._geopolitical.score_adjustment(signal.symbol, bias)
         def _retail():   return self._retail_psych.score_adjustment(signal.symbol, df, bias)
         def _alt():      return self._alt_data.score_adjustment(signal.symbol, bias)
-        def _energy():
-            energy = self._energy.analyze(signal.symbol, signal.entry or 0.0, prices)
-            pts = energy.to_decision_pts()
-            return max(-3, min(3, pts))  # solo sugeridor: ±3 pts max
+        def _energy():  return 0  # ELIMINADO: numerologia/tarot sin evidencia de edge
 
         raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy]
         tasks = [_make(name, fn) for name, fn in zip(_agent_names, raw_tasks)]
@@ -1548,11 +1545,7 @@ class TradingSupervisor:
         try:
             df = self._df_cache.get(signal.symbol, pd.DataFrame())
             # Regime from chaos agent
-            try:
-                chaos_sig = self._chaos.get_signal(df) if not df.empty else None
-                regime = chaos_sig.hurst.interpretation if chaos_sig else "unknown"
-            except Exception:
-                regime = "unknown"
+            regime = "unknown"  # chaos agent eliminado del pipeline
 
             smc_summary = (
                 f"{signal.symbol} {signal.timeframe} | Bias: "
