@@ -91,13 +91,13 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY"]
 # UN solo modo: SCALP M15 con 0.1L
 # Score >= 85 (calidad alta), TP=$10, SL=-$4, max 10 simultáneas
 # Sin swings, sin recovery modes, sin aceleración — solo scalps limpios
-MT5_REAL_SCORE_THRESHOLD = 75   # threshold base — ADAPT-THR lo sube segun WR
-MT5_SCALP_THRESHOLD      = 100  # era 80: solo scalps de alta calidad
-MT5_SCORE_AUTO_REDUCE    = 75
+MT5_REAL_SCORE_THRESHOLD = 95   # subido de 75→95: solo setups de alta calidad (WR=32% con 75 → perdiendo $3.6K)
+MT5_SCALP_THRESHOLD      = 105  # subido de 100→105
+MT5_SCORE_AUTO_REDUCE    = 90
 MT5_SCORE_REDUCE_AFTER_H = 4
-MAX_SCALP_POSITIONS      = 3
-MAX_OPEN_POSITIONS       = 3
-MIN_RR                   = 2.5
+MAX_SCALP_POSITIONS      = 2    # max 2 simultáneos (era 3)
+MAX_OPEN_POSITIONS       = 2    # max 2 simultáneos (era 3)
+MIN_RR                   = 3.0  # subido de 2.5→3.0: con WR=32% necesitas RR>=3 para ser rentable
 DAILY_PROFIT_TARGET      = 250.0  # $250/dia → 5% mensual Axi Select
 INITIAL_CAPITAL          = 100_000.0
 
