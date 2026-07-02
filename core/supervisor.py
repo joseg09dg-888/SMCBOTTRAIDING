@@ -91,9 +91,9 @@ CONSERVATIVE_PAIRS       = ["EURUSD", "GBPUSD", "USDJPY", "GBPJPY"]
 # UN solo modo: SCALP M15 con 0.1L
 # Score >= 85 (calidad alta), TP=$10, SL=-$4, max 10 simultáneas
 # Sin swings, sin recovery modes, sin aceleración — solo scalps limpios
-MT5_REAL_SCORE_THRESHOLD = 95   # subido de 75→95: solo setups de alta calidad (WR=32% con 75 → perdiendo $3.6K)
+MT5_REAL_SCORE_THRESHOLD = 95   # techo absoluto WR<40% (fallback en excepciones) — backtest 2026-07-01: 95 NO mejora WR vs 80, solo reduce volumen
 MT5_SCALP_THRESHOLD      = 105  # subido de 100→105
-MT5_SCORE_AUTO_REDUCE    = 90
+MT5_SCORE_AUTO_REDUCE    = 80   # recalibrado 2026-07-01: barrido thr x RR en 2 años reales muestra 80+RR3.0 = optimo (WR=41.7%, P(pasar 5%)=28.4% vs 8.5% con 90-95)
 MT5_SCORE_REDUCE_AFTER_H = 4
 MAX_SCALP_POSITIONS      = 2    # max 2 simultáneos (era 3)
 MAX_OPEN_POSITIONS       = 2    # max 2 simultáneos (era 3)
@@ -140,7 +140,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["USDCAD", "EURUSD"]  # SOLO pares rentables (30d: USDCAD WR=57% net=+$66, EURUSD WR=34% net=+$131)
+MT5_SYMBOLS      = ["USDCAD", "EURUSD", "NZDUSD", "GBPUSD"]  # ampliado 2026-07-01: backtest 2y a thr=80/RR=3.0 muestra P(pasar 5%)=40% con 4 pares vs 28% con 2 (DIM8 ya controla correlacion)
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 swing principal | H1 swing adicional | M15 scalps DESACTIVADOS (destruian capital)
 
 MT5_MIN_VOLUME   = 0.01
@@ -420,7 +420,7 @@ class TradingSupervisor:
         # Daily profit target tracking
         self._daily_pnl_date: str = ""           # "YYYY-MM-DD" UTC
         self._daily_realized_pnl: float = 0.0   # closed trades today
-        self._daily_target_hit: bool = False     # $245 hit — day locked, no new trades
+        self._daily_target_hit: bool = False     # DAILY_PROFIT_TARGET hit — day locked, no new trades
         self._daily_protect_hit: bool = False    # reserved (unused)
         # Scalp daily target: $60 acumulado en scalps → cierra todos los scalps
         self._scalp_realized_today: float = 0.0
@@ -1657,10 +1657,10 @@ class TradingSupervisor:
             print(f"[COOLDOWN] {signal.symbol} {order_type}: SL reciente — espera {_mins_left}min", flush=True)
             return
 
-        # Meta swing $245 cumplida → SOLO scalps (M15) el resto del día
+        # Meta swing (DAILY_PROFIT_TARGET) cumplida → SOLO scalps (M15) el resto del día
         # Los swings ya aseguraron el mínimo — no abrir más swings que se coman la ganancia
         if self._daily_target_hit and not _is_scalp:
-            print(f"[MT5] {signal.symbol}: meta swing $245 cumplida — solo scalps permitidos, skip swing", flush=True)
+            print(f"[MT5] {signal.symbol}: meta swing ${DAILY_PROFIT_TARGET:.0f} cumplida — solo scalps permitidos, skip swing", flush=True)
             return
 
         # ── FILTER 0: Mercado abierto ─────────────────────────────────────
@@ -1802,7 +1802,7 @@ class TradingSupervisor:
                 sl_dist = abs(_entry_ref - sl_val)
                 tp_dist = abs(_entry_ref - tp_val)
                 rr = tp_dist / sl_dist if sl_dist > 0 else 0.0
-                _min_rr_req = 1.5 if _is_scalp else 1.9  # swings: RR>=1.9 (evita floating point con 2.00)
+                _min_rr_req = 1.5 if _is_scalp else MIN_RR  # swings: usa MIN_RR real (3.0, subido 2026-06-30) — antes hardcodeado a 1.9, ignoraba el fix
                 # BUG #12: Si RR bajo → ajustar TP para garantizar mínimo (no skip)
                 # NAS100 al abrir: ATR enorme → SL wide → TP del signal queda cerca → RR=0.33
                 if rr < _min_rr_req and sl_dist > 0 and not _is_scalp:
@@ -2842,16 +2842,19 @@ class TradingSupervisor:
                 return thr
             wins = sum(1 for d in recent if d.profit > 0)
             wr   = wins / len(recent)
+            # Recalibrado 2026-07-01 tras barrido thr x RR sobre 2 anos reales (EURUSD+USDCAD):
+            # thr=80/RR=3.0 -> WR=41.7%, P(pasar 5% mensual)=28.4% (vs 8.5% con 90-95)
+            # thr=95 NO demostro mejor calidad que 80 en los datos -- solo menos volumen.
+            # Igual se mantiene selectividad dinamica: peor WR reciente -> mas estricto.
             if wr >= 0.65:
-                thr = 75
+                thr = MT5_SCORE_AUTO_REDUCE - 2       # 78 — buen WR reciente, el mas permisivo
             elif wr >= 0.55:
-                thr = 77
+                thr = MT5_SCORE_AUTO_REDUCE           # 80 — punto optimo del backtest
             elif wr >= 0.40:
-                thr = 80
+                thr = MT5_SCORE_AUTO_REDUCE + 5        # 85
             else:
-                thr = 80   # cap duro: nunca subir mas de 80 — evitar paralizar el bot
-            # No aplicar learner aqui — sube a 95 y paraliza el bot
-            print(f"[ADAPT-THR] WR={wr*100:.0f}% → threshold={thr} (cap=80)", flush=True)
+                thr = MT5_SCORE_AUTO_REDUCE + 10       # 90 — WR<40%, maxima selectividad (sin llegar al 95 que no aporta segun el backtest)
+            print(f"[ADAPT-THR] WR={wr*100:.0f}% → threshold={thr} (optimo backtest=80)", flush=True)
             return thr
         except Exception as _e:
             return MT5_REAL_SCORE_THRESHOLD  # fallback al default
@@ -3817,14 +3820,14 @@ class TradingSupervisor:
                                             print(f" -- [H1-SKIP] H4=WAIT, score {score}<100 sin confirmacion")
                                             continue
                                     else:
-                                        effective_threshold = max(75, mt5_threshold - 5)  # H1 siempre 5pts menos que H4
+                                        effective_threshold = max(MT5_SCORE_AUTO_REDUCE, mt5_threshold - 5)  # H1 siempre 5pts menos que H4, piso=90
                                 else:
                                     continue  # M15 y cualquier otro TF: skip
                                 # Killzone multiplier: threshold mas bajo en horas gold (14-16 UTC),
                                 # mas alto en horas debiles (17-18 UTC) — backtest WR 61% vs 24-28%
                                 from core.session_manager import session_multiplier as _kz_mult
                                 _kz = _kz_mult()
-                                _kz_threshold = max(70, int(effective_threshold / _kz))
+                                _kz_threshold = max(MT5_SCORE_AUTO_REDUCE, int(effective_threshold / _kz))  # piso=90, coherente con fix 2026-06-30 (era 70)
                                 if _kz != 1.0:
                                     print(f" -- [KZ] hora={__import__('datetime').datetime.now(__import__('datetime').timezone.utc).hour}UTC mult={_kz:.2f} thr={effective_threshold}->{_kz_threshold}", end="", flush=True)
                                     effective_threshold = _kz_threshold

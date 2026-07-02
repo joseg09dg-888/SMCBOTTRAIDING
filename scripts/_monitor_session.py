@@ -119,12 +119,13 @@ print(f"\nPOSICIONES ABIERTAS: {len(positions)}")
 if positions:
     for p in positions:
         icon  = "🟢" if p["profit"] >= 0 else "🔴"
-        sl_d  = abs(p["current"] - p["sl"])
-        tp_d  = abs(p["tp"] - p["current"])
+        pip_size = 0.01 if "JPY" in p["symbol"] else (1.0 if p["symbol"].startswith(("NAS", "US30", "XAU")) else 0.0001)
+        sl_d  = abs(p["current"] - p["sl"]) / pip_size if p["sl"] else 0.0
+        tp_d  = abs(p["tp"] - p["current"]) / pip_size if p["tp"] else 0.0
         rr_now = tp_d / sl_d if sl_d > 0 else 0
         print(f"  {icon} #{p['ticket']} {p['symbol']} {p['side']} {p['vol']}L")
         print(f"     entry={p['entry']:.4f} now={p['current']:.4f}  P&L=${p['profit']:+.2f}")
-        print(f"     SL:{sl_d:.1f}pts | TP:{tp_d:.1f}pts | RR restante:{rr_now:.1f}")
+        print(f"     SL:{sl_d:.1f}pips | TP:{tp_d:.1f}pips | RR restante:{rr_now:.1f}")
 else:
     print("  (sin posiciones)")
 

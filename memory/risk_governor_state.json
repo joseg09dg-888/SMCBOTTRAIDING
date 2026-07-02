@@ -17,22 +17,6 @@
     "US30": {
       "reason": "permanently_excluded",
       "ts": "2026-06-25"
-    },
-    "AUDUSD": {
-      "reason": "permanently_excluded WR=20% net=-311 en 30 dias",
-      "ts": "2026-06-29"
-    },
-    "GBPUSD": {
-      "reason": "permanently_excluded WR=38% net=-900 en 30 dias",
-      "ts": "2026-06-29"
-    },
-    "NZDUSD": {
-      "reason": "permanently_excluded solo 2 trades, datos insuficientes",
-      "ts": "2026-06-29"
-    },
-    "EURUSD": {
-      "reason": "permanently_excluded WR=0% en 12 trades, net=-229.65 \u2014 destruye ganancias del dia",
-      "ts": "2026-06-30"
     }
   },
   "risk_multiplier": 1.0,
@@ -310,8 +294,313 @@
         "reactivated": [],
         "risk_multiplier": null
       }
+    },
+    {
+      "ts": "2026-06-30T19:35:44.810278+00:00",
+      "active_symbols": [
+        "USDCAD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-30T19:56:04.087269+00:00",
+      "active_symbols": [
+        "USDCAD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-30T20:13:48.948251+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-06-30T22:13:54.989636+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T00:13:57.047993+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T03:56:30.676394+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T05:56:32.781937+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T14:54:31.966537+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T15:00:24.514021+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T15:03:14.602264+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T15:05:28.232862+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T15:05:50.583677+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T15:09:56.155051+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T17:09:58.585350+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T17:38:09.786903+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T17:39:02.444189+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T19:39:04.865807+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T21:39:07.725242+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T22:05:20.248966+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-01T22:56:27.003204+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD",
+        "NZDUSD",
+        "GBPUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-02T00:56:30.389661+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD",
+        "NZDUSD",
+        "GBPUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-02T02:56:32.978810+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD",
+        "NZDUSD",
+        "GBPUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
+    },
+    {
+      "ts": "2026-07-02T16:39:51.578992+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD",
+        "NZDUSD",
+        "GBPUSD"
+      ],
+      "risk_multiplier": 1.0,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
     }
   ],
-  "last_run": "2026-06-30T19:11:18.684335+00:00",
-  "last_drawdown_pct": 0.03950380000000005
+  "last_run": "2026-07-02T16:39:51.578992+00:00",
+  "last_drawdown_pct": 0.03815710000000006
 }

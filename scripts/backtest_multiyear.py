@@ -28,17 +28,14 @@ print("  BACKTEST MULTI-ANUAL — 8 DIMENSIONES")
 print("  H1: 2 años | D1: 10 años | Monte Carlo: 100,000 sims")
 print("=" * 72)
 
-CAPITAL = 97_022.0
+CAPITAL = 96_184.0
 RISK_PCT = 0.005
 MAX_RISK = 275.0
-RR = 2.5
+RR = 3.0  # actualizado 2026-07-01: era 2.5, MIN_RR real subio a 3.0 (commit 468c476 + fix MIN-RR-OVERRIDE)
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
-    "EURUSD": "EURUSD=X",
-    "GBPUSD": "GBPUSD=X",
-    "AUDUSD": "AUDUSD=X",
+    "EURUSD": "EURUSD=X",   # actualizado 2026-07-01: MT5_SYMBOLS real = solo estos 2 pares
     "USDCAD": "USDCAD=X",
-    "NZDUSD": "NZDUSD=X",
 }
 PAIR_NAS = {"NAS100": "^NDX"}
 PIP_SZ  = {"EURUSD":0.0001,"GBPUSD":0.0001,"AUDUSD":0.0001,"USDCAD":0.0001,"NZDUSD":0.0001,"NAS100":1.0}
@@ -285,7 +282,7 @@ for pair, df1 in h1_data.items():
                 new_open.append(pos)
 
         open_pos = new_open
-        if len(open_pos) >= 4: continue
+        if len(open_pos) >= 2: continue  # actualizado 2026-07-01: MAX_OPEN_POSITIONS real=2 (era 4, commit 468c476 bajo 3->2)
 
         # Signal generation
         d_dir = d1_trend(dfd, dt)
@@ -296,8 +293,8 @@ for pair, df1 in h1_data.items():
         sig, score, atr_v = smc_signal(df1, idx, d_dir)
         if sig == "WAIT": continue
 
-        # Threshold
-        thr = 80 if h4_d != "WAIT" else 100
+        # Threshold — actualizado 2026-07-01: MT5_REAL_SCORE_THRESHOLD real=95, piso MT5_SCORE_AUTO_REDUCE=90 (era 80/100)
+        thr = 90 if h4_d != "WAIT" else 100
         if score < thr: continue
 
         # Risk scaling by score
