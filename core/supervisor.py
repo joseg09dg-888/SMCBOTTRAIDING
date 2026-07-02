@@ -2862,7 +2862,7 @@ class TradingSupervisor:
     async def _manage_open_positions(self):
         """
         Active position management:
-        0a. Friday pre-close: close ALL losing positions by 19:30 UTC Friday (before 21:00 close)
+        0a. Friday pre-close: close ALL open positions (winners + losers) by 19:30 UTC Friday (before 21:00 close) — avoids weekend gap risk on both sides
         0b. Anti-drag: close worst loser when net P&L is negative and loser > winner
         1. Auto-close on loss > 0.8% balance
         1b. Peak-profit retracement: close when profit falls 25% from peak (peak >= $20)
@@ -3127,13 +3127,16 @@ class TradingSupervisor:
                 past_cutoff = (now_utc.hour > FRIDAY_CLOSE_HOUR or
                                (now_utc.hour == FRIDAY_CLOSE_HOUR and now_utc.minute >= FRIDAY_CLOSE_MIN))
                 if past_cutoff:
-                    losers = [p for p in positions if p.get("profit", 0.0) < 0]
-                    for lp in losers:
+                    # Cierra TODO antes del fin de semana — ganadoras y perdedoras.
+                    # Antes solo cerraba perdedoras; una ganadora abierta el viernes
+                    # queda expuesta al mismo gap risk que una perdedora el lunes.
+                    for lp in list(positions):
                         sym    = lp.get("symbol", "?")
                         ticket = lp["ticket"]
                         pnl    = lp.get("profit", 0.0)
+                        estado = "perdiendo" if pnl < 0 else "ganando"
                         print(
-                            f"[FRIDAY-CLOSE] {sym} #{ticket} perdiendo ${pnl:.2f} "
+                            f"[FRIDAY-CLOSE] {sym} #{ticket} {estado} ${pnl:.2f} "
                             f"— cerrando antes del fin de semana (19:30 UTC)",
                             flush=True,
                         )
