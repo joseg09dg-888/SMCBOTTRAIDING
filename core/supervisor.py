@@ -1598,6 +1598,7 @@ class TradingSupervisor:
 
         # ── 8D DIM 8: Portfolio correlation guard ──────────────────────
         # Blocks duplicate USD exposure (e.g. EURUSD + GBPUSD + AUDUSD all BUY)
+        _8d_result = None  # BUG-LEARN-UNKNOWN fix: usado luego para poblar regime del episodio
         try:
             if not hasattr(self, "_eight_dim_agent"):
                 from agents.eight_dim_agent import EightDimensionAgent
@@ -2080,6 +2081,10 @@ class TradingSupervisor:
                     "score": signal.decision_score,
 
                     "setup_type": "SMC",
+
+                    "regime": _8d_result.trend_regime if _8d_result else "unknown",
+
+                    "session": "+".join(__import__("core.session_manager", fromlist=["get_active_sessions"]).get_active_sessions()) or "unknown",
 
                 }, conn=self._episodic_conn)
 
