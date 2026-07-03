@@ -3059,10 +3059,17 @@ class TradingSupervisor:
                             print(f"[SCALP-SL] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
 
             # ── 0a. Friday pre-close: dump ALL losers before weekend ──────────
-            # ── 0b-TRAIL: Swing trailing — SL físico en MT5 al superar $10 peak ─
+            # ── 0b-TRAIL: Swing trailing — SL físico en MT5 al superar peak proporcional al riesgo ─
             # Problema: bot cicla cada 30s, precio puede caer de +$18 a +$1 en segundos
-            # Solución: cuando peak >= $10 → mover SL MT5 a entry (breakeven) inmediato
+            # Solución: cuando peak >= umbral → mover SL MT5 a entry (breakeven) inmediato
             # Esto protege a nivel broker, independiente del ciclo del bot
+            # BUG-BE-TOO-EARLY (2026-07-03): umbral fijo de $10 disparaba en cuanto el
+            # precio hacia ruido normal, mucho antes del 1:1 RR real (~$275-390 en estas
+            # posiciones) donde el mecanismo de partial-close (linea ~2438) esta pensado
+            # para actuar. Resultado: dos trades reales (USDCAD, NZDUSD) que llegaron a
+            # peak $30-90 volvieron a breakeven exacto ($0.00 neto) sin nunca tener
+            # oportunidad de alcanzar el partial ni el TP. Fix: umbral = 50% del riesgo
+            # real de la posicion (via SL distance), con piso de $10 para posiciones chicas.
             _be_moved = self.__dict__.setdefault("_breakeven_set", set())
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
@@ -3071,13 +3078,28 @@ class TradingSupervisor:
                 sw_entry  = sw.get("price_open", 0.0)
                 sw_type   = sw.get("type", "BUY")
                 sw_tp     = sw.get("tp", 0.0)
+                sw_sl     = sw.get("sl", 0.0)
                 # Actualizar peak
                 _peak = self._position_peaks.get(sw_ticket, 0.0)
                 if sw_pnl > _peak:
                     self._position_peaks[sw_ticket] = sw_pnl
                     _peak = sw_pnl
-                # Cuando peak >= $10 → mover SL a breakeven en MT5 (una sola vez)
-                if _peak >= 10.0 and sw_ticket not in _be_moved and sw_entry > 0:
+                # Umbral proporcional al riesgo real (50% de 1R), piso $10
+                _be_trigger = 10.0
+                if sw_sl and sw_entry:
+                    try:
+                        from core.volume_calculator import VolumeCalculator as _VC
+                        _be_base      = _VC._norm(sw_sym)
+                        _be_pip_size  = _VC._PIP_SIZE.get(_be_base, 0.0001)
+                        _be_pip_value = _VC._PIP_VALUE.get(_be_base, 10.0)
+                        _be_sl_pips   = abs(sw_entry - sw_sl) / _be_pip_size if _be_pip_size else 0.0
+                        _be_risk_usd  = sw.get("volume", 0.0) * _be_sl_pips * _be_pip_value
+                        if _be_risk_usd > 0:
+                            _be_trigger = max(10.0, _be_risk_usd * 0.5)
+                    except Exception:
+                        pass
+                # Cuando peak >= umbral → mover SL a breakeven en MT5 (una sola vez)
+                if _peak >= _be_trigger and sw_ticket not in _be_moved and sw_entry > 0:
                     _be_ok = await loop.run_in_executor(
                         None, lambda t=sw_ticket, e=sw_entry, tp=sw_tp: self.mt5.modify_position_sl_tp(t, e, tp)
                     )
