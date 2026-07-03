@@ -2595,13 +2595,14 @@ class TradingSupervisor:
                             pass
                         print(f"[COOLDOWN-SET] {_closed_sym} {_closed_dir}: 2h cooldown (posicion cerrada)", flush=True)
 
-                    episode_id = self._open_episodes.pop(ticket, None)
+                    # BUG-LEARN-NO-RESULT fix: NO sacar de self._open_episodes todavia --
+                    # si el bot se reinicia mientras el deal aun no aparece en MT5 history,
+                    # _recover_orphaned_episodes() (corrido en cada arranque, ver run())
+                    # necesita encontrar el ticket ahi para poder recuperarlo. Solo se saca
+                    # de self._open_episodes cuando el deal se confirma (o se agotan los
+                    # reintentos), mas abajo.
+                    episode_id = self._open_episodes.get(ticket)
                     self._partial_closed.discard(ticket)
-                    self._save_open_episodes()
-
-                    # BUG-LEARN-NO-RESULT fix: no descartar si el deal aun no aparece
-                    # en MT5 history -- encolar para reintentar en los proximos ciclos
-                    # (ver bloque "_pending_deal_lookup" mas abajo).
                     _pending_deal_lookup[ticket] = {"episode_id": episode_id, "attempts": 0}
 
                 for _pend_ticket in list(_pending_deal_lookup.keys()):
@@ -2618,13 +2619,16 @@ class TradingSupervisor:
                         if _pend["attempts"] >= _MAX_DEAL_LOOKUP_ATTEMPTS:
                             print(
                                 f"[LEARN] WARNING #{ticket}: no se encontro deal de cierre "
-                                f"tras {_pend['attempts']} intentos -- resultado NO registrado",
+                                f"tras {_pend['attempts']} intentos -- queda pendiente para "
+                                f"_recover_orphaned_episodes() en el proximo restart",
                                 flush=True,
                             )
                             del _pending_deal_lookup[ticket]
                         continue
 
                     del _pending_deal_lookup[ticket]
+                    self._open_episodes.pop(ticket, None)
+                    self._save_open_episodes()
 
                     pnl    = deal.get("profit", 0.0)
 
