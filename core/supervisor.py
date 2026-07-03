@@ -2387,6 +2387,13 @@ class TradingSupervisor:
         # Populated dynamically: any position with SL=0 gets auto-closed on next open
         _close_when_open: set = set()
         _log_counter: int = 0  # solo imprime posiciones cada 10 ciclos (30s)
+        # BUG-LEARN-NO-RESULT (2026-07-03): MT5 tarda en registrar el deal de cierre en
+        # history_deals_get() -- con polling de 100ms, get_closing_deal() a veces no lo
+        # encuentra en el primer intento. Antes: se descartaba el resultado para siempre
+        # (result/pnl quedaban NULL, el AutonomousLearner nunca aprendia de trades reales).
+        # Fix: reintentar por varios ciclos antes de darse por vencido.
+        _pending_deal_lookup: dict = {}  # ticket -> {"episode_id": int|None, "attempts": int}
+        _MAX_DEAL_LOOKUP_ATTEMPTS = 30  # ~3-6s de reintentos a 100-200ms/ciclo
 
         while self._running:
 
@@ -2592,15 +2599,32 @@ class TradingSupervisor:
                     self._partial_closed.discard(ticket)
                     self._save_open_episodes()
 
+                    # BUG-LEARN-NO-RESULT fix: no descartar si el deal aun no aparece
+                    # en MT5 history -- encolar para reintentar en los proximos ciclos
+                    # (ver bloque "_pending_deal_lookup" mas abajo).
+                    _pending_deal_lookup[ticket] = {"episode_id": episode_id, "attempts": 0}
+
+                for _pend_ticket in list(_pending_deal_lookup.keys()):
+                    _pend = _pending_deal_lookup[_pend_ticket]
+                    ticket = _pend_ticket
+                    episode_id = _pend["episode_id"]
+
                     deal = await loop.run_in_executor(
-
                         None, lambda t=ticket: self.mt5.get_closing_deal(t)
-
                     )
 
                     if not deal:
-
+                        _pend["attempts"] += 1
+                        if _pend["attempts"] >= _MAX_DEAL_LOOKUP_ATTEMPTS:
+                            print(
+                                f"[LEARN] WARNING #{ticket}: no se encontro deal de cierre "
+                                f"tras {_pend['attempts']} intentos -- resultado NO registrado",
+                                flush=True,
+                            )
+                            del _pending_deal_lookup[ticket]
                         continue
+
+                    del _pending_deal_lookup[ticket]
 
                     pnl    = deal.get("profit", 0.0)
 
