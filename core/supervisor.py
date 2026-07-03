@@ -2080,7 +2080,7 @@ class TradingSupervisor:
 
                     "score": signal.decision_score,
 
-                    "setup_type": "SMC",
+                    "setup_type": signal.trigger or "SMC",
 
                     "regime": _8d_result.trend_regime if _8d_result else "unknown",
 
