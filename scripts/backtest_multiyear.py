@@ -564,7 +564,7 @@ if len(daily_vals) >= 20:
   DIM 3 (Trend regimen): STRONG_TREND + HIGH vol = mejor combo posible
   DIM 4 (Sesion):        13-16 UTC es la ventana de oro (NY Open)
   DIM 5 (Par):           Ver ranking por par arriba — enfocarse en top 2
-  DIM 6 (Kelly):         Sistema subutiliza capital — Kelly dice hasta 6%
+  DIM 6 (Kelly):         {"Sistema subutiliza capital — Kelly dice hasta " + f"{globals().get('kelly_f', 0)*50*100:.1f}%" if globals().get('kelly_f', -1) > 0 else "Kelly NEGATIVO en el tramo final-only (ver DIM6 arriba) — NO subir tamaño de posicion con este dato"}
   DIM 7 (Salida):        Partial TP a 1.0R + BE inmediato = minima varianza
   DIM 8 (Correlacion):   EURUSD+GBPUSD+AUDUSD = riesgo triplicado si todos van igual
 
