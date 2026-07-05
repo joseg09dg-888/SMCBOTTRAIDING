@@ -41,7 +41,9 @@ def _create_tables(conn: sqlite3.Connection):
             exit_price  REAL,
             pnl         REAL,
             result      TEXT,
-            lesson      TEXT
+            lesson      TEXT,
+            slippage_pips REAL,
+            spread_pips   REAL
         );
 
         CREATE TABLE IF NOT EXISTS lessons (
@@ -96,6 +98,16 @@ def _create_tables(conn: sqlite3.Connection):
         );
     """)
     conn.commit()
+    # Safe migration: add columns if they don't exist yet (old DBs predate them)
+    for col, definition in [
+        ("slippage_pips", "REAL DEFAULT NULL"),
+        ("spread_pips", "REAL DEFAULT NULL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE episodes ADD COLUMN {col} {definition}")
+        except Exception:
+            pass
+    conn.commit()
 
 
 def get_db(path: str = None) -> sqlite3.Connection:
@@ -118,13 +130,15 @@ def record_episode(ep: dict, conn: sqlite3.Connection = None) -> int:
     cur = c.execute(
         """INSERT INTO episodes
            (ts, symbol, timeframe, direction, entry, sl, tp, ticket,
-            score, setup_type, regime, session, reasoning, macro_ctx)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            score, setup_type, regime, session, reasoning, macro_ctx,
+            slippage_pips, spread_pips)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (ep.get("ts", _now()), ep.get("symbol", ""), ep.get("timeframe", ""),
          ep.get("direction", ""), ep.get("entry", 0.0), ep.get("sl"),
          ep.get("tp"), ep.get("ticket"), ep.get("score"),
          ep.get("setup_type"), ep.get("regime"), ep.get("session"),
-         ep.get("reasoning"), ep.get("macro_ctx")),
+         ep.get("reasoning"), ep.get("macro_ctx"),
+         ep.get("slippage_pips"), ep.get("spread_pips")),
     )
     c.commit()
     return cur.lastrowid

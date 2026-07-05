@@ -244,6 +244,15 @@ class MT5Connector:
             if price <= 0:
                 return {"error": f"Precio invalido ({price}) para {symbol} — mercado cerrado?"}
 
+            # Real spread at order-placement time (for later cost-model calibration).
+            _real_bid, _real_ask = tick.bid, tick.ask
+            _real_spread_pips = None
+            try:
+                if info is not None and info.point:
+                    _real_spread_pips = round(abs(_real_ask - _real_bid) / (info.point * 10), 2)
+            except Exception:
+                _real_spread_pips = None
+
             # Enforce minimum stop distance required by the broker
             if info is not None:
                 point     = info.point
@@ -370,7 +379,11 @@ class MT5Connector:
                     else:
                         logger.error(f"MT5 NoSL close FAILED retcode={_cr.retcode if _cr else 'None'} — MANUAL INTERVENTION REQUIRED")
 
-            return {"ticket": result.order, "status": "filled", "price": result.price}
+            return {
+                "ticket": result.order, "status": "filled", "price": result.price,
+                "requested_price": price, "bid": _real_bid, "ask": _real_ask,
+                "spread_pips": _real_spread_pips,
+            }
         except Exception as e:
             logger.error(f"MT5 place_order error: {e}")
             return {"error": str(e)}

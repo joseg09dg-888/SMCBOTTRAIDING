@@ -1540,50 +1540,6 @@ class TradingSupervisor:
         # Auto-confirm: 13-agent enrichment score is sufficient for trade quality.
         # Claude API confirmation disabled to preserve credits.
         return True, signal.decision_score, "auto-confirm"
-        if self._smc_agent is None:
-            return True, signal.decision_score, "no-api-key"
-        try:
-            df = self._df_cache.get(signal.symbol, pd.DataFrame())
-            # Regime from chaos agent
-            regime = "unknown"  # chaos agent eliminado del pipeline
-
-            smc_summary = (
-                f"{signal.symbol} {signal.timeframe} | Bias: "
-                f"{'bullish' if signal.signal_type == SignalType.LONG else 'bearish'}\n"
-                f"Score: {signal.decision_score} | RR: {signal.risk_reward:.1f}\n"
-                f"Entry: {signal.entry} | SL: {signal.stop_loss} | TP: {signal.take_profit}\n"
-                f"Regime: {regime}"
-            )
-            loop = asyncio.get_running_loop()
-            similar = await loop.run_in_executor(
-                None,
-                lambda: query_similar_episodes(
-                    signal.symbol, "SMC", regime, n=10, conn=self._episodic_conn
-                ),
-            )
-            result = await loop.run_in_executor(
-                None,
-                lambda: self._smc_agent.reason_with_context(
-                    symbol=signal.symbol,
-                    timeframe=signal.timeframe,
-                    smc_summary=smc_summary,
-                    similar_episodes=similar,
-                    regime=regime,
-                    base_score=signal.decision_score,
-                ),
-            )
-            if result.get("fallback"):
-                return True, signal.decision_score, "claude-fallback"
-            can_trade   = not result.get("wait_override", False)
-            adj_score   = result.get("adjusted_score", signal.decision_score)
-            confidence  = result.get("confidence", 50)
-            decision    = result.get("reasoning", {}).get("decision", "?")
-            justif      = result.get("reasoning", {}).get("justification", "")[:80]
-            summary     = f"{decision} conf={confidence} | {justif}"
-            return can_trade, adj_score, summary
-        except Exception as exc:
-            print(f"[CLAUDE] confirm error: {exc}", flush=True)
-            return True, signal.decision_score, "error-fallback"
 
     async def _send_mt5_real_order(self, signal: TradeSignal):
 
@@ -2058,6 +2014,19 @@ class TradingSupervisor:
 
             print(f"[MT5 REAL] {signal.symbol} {order_type} #{result['ticket']} @{result.get('price', 0):.5f} score={signal.decision_score}", flush=True)
 
+            # ── Real cost capture (spread/slippage) — feeds future backtest cost model ──
+            _spread_pips_ep = result.get("spread_pips")
+            _slippage_pips_ep = None
+            try:
+                from core.volume_calculator import VolumeCalculator as _VCsl
+                _base_sl = _VCsl._norm(signal.symbol)
+                _pip_size_sl = _VCsl._PIP_SIZE.get(_base_sl, 0.0001)
+                _fill_price_sl = result.get("price")
+                if signal.entry and signal.entry > 0 and _fill_price_sl and _pip_size_sl > 0:
+                    _slippage_pips_ep = round(abs(signal.entry - _fill_price_sl) / _pip_size_sl, 2)
+            except Exception as _sl_exc:
+                print(f"[SLIPPAGE] calc error (no bloqueo): {_sl_exc}", flush=True)
+
             try:
 
                 eid = record_episode({
@@ -2085,6 +2054,10 @@ class TradingSupervisor:
                     "regime": _8d_result.trend_regime if _8d_result else "unknown",
 
                     "session": "+".join(__import__("core.session_manager", fromlist=["get_active_sessions"]).get_active_sessions()) or "unknown",
+
+                    "slippage_pips": _slippage_pips_ep,
+
+                    "spread_pips": _spread_pips_ep,
 
                 }, conn=self._episodic_conn)
 
@@ -2782,6 +2755,17 @@ class TradingSupervisor:
                     except Exception:
                         pass
 
+                elif not positions and _log_counter % 300 == 0:
+                    # No open positions right now — clear any stale snapshot so a
+                    # future restart's run_recovery() doesn't "recover" trades that
+                    # already closed (positions_state.json was only ever written
+                    # while positions existed, never cleared on close).
+                    try:
+                        from core.wakeup_recovery import clear_positions as _clear_pos
+                        _clear_pos()
+                    except Exception:
+                        pass
+
                 # Auto-cierre si alguna posicion supera limite de perdida
                 await self._manage_open_positions()
 
@@ -3003,7 +2987,7 @@ class TradingSupervisor:
                 SCALP_MAX_LOSS   = RECOVERY_SCALP_SL
                 # Log RECOVERY solo cada 300 ciclos (~30s) para no spam con monitor 100ms
                 if getattr(self, "_recovery_log_count", 0) % 300 == 0:
-                    if _below_peak and self._balance_peak > INITIAL_CAPITAL:
+                    if self._balance_peak > INITIAL_CAPITAL and _current_bal < self._balance_peak:
                         _gap = self._balance_peak - _current_bal
                         print(f"[RECOVERY] Cayó ${_gap:.0f} del pico ${self._balance_peak:,.0f} — recuperando", flush=True)
                     elif _current_bal < INITIAL_CAPITAL:
