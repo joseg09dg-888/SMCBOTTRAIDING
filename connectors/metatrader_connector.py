@@ -469,7 +469,15 @@ class MT5Connector:
             return {"error": str(e)}
 
     def get_closing_deal(self, position_ticket: int) -> dict:
-        """Return the closing deal for a position (entry=1 in MT5 history)."""
+        """Return the aggregate closing result for a position (entry=1 deals
+        in MT5 history). A position that went through a 1R partial-close
+        (see core/supervisor.py PARTIAL+BE) produces TWO entry=1 deals on the
+        same position_id: the partial close, then the final close of the
+        remainder. Summing both is required -- returning on the first match
+        silently reported only the (earlier, smaller) partial-close profit
+        and dropped the final leg entirely, understating (or misreporting)
+        the true P&L of every partially-closed real trade in episodes.db.
+        """
         if not HAS_MT5:
             return {}
         try:
@@ -477,15 +485,18 @@ class MT5Connector:
             now  = datetime.now(timezone.utc)
             from_dt = now - timedelta(days=7)
             deals = mt5.history_deals_get(from_dt, now) or []
-            for d in deals:
-                if d.position_id == position_ticket and d.entry == 1:
-                    return {
-                        "profit":  round(d.profit + d.swap + d.commission, 2),
-                        "price":   d.price,
-                        "symbol":  d.symbol,
-                        "volume":  d.volume,
-                        "time":    d.time,
-                    }
+            matches = [d for d in deals if d.position_id == position_ticket and d.entry == 1]
+            if not matches:
+                return {}
+            last = matches[-1]
+            total_profit = sum(d.profit + d.swap + d.commission for d in matches)
+            return {
+                "profit":  round(total_profit, 2),
+                "price":   last.price,
+                "symbol":  last.symbol,
+                "volume":  sum(d.volume for d in matches),
+                "time":    last.time,
+            }
         except Exception as e:
             logger.error(f"MT5 get_closing_deal error: {e}")
         return {}
