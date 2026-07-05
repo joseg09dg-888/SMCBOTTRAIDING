@@ -140,7 +140,7 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["USDCAD", "EURUSD", "NZDUSD", "GBPUSD"]  # ampliado 2026-07-01: backtest 2y a thr=80/RR=3.0 muestra P(pasar 5%)=40% con 4 pares vs 28% con 2 (DIM8 ya controla correlacion)
+MT5_SYMBOLS      = ["USDCAD", "EURUSD", "NZDUSD", "GBPUSD", "USDCHF", "EURAUD", "GBPCAD"]  # ampliado 2026-07-05: screening backtest 2y (scripts/backtest_new_pairs_screen.py) con las mismas reglas del bot (thr=80/90, RR=3.0, partial+BE@1R) mostro edge positivo real: USDCHF (+$7,296 WR=58%), EURAUD (+$3,828 WR=56%), GBPCAD (+$3,023 WR=58%) en 2 anos -- EURCAD/EURGBP/AUDCAD tambien probados y rechazados (negativos)
 MT5_TIMEFRAMES   = ["H4", "H1"]  # H4 swing principal | H1 swing adicional | M15 scalps DESACTIVADOS (destruian capital)
 
 MT5_MIN_VOLUME   = 0.01

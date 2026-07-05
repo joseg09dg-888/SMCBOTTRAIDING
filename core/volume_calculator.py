@@ -18,6 +18,7 @@ class VolumeCalculator:
         "USDCHF": 0.0001, "AUDUSD": 0.0001,
         "NZDUSD": 0.0001, "EURGBP": 0.0001,
         "USDCAD": 0.0001,
+        "EURAUD": 0.0001, "GBPCAD": 0.0001,
         "USDJPY": 0.01,   "GBPJPY": 0.01,
         "EURJPY": 0.01,
         "XAUUSD": 1.0,    # 1 price unit = 1 pip ($1 move)
@@ -32,6 +33,8 @@ class VolumeCalculator:
         "USDCHF": 10.0,  "AUDUSD": 10.0,
         "USDCAD": 7.1,
         "NZDUSD": 10.0,  "EURGBP": 10.0,
+        "EURAUD": 6.6,   # quote=AUD: $10 x ~0.66 AUDUSD rate
+        "GBPCAD": 7.1,   # quote=CAD, same conversion as USDCAD
         "USDJPY": 6.3,   "GBPJPY": 6.3,
         "EURJPY": 6.3,
         "XAUUSD": 100.0, # 100oz × $1/oz = $100 per lot per $1 move
