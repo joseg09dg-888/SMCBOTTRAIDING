@@ -1,5 +1,5 @@
 {
-  "date": "2026-07-05T12:27:50.428647",
+  "date": "2026-07-05T14:42:35.462123",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -12,24 +12,27 @@
       "EURUSD",
       "USDCAD",
       "NZDUSD",
-      "GBPUSD"
+      "GBPUSD",
+      "USDCHF",
+      "EURAUD",
+      "GBPCAD"
     ]
   },
   "stats": {
-    "total_trades": 2229,
-    "total_days": 431,
-    "wr_pct": 33.3,
-    "avg_daily": 166.96,
-    "p_day_250": 38.7,
-    "p_pass_axi": 40.0,
-    "e_monthly": 3689.56,
-    "sharpe": 0.7,
+    "total_trades": 3484,
+    "total_days": 464,
+    "wr_pct": 31.9,
+    "avg_daily": 185.74,
+    "p_day_250": 38.1,
+    "p_pass_axi": 43.5,
+    "e_monthly": 4078.11,
+    "sharpe": 0.613,
     "best_hours": [
       14,
-      13,
-      16,
       15,
-      18
+      13,
+      18,
+      16
     ]
   }
 }

@@ -34,15 +34,21 @@ MAX_RISK = 275.0
 RR = 3.0  # actualizado 2026-07-01: era 2.5, MIN_RR real subio a 3.0 (commit 468c476 + fix MIN-RR-OVERRIDE)
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
-    # actualizado 2026-07-05: MT5_SYMBOLS real (core/supervisor.py:143) = estos 4 pares
+    # actualizado 2026-07-05: MT5_SYMBOLS real (core/supervisor.py:143) = estos 7 pares
+    # (USDCHF/EURAUD/GBPCAD agregados hoy tras screening backtest positivo)
     "EURUSD": "EURUSD=X",
     "USDCAD": "USDCAD=X",
     "NZDUSD": "NZDUSD=X",
     "GBPUSD": "GBPUSD=X",
+    "USDCHF": "USDCHF=X",
+    "EURAUD": "EURAUD=X",
+    "GBPCAD": "GBPCAD=X",
 }
 PAIR_NAS = {"NAS100": "^NDX"}
-PIP_SZ  = {"EURUSD":0.0001,"GBPUSD":0.0001,"AUDUSD":0.0001,"USDCAD":0.0001,"NZDUSD":0.0001,"NAS100":1.0}
-PIP_VAL = {"EURUSD":10.0,"GBPUSD":10.0,"AUDUSD":10.0,"USDCAD":10.0,"NZDUSD":10.0,"NAS100":1.0}
+PIP_SZ  = {"EURUSD":0.0001,"GBPUSD":0.0001,"AUDUSD":0.0001,"USDCAD":0.0001,"NZDUSD":0.0001,
+           "USDCHF":0.0001,"EURAUD":0.0001,"GBPCAD":0.0001,"NAS100":1.0}
+PIP_VAL = {"EURUSD":10.0,"GBPUSD":10.0,"AUDUSD":10.0,"USDCAD":10.0,"NZDUSD":10.0,
+           "USDCHF":10.0,"EURAUD":6.6,"GBPCAD":7.1,"NAS100":1.0}
 
 rng = np.random.default_rng(42)
 
