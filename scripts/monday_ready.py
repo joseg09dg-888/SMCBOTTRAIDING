@@ -159,23 +159,28 @@ try:
 except Exception as e:
     # Fallback to positions_state.json
     try:
-        ps = json.load(open("memory/positions_state.json"))
-        positions = ps.get("positions", [])
-        saved_at = ps.get("saved_at", 0)
-        age_min = (datetime.now(timezone.utc).timestamp() - saved_at) / 60
-        print(f"  {WARN} MT5 no disponible — usando positions_state.json ({age_min:.0f}min ago)")
-        if not positions:
-            check("Sin posiciones (state file)", True)
+        if not os.path.exists("memory/positions_state.json"):
+            # File is only written while positions are open (see wakeup_recovery.py) —
+            # missing means the last known state was "no open positions", not an error.
+            check("Sin posiciones (state file ausente)", True, "cuenta limpia para lunes")
         else:
-            for p in positions:
-                size = p.get("size", 0)
-                sym  = p.get("symbol", "?")
-                ticket = p.get("ticket", 0)
-                is_scalp = size <= 0.10
-                is_stale = age_min > 60  # state file > 1hr old may be outdated
-                check(f"#{ticket} {sym} {size}L {'SCALP' if is_scalp else 'SWING'}",
-                      not is_scalp,
-                      f"{'[stale data]' if is_stale else ''} {'ATENCION' if is_scalp else 'OK'}")
+            ps = json.load(open("memory/positions_state.json"))
+            positions = ps.get("positions", [])
+            saved_at = ps.get("saved_at", 0)
+            age_min = (datetime.now(timezone.utc).timestamp() - saved_at) / 60
+            print(f"  {WARN} MT5 no disponible — usando positions_state.json ({age_min:.0f}min ago)")
+            if not positions:
+                check("Sin posiciones (state file)", True)
+            else:
+                for p in positions:
+                    size = p.get("size", 0)
+                    sym  = p.get("symbol", "?")
+                    ticket = p.get("ticket", 0)
+                    is_scalp = size <= 0.10
+                    is_stale = age_min > 60  # state file > 1hr old may be outdated
+                    check(f"#{ticket} {sym} {size}L {'SCALP' if is_scalp else 'SWING'}",
+                          not is_scalp,
+                          f"{'[stale data]' if is_stale else ''} {'ATENCION' if is_scalp else 'OK'}")
     except Exception as e2:
         print(f"  {WARN} No se pudo verificar posiciones: {e2}")
 

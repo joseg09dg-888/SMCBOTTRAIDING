@@ -34,8 +34,11 @@ MAX_RISK = 275.0
 RR = 3.0  # actualizado 2026-07-01: era 2.5, MIN_RR real subio a 3.0 (commit 468c476 + fix MIN-RR-OVERRIDE)
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
-    "EURUSD": "EURUSD=X",   # actualizado 2026-07-01: MT5_SYMBOLS real = solo estos 2 pares
+    # actualizado 2026-07-05: MT5_SYMBOLS real (core/supervisor.py:143) = estos 4 pares
+    "EURUSD": "EURUSD=X",
     "USDCAD": "USDCAD=X",
+    "NZDUSD": "NZDUSD=X",
+    "GBPUSD": "GBPUSD=X",
 }
 PAIR_NAS = {"NAS100": "^NDX"}
 PIP_SZ  = {"EURUSD":0.0001,"GBPUSD":0.0001,"AUDUSD":0.0001,"USDCAD":0.0001,"NZDUSD":0.0001,"NAS100":1.0}
@@ -244,15 +247,15 @@ for pair, df1 in h1_data.items():
                     new_open.append((eidx, direction, entry, new_be, tp, vol_p*0.5, sl_dist, True, new_be, pip_v, pair_p))
                     continue
             else:
-                # After partial: SL is at BE, TP is at 2.5R
+                # After partial: SL is at BE, TP is at RR (matches live MIN_RR=3.0)
                 if direction == "LONG":
                     if cur_h >= tp:
-                        pnl = vol_p * sl_dist * 2.5 * pip_v / PIP_SZ[pair_p]
+                        pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
                     elif cur_l <= be_sl:
                         pnl = 0.0  # stopped at BE — no gain, no loss (already locked partial)
                 else:
                     if cur_l <= tp:
-                        pnl = vol_p * sl_dist * 2.5 * pip_v / PIP_SZ[pair_p]
+                        pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
                     elif cur_h >= be_sl:
                         pnl = 0.0
 
@@ -293,8 +296,10 @@ for pair, df1 in h1_data.items():
         sig, score, atr_v = smc_signal(df1, idx, d_dir)
         if sig == "WAIT": continue
 
-        # Threshold — actualizado 2026-07-01: MT5_REAL_SCORE_THRESHOLD real=95, piso MT5_SCORE_AUTO_REDUCE=90 (era 80/100)
-        thr = 90 if h4_d != "WAIT" else 100
+        # Threshold — actualizado 2026-07-05: MT5_SCORE_AUTO_REDUCE real=80 (core/supervisor.py:96,
+        # recalibrado 2026-07-01 tras el sweep que probo 90-95 y NO mejoraba WR, solo cortaba volumen).
+        # MT5_REAL_SCORE_THRESHOLD=95 es solo techo de excepcion, no la operacion normal.
+        thr = 80 if h4_d != "WAIT" else 90
         if score < thr: continue
 
         # Risk scaling by score
@@ -317,10 +322,10 @@ for pair, df1 in h1_data.items():
         entry = bar["close"]
         if sig == "LONG":
             sl_p = entry - sl_dist_p
-            tp_p = entry + sl_dist_p * 2.5
+            tp_p = entry + sl_dist_p * RR
         else:
             sl_p = entry + sl_dist_p
-            tp_p = entry - sl_dist_p * 2.5
+            tp_p = entry - sl_dist_p * RR
 
         open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, entry, pip_v, pair))
 
@@ -563,7 +568,7 @@ if len(daily_vals) >= 20:
   DIM 7 (Salida):        Partial TP a 1.0R + BE inmediato = minima varianza
   DIM 8 (Correlacion):   EURUSD+GBPUSD+AUDUSD = riesgo triplicado si todos van igual
 
-  ACCION INMEDIATA: Implementar partial+BE, agregar NZDUSD, focus 13-16UTC
+  ACCION INMEDIATA: partial+BE ya implementado en vivo, focus 13-16UTC
     """)
 
     # Save results JSON for future use
@@ -571,8 +576,9 @@ if len(daily_vals) >= 20:
         "date": datetime.now().isoformat(),
         "config": {
             "years_h1": 2, "years_d1": 10,
-            "threshold_h1": 80, "threshold_h4": 85,
-            "rr": 2.5, "partial_tp": 1.0, "kill_zone_utc": "13-20"
+            "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+            "rr": RR, "partial_tp": 1.0, "kill_zone_utc": "13-20",
+            "pairs": list(PAIRS_FOREX.keys()),
         },
         "stats": {
             "total_trades": len(trade_log),
