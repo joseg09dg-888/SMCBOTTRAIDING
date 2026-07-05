@@ -242,6 +242,65 @@ def test_neutral_signal_zero_bonus(agent):
     assert sig.total_bonus == 0
 
 
+# ---------------------------------------------------------------------------
+# 11. Real CFTC Socrata API parsing (replaces the dead ddi/preliminary page)
+# ---------------------------------------------------------------------------
+
+def _make_cftc_row(dealer_long=100_000, dealer_short=40_000,
+                    lev_long=50_000, lev_short=70_000,
+                    nonrept_long=10_000, nonrept_short=5_000):
+    return {
+        "report_date_as_yyyy_mm_dd": "2026-06-30T00:00:00.000",
+        "contract_market_name": "EURO FX",
+        "dealer_positions_long_all": str(dealer_long),
+        "dealer_positions_short_all": str(dealer_short),
+        "lev_money_positions_long": str(lev_long),
+        "lev_money_positions_short": str(lev_short),
+        "nonrept_positions_long_all": str(nonrept_long),
+        "nonrept_positions_short_all": str(nonrept_short),
+    }
+
+
+def test_cot_signal_parses_real_cftc_endpoint(agent):
+    """EURUSD -> 'EURO FX' contract, dealer long/short drives commercial_net."""
+    fake_resp = MagicMock()
+    fake_resp.json.return_value = [_make_cftc_row(dealer_long=100_000, dealer_short=40_000)]
+    fake_resp.raise_for_status.return_value = None
+
+    with patch("requests.get", return_value=fake_resp) as mock_get:
+        snap = agent.get_cot_signal("EURUSD")
+
+    assert snap is not None
+    assert snap.commercial_net == 60_000
+    assert snap.commercial_bias == "bullish"
+    assert snap.score_bonus == 15
+    # Confirm it queried the real Socrata endpoint with the mapped contract name
+    called_url = mock_get.call_args[0][0]
+    assert "publicreporting.cftc.gov" in called_url
+    called_params = mock_get.call_args[1]["params"]
+    assert called_params["contract_market_name"] == "EURO FX"
+
+
+def test_cot_signal_unmapped_symbol_returns_none(agent):
+    """Symbols with no CFTC financial-futures contract (e.g. indices) skip the fetch."""
+    with patch("requests.get") as mock_get:
+        snap = agent.get_cot_signal("NAS100")
+
+    assert snap is None
+    mock_get.assert_not_called()
+
+
+def test_cot_signal_empty_rows_falls_back_to_cache(agent):
+    fake_resp = MagicMock()
+    fake_resp.json.return_value = []
+    fake_resp.raise_for_status.return_value = None
+
+    with patch("requests.get", return_value=fake_resp):
+        snap = agent.get_cot_signal("GBPUSD")
+
+    assert snap is None
+
+
 def test_neutral_cot_zero_bonus():
     """commercial_net == 0 → score_bonus == 0."""
     cot = COTSnapshot(

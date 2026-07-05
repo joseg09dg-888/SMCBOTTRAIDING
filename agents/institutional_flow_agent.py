@@ -48,7 +48,22 @@ class InstitutionalFlowAgent:
     All external fetches degrade gracefully to None when offline.
     """
 
-    COT_URL = "https://www.cftc.gov/ddi/preliminary/aspx/fincomrep.aspx"
+    # CFTC's own "Traders in Financial Futures" Socrata dataset — the old
+    # cftc.gov/ddi/preliminary/aspx/fincomrep.aspx page was retired (404s
+    # forever) and had never actually returned real data. This is the CFTC's
+    # current public JSON API (no key required) for the same weekly report.
+    COT_URL = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"
+    # Base-currency futures contract name CFTC uses per traded pair. Only
+    # currencies with a listed CME future are covered (indices/metals use a
+    # different CFTC report and aren't mapped here).
+    COT_CONTRACT_NAMES = {
+        "EURUSD": "EURO FX",
+        "GBPUSD": "BRITISH POUND",
+        "AUDUSD": "AUSTRALIAN DOLLAR",
+        "NZDUSD": "NZ DOLLAR",
+        "USDCAD": "CANADIAN DOLLAR",
+        "USDJPY": "JAPANESE YEN",
+    }
     OPTIONS_URL = "https://phx.unusualwhales.com/api/etf/{symbol}/flow"
 
     # Retry cooldown after failures: 4 hours (COT is weekly, options rarely changes)
@@ -94,45 +109,39 @@ class InstitutionalFlowAgent:
         last_fail = self._cot_fail_ts.get(symbol, 0.0)
         if _time.time() - last_fail < self._FAIL_COOLDOWN_SEC:
             return self._cot_cache.get(symbol)
+
+        contract_name = self.COT_CONTRACT_NAMES.get(symbol.upper())
+        if contract_name is None:
+            # No CFTC financial-futures contract for this instrument
+            # (indices/metals use a different report) — nothing to fetch.
+            return self._cot_cache.get(symbol)
+
         try:
             import requests  # optional dependency; may not be installed
-            resp = requests.get(self.COT_URL, timeout=5)
+            resp = requests.get(
+                self.COT_URL,
+                params={
+                    "$limit": 1,
+                    "$order": "report_date_as_yyyy_mm_dd DESC",
+                    "contract_market_name": contract_name,
+                },
+                timeout=8,
+            )
             resp.raise_for_status()
+            rows = resp.json()
+            if not rows:
+                raise ValueError(f"no rows for contract {contract_name!r}")
+            row = rows[0]
 
-            # --- Minimal parsing of CFTC CSV/HTML ---
-            # The real CFTC endpoint returns a paginated HTML table.
-            # We look for lines containing the symbol keyword and extract
-            # commercial long/short columns (positions 9 and 10 in the
-            # standard "legacy" CSV format).
-            text = resp.text
-            commercial_long = 0
-            commercial_short = 0
-            noncommercial_long = 0
-            noncommercial_short = 0
-            retail_long = 0
-            retail_short = 0
-
-            for line in text.splitlines():
-                if symbol.upper() in line.upper():
-                    parts = [p.strip().replace(",", "") for p in line.split(",")]
-                    try:
-                        # Legacy COT CSV columns (0-indexed):
-                        # 9  = commercial long
-                        # 10 = commercial short
-                        # 5  = noncommercial long
-                        # 6  = noncommercial short
-                        # 12 = small trader long
-                        # 13 = small trader short
-                        if len(parts) > 13:
-                            commercial_long = int(parts[9])
-                            commercial_short = int(parts[10])
-                            noncommercial_long = int(parts[5])
-                            noncommercial_short = int(parts[6])
-                            retail_long = int(parts[12])
-                            retail_short = int(parts[13])
-                    except (ValueError, IndexError):
-                        pass
-                    break
+            # "Dealer/Intermediary" (banks & dealers) is the closest analog to
+            # the legacy "commercial" hedger category for financial futures.
+            commercial_long = int(row.get("dealer_positions_long_all", 0))
+            commercial_short = int(row.get("dealer_positions_short_all", 0))
+            # "Leveraged Money" (hedge funds/CTAs) stands in for speculators.
+            noncommercial_long = int(row.get("lev_money_positions_long", 0))
+            noncommercial_short = int(row.get("lev_money_positions_short", 0))
+            retail_long = int(row.get("nonrept_positions_long_all", 0))
+            retail_short = int(row.get("nonrept_positions_short_all", 0))
 
             commercial_net = commercial_long - commercial_short
             noncommercial_net = noncommercial_long - noncommercial_short
@@ -141,7 +150,7 @@ class InstitutionalFlowAgent:
             bonus = self._compute_cot_bonus(commercial_net)
 
             snapshot = COTSnapshot(
-                report_date=resp.headers.get("Last-Modified", "unknown"),
+                report_date=row.get("report_date_as_yyyy_mm_dd", "unknown"),
                 symbol=symbol,
                 commercial_net=commercial_net,
                 noncommercial_net=noncommercial_net,
