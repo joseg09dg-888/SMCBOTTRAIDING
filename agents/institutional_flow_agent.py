@@ -188,43 +188,10 @@ class InstitutionalFlowAgent:
         Attempt to fetch options flow from unusualwhales.com free tier.
         Returns None gracefully if network is unavailable or data is missing.
         """
-        import time as _time
-        last_fail = self._options_fail_ts.get(symbol, 0.0)
-        if _time.time() - last_fail < self._FAIL_COOLDOWN_SEC:
-            return self._options_cache.get(symbol)
-        try:
-            import requests
-            url = self.OPTIONS_URL.format(symbol=symbol)
-            resp = requests.get(url, timeout=5)
-            resp.raise_for_status()
-            data = resp.json()
-
-            call_volume = int(data.get("call_volume", 0))
-            put_volume = int(data.get("put_volume", 0))
-            total = call_volume + put_volume
-            pcr = put_volume / call_volume if call_volume > 0 else 1.0
-            unusual = data.get("unusual_activity", False)
-
-            bias = self._compute_options_bias(pcr)
-            bonus = self._compute_options_bonus(pcr)
-
-            snapshot = OptionsFlowSnapshot(
-                symbol=symbol,
-                call_volume=call_volume,
-                put_volume=put_volume,
-                put_call_ratio=round(pcr, 4),
-                unusual_activity=bool(unusual),
-                bias=bias,
-                score_bonus=bonus,
-            )
-            self._options_cache[symbol] = snapshot
-            return snapshot
-
-        except Exception as exc:
-            self._options_fail_ts[symbol] = _time.time()
-            if symbol not in self._options_cache:
-                logger.warning("Options fetch failed for %s: %s — using cache", symbol, exc)
-            return self._options_cache.get(symbol)
+        # unusualwhales' /api/etf/{symbol}/flow endpoint only covers equity ETFs
+        # (SPY, QQQ, etc.) — every symbol this bot trades is forex/indices, so
+        # this call 404s unconditionally. Skip the network round-trip entirely.
+        return self._options_cache.get(symbol)
 
     # ------------------------------------------------------------------
     # Combined signal

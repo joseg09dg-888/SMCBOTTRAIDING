@@ -1187,9 +1187,12 @@ class TradingSupervisor:
             return _wrapped
 
         def _lunar():   return 0  # ELIMINADO: sin evidencia estadistica de edge real
-        def _elliott():
-            e = self._elliott.analyze(df, bias)
-            return e.score_bonus
+        def _elliott(): return 0  # ELIMINADO 2026-07-06: validado contra 584 trades reales
+            # (scripts/validate_elliott_agent.py) -- con ventanas de 200 velas H1 (el
+            # tamaño real que usa el bot en vivo), _find_swings() casi siempre cuenta
+            # >=5 swings, asi que el bonus SIEMPRE es +10 sin excepcion en los 584
+            # trades -- cero poder discriminante, suma lo mismo a ganadores y
+            # perdedores por igual. Mismo criterio que elimino Lunar/Chaos/Energy.
         def _chaos():   return 0  # ELIMINADO: sin evidencia estadistica de edge real
         def _edge():
             edge = self._edge.calculate_full_edge(symbol=signal.symbol, prices=prices)
@@ -2433,13 +2436,19 @@ class TradingSupervisor:
                         cur_tp  = p.get("tp", 0.0)
                         volume  = p.get("volume", 0.0)
                         partial_done_key = f"partial_{ticket}"
-                        # XAUUSD: partial-close-at-1:1 caps wins at ~0.5R while a
-                        # full SL loses 1R. Audit (05-01 a 06-11, 51 trades, WR=80.4%)
-                        # found avg win $27 vs avg loss $209 -> neto -$979.74. Dejar
-                        # correr a TP completo (RR ~2.5-3) con SL a breakeven via el
-                        # loop de trailing debajo, sin partial-close.
-                        if symbol == "XAUUSD":
-                            continue
+                        # Partial-close-at-1:1 caps wins at ~0.5R while a full SL loses
+                        # 1R. Originally disabled only for XAUUSD after an audit found
+                        # avg win $27 vs avg loss $209 -> neto -$979.74. Auditoria
+                        # 2026-07-06 sobre TODO el libro real (episodes.db) encontro el
+                        # MISMO patron generalizado: avg WIN $26.65 vs avg LOSS $19.62
+                        # (ratio 1.36:1, muy por debajo del RR=3.0 diseñado) porque el
+                        # 100% de los WIN recientes cierran en ~1.00R (el remanente del
+                        # 50% casi siempre vuelve a breakeven antes de alcanzar el TP
+                        # real). Se generaliza el skip a todos los simbolos -- dejar
+                        # correr a TP completo (RR configurado) con SL a breakeven via
+                        # el loop de trailing debajo (dispara a 1.5R, no a 1R), sin
+                        # partial-close prematuro.
+                        continue
                         # Skip if already partially closed this trade
                         if not (ticket and entry > 0 and cur_sl > 0 and volume > 0):
                             continue
@@ -2911,6 +2920,7 @@ class TradingSupervisor:
             mt5_daily = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
             if mt5_daily is not None:
                 self._daily_realized_pnl = float(mt5_daily)
+                self._axi_tracker.record_day(self._daily_realized_pnl, capital=bal)
                 # Si el PnL REAL está bajo el target (ej: ganó $277 luego NAS100 -$212 → $65)
                 # el flag se resetea para que el bot pueda seguir operando y llegar a $250
                 if self._daily_target_hit and self._daily_realized_pnl < DAILY_PROFIT_TARGET:
@@ -3873,6 +3883,15 @@ class TradingSupervisor:
                                 if _kz != 1.0:
                                     print(f" -- [KZ] hora={__import__('datetime').datetime.now(__import__('datetime').timezone.utc).hour}UTC mult={_kz:.2f} thr={effective_threshold}->{_kz_threshold}", end="", flush=True)
                                     effective_threshold = _kz_threshold
+                                # AutonomousLearner: aplicar el weight_adj real calculado cada hora
+                                # (antes solo se calculaba y guardaba en episodes.db, nunca se usaba
+                                # para ajustar ninguna decision en vivo -- hallazgo 2026-07-06)
+                                _learner_thr = self._learner.effective_threshold(
+                                    effective_threshold, "SMC", "unknown", "unknown"
+                                )
+                                if _learner_thr != effective_threshold:
+                                    print(f" -- [LEARN-THR] {effective_threshold}->{_learner_thr}", end="", flush=True)
+                                    effective_threshold = _learner_thr
                                 if signal.signal_type == SignalType.WAIT or score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
