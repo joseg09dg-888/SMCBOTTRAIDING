@@ -125,7 +125,7 @@ DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
 
 # Symbols and timeframes to scan
 
-SCAN_SYMBOLS    = []  # DISABLED: crypto demo no aporta a Axi — 100% foco MT5 real
+SCAN_SYMBOLS    = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT"]  # reactivado 2026-07-06: usuario confirmo que quiere cripto operando en Binance
 
 SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filter runs
 
