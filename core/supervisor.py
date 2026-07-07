@@ -2600,7 +2600,6 @@ class TradingSupervisor:
                     # de self._open_episodes cuando el deal se confirma (o se agotan los
                     # reintentos), mas abajo.
                     episode_id = self._open_episodes.get(ticket)
-                    self._partial_closed.discard(ticket)
                     _pending_deal_lookup[ticket] = {"episode_id": episode_id, "attempts": 0}
 
                 for _pend_ticket in list(_pending_deal_lookup.keys()):
