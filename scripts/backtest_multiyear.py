@@ -218,52 +218,24 @@ for pair, df1 in h1_data.items():
             cur_h = bar["high"]
             cur_l = bar["low"]
 
-            if not partial_done:
-                one_r_level = (entry + sl_dist) if direction=="LONG" else (entry - sl_dist)
-                # Check SL first (worst case)
-                if direction == "LONG" and cur_l <= sl:
+            # Fix 2026-07-06: live bot no longer partial-closes at 1R+immediate-BE
+            # (validated against 584 real trades: it was capping every winner near
+            # ~0.5R while losses ran to full SL, ratio 1.36:1 vs the RR=3.0 the
+            # system is configured for -- generalized the XAUUSD-only skip to all
+            # symbols). Simulate that directly: full SL or full TP, no partial leg,
+            # matching core/supervisor.py's current live exit logic. Trailing-to-BE
+            # at 1.5R still exists live but only protects against giveback after
+            # 1.5R -- doesn't change the SL/TP outcome distribution modeled here.
+            if direction == "LONG":
+                if cur_l <= sl:
                     pnl = -vol_p * sl_dist * pip_v / PIP_SZ[pair_p]
-                elif direction == "SHORT" and cur_h >= sl:
-                    pnl = -vol_p * sl_dist * pip_v / PIP_SZ[pair_p]
-                # Then check 1R (partial)
-                elif direction == "LONG" and cur_h >= one_r_level:
-                    # Partial: 50% close, SL→BE
-                    partial_pnl = (vol_p * 0.5) * sl_dist * pip_v / PIP_SZ[pair_p]
-                    daily_pnl[day_str] += partial_pnl
-                    trade_log.append({
-                        "pair": pair_p, "type": "partial", "pnl": partial_pnl,
-                        "win": True, "hour": hour_utc, "year": year_str,
-                        "vol_regime": vol_regime(df1, idx),
-                        "trend_regime": trend_regime(df1, idx),
-                    })
-                    # Remaining 50% with SL at BE
-                    new_be = entry  # breakeven
-                    new_open.append((eidx, direction, entry, new_be, tp, vol_p*0.5, sl_dist, True, new_be, pip_v, pair_p))
-                    continue
-                elif direction == "SHORT" and cur_l <= one_r_level:
-                    partial_pnl = (vol_p * 0.5) * sl_dist * pip_v / PIP_SZ[pair_p]
-                    daily_pnl[day_str] += partial_pnl
-                    trade_log.append({
-                        "pair": pair_p, "type": "partial", "pnl": partial_pnl,
-                        "win": True, "hour": hour_utc, "year": year_str,
-                        "vol_regime": vol_regime(df1, idx),
-                        "trend_regime": trend_regime(df1, idx),
-                    })
-                    new_be = entry
-                    new_open.append((eidx, direction, entry, new_be, tp, vol_p*0.5, sl_dist, True, new_be, pip_v, pair_p))
-                    continue
+                elif cur_h >= tp:
+                    pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
             else:
-                # After partial: SL is at BE, TP is at RR (matches live MIN_RR=3.0)
-                if direction == "LONG":
-                    if cur_h >= tp:
-                        pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
-                    elif cur_l <= be_sl:
-                        pnl = 0.0  # stopped at BE — no gain, no loss (already locked partial)
-                else:
-                    if cur_l <= tp:
-                        pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
-                    elif cur_h >= be_sl:
-                        pnl = 0.0
+                if cur_h >= sl:
+                    pnl = -vol_p * sl_dist * pip_v / PIP_SZ[pair_p]
+                elif cur_l <= tp:
+                    pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
 
             if pnl is not None:
                 if pnl != 0.0:
