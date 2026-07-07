@@ -550,7 +550,12 @@ class MT5Connector:
                 "tp":       tp if tp != 0.0 else p.tp,
             }
             result = mt5.order_send(request)
-            ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+            # 10025 = NO_CHANGES: broker already has this exact SL/TP set (e.g. a
+            # prior call already applied it, or float rounding made two computed
+            # targets coincide). Treat as success -- callers that gate a one-time
+            # action on this return value (BE-SET's "_breakeven_set" tracking) need
+            # it to resolve, otherwise they retry forever every cycle.
+            ok = result is not None and result.retcode in (mt5.TRADE_RETCODE_DONE, 10025)
             if not ok and result is not None:
                 logger.warning(f"modify_sl_tp retcode {result.retcode}: {result.comment}")
             return ok

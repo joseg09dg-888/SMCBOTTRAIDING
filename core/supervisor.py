@@ -2525,54 +2525,6 @@ class TradingSupervisor:
                     except Exception:
                         pass
 
-                # ── Trailing SL: move to breakeven when 1×SL in profit ─────
-                for p in positions:
-                    try:
-                        ticket   = p.get("ticket", 0)
-                        symbol   = p.get("symbol", "")
-                        ptype    = p.get("type", "").upper()  # "BUY" / "SELL"
-                        entry    = p.get("price_open", 0.0)
-                        cur_sl   = p.get("sl", 0.0)
-                        cur_tp   = p.get("tp", 0.0)
-                        cur_pnl  = p.get("profit", 0.0)
-                        volume   = p.get("volume", 0.0)
-                        if not (ticket and entry > 0 and cur_sl > 0 and cur_tp > 0):
-                            continue
-                        sl_dist  = abs(entry - cur_sl)
-                        if sl_dist <= 0:
-                            continue
-                        # Get current price from MT5 tick
-                        import MetaTrader5 as _mt5_mod
-                        tick = _mt5_mod.symbol_info_tick(symbol)
-                        if not tick:
-                            continue
-                        cur_price = tick.bid if ptype == "BUY" else tick.ask
-                        # Profit in SL units
-                        if ptype == "BUY":
-                            profit_in_sl = (cur_price - entry) / sl_dist
-                            be_sl = entry + 0.0001 * sl_dist  # slightly above breakeven
-                        else:
-                            profit_in_sl = (entry - cur_price) / sl_dist
-                            be_sl = entry - 0.0001 * sl_dist
-                        # Move SL to breakeven once trade is 1.5x SL in profit (more room for winners)
-                        if profit_in_sl >= 1.5:
-                            if ptype == "BUY" and cur_sl < be_sl:
-                                ok = await loop.run_in_executor(
-                                    None, lambda t=ticket, s=round(be_sl, 5), tp=cur_tp:
-                                    self.mt5.modify_position_sl_tp(t, s, tp)
-                                )
-                                if ok:
-                                    print(f"[TRAIL] {symbol} #{ticket} SL → breakeven {be_sl:.5f}", flush=True)
-                            elif ptype == "SELL" and cur_sl > be_sl:
-                                ok = await loop.run_in_executor(
-                                    None, lambda t=ticket, s=round(be_sl, 5), tp=cur_tp:
-                                    self.mt5.modify_position_sl_tp(t, s, tp)
-                                )
-                                if ok:
-                                    print(f"[TRAIL] {symbol} #{ticket} SL → breakeven {be_sl:.5f}", flush=True)
-                    except Exception:
-                        pass
-
 
                 # ── Detect closed positions ───────────────────────────────
 
