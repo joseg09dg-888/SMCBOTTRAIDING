@@ -8,10 +8,15 @@ except ImportError:
     httpx = None
 
 # Market impact by event category
+# NOTE: keys must match the MT5/Binance symbol format the live bot actually
+# passes (e.g. "EURUSD", not yfinance-style "EURUSD=X") -- the yfinance-style
+# keys never matched any live symbol, silently zeroing the +10 bonus for
+# every forex pair traded (same class of bug found in retail_psychology_agent,
+# 2026-07-06).
 CATEGORY_IMPACT: Dict[str, Dict[str, str]] = {
     "conflict":  {"XAUUSD": "bullish", "USOIL": "bullish", "USDJPY": "bullish", "BTCUSDT": "bullish"},
-    "sanctions": {"BTCUSDT": "bullish", "EURUSD=X": "bearish"},
-    "election":  {"EURUSD=X": "volatile", "GBPUSD=X": "volatile"},
+    "sanctions": {"BTCUSDT": "bullish", "EURUSD": "bearish", "EURAUD": "bearish"},
+    "election":  {"EURUSD": "volatile", "GBPUSD": "volatile", "GBPCAD": "volatile"},
     "disaster":  {"USOIL": "bullish", "NATGAS": "bullish"},
 }
 

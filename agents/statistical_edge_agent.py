@@ -114,7 +114,23 @@ class QuantEdgeAgent:
         expectancy = self.stats.calculate_expectancy(trades) if trades and self.stats else 0.0
         returns = [t["pnl"] / self.capital for t in trades] if trades else [0.0] * 20
         sharpe = self.stats.calculate_sharpe(returns) if self.stats else 0.0
-        kelly = self.stats.calculate_kelly_fraction(0.6, 2.0, 1.0) if self.stats else 0.01
+        # Fix 2026-07-06: was calculate_kelly_fraction(0.6, 2.0, 1.0) -- fixed inputs
+        # (60% WR, 2:1 payoff) that never reflected reality (real WR ~28-40%, real
+        # payoff ratio ~1.36:1). Derive from this symbol's actual closed trades;
+        # fall back to a conservative placeholder only when there's no history yet.
+        if trades and self.stats:
+            _pnls = [t["pnl"] for t in trades]
+            _wins = [p for p in _pnls if p > 0]
+            _losses = [p for p in _pnls if p <= 0]
+            if _wins and _losses:
+                _wr = len(_wins) / len(_pnls)
+                _avg_win = sum(_wins) / len(_wins)
+                _avg_loss = abs(sum(_losses) / len(_losses))
+                kelly = self.stats.calculate_kelly_fraction(_wr, _avg_win, _avg_loss)
+            else:
+                kelly = 0.01  # not enough mixed history yet -- conservative
+        else:
+            kelly = 0.01 if self.stats else 0.01
         mc = self.stats.run_monte_carlo(returns, n_sims=1000, seed=42) if self.stats else None
         ruin_prob = mc.ruin_probability if mc else 0.0
         mc_var = mc.var_95 if mc else 0.0

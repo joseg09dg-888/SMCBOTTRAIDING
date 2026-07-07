@@ -1195,7 +1195,23 @@ class TradingSupervisor:
             # perdedores por igual. Mismo criterio que elimino Lunar/Chaos/Energy.
         def _chaos():   return 0  # ELIMINADO: sin evidencia estadistica de edge real
         def _edge():
-            edge = self._edge.calculate_full_edge(symbol=signal.symbol, prices=prices)
+            # Fix 2026-07-06: calculate_full_edge() was called with only symbol+prices,
+            # so trades=None -> Kelly/Sharpe/Monte Carlo/walk-forward all ran on a fake
+            # [0.0]*20 series instead of this symbol's real closed-trade history.
+            # Pull the last 50 real closed trades for this symbol to feed those modules.
+            _real_trades = []
+            try:
+                _rows = self._episodic_conn.execute(
+                    "SELECT pnl FROM episodes WHERE symbol=? AND result IN ('WIN','LOSS') "
+                    "ORDER BY id DESC LIMIT 50",
+                    (signal.symbol,),
+                ).fetchall()
+                _real_trades = [{"pnl": r[0]} for r in _rows if r[0] is not None]
+            except Exception:
+                pass
+            edge = self._edge.calculate_full_edge(
+                symbol=signal.symbol, prices=prices, trades=_real_trades
+            )
             return self._edge.get_decision_pts(edge)
         def _footprint():
             if signal.symbol not in SCAN_SYMBOLS:

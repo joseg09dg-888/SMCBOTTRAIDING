@@ -13,12 +13,28 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Psychological price levels per instrument
+# NOTE: keys must match the symbol format the live bot actually passes in
+# (MT5 style "EURUSD", Binance style "BTCUSDT") -- previously this used
+# yfinance-style keys ("EURUSD=X", "GC=F", "^DJI") which NEVER matched any
+# live symbol, silently zeroing out stop-hunt detection for every forex
+# pair traded (found 2026-07-06 auditing why bonuses looked flat).
 PSYCH_LEVELS_MAP: Dict[str, List[float]] = {
     "BTCUSDT":  [10000 * i for i in range(1, 15)],
     "ETHUSDT":  [500 * i for i in range(1, 15)],
-    "EURUSD=X": [round(0.0500 * i, 4) for i in range(20, 30)],   # 1.0000-1.4500
-    "GC=F":     [100 * i for i in range(15, 35)],                  # gold levels
-    "^DJI":     [5000 * i for i in range(5, 20)],
+    "SOLUSDT":  [10 * i for i in range(1, 40)],
+    "BNBUSDT":  [50 * i for i in range(1, 30)],
+    "XRPUSDT":  [round(0.10 * i, 2) for i in range(1, 30)],
+    "ADAUSDT":  [round(0.05 * i, 2) for i in range(1, 30)],
+    "EURUSD":   [round(0.0500 * i, 4) for i in range(20, 30)],   # 1.0000-1.4500
+    "GBPUSD":   [round(0.0500 * i, 4) for i in range(22, 32)],   # 1.1000-1.5500
+    "USDCAD":   [round(0.0500 * i, 4) for i in range(24, 32)],   # 1.2000-1.5500
+    "NZDUSD":   [round(0.0500 * i, 4) for i in range(9, 16)],    # 0.4500-0.7500
+    "USDCHF":   [round(0.0500 * i, 4) for i in range(15, 22)],   # 0.7500-1.0500
+    "EURAUD":   [round(0.0500 * i, 4) for i in range(28, 38)],   # 1.4000-1.9000
+    "GBPCAD":   [round(0.0500 * i, 4) for i in range(30, 42)],   # 1.5000-2.1000
+    "XAUUSD":   [100 * i for i in range(15, 35)],                  # gold levels
+    "NAS100.fs":[1000 * i for i in range(15, 25)],
+    "US30":     [5000 * i for i in range(5, 20)],
 }
 
 COINGLASS_URL = "https://open-api.coinglass.com/public/v2/liquidation_map"
