@@ -56,7 +56,7 @@ class AutonomousLearner:
                 adj = 1.20
             elif win_rate >= 0.50:
                 adj = 1.00
-            elif win_rate >= 0.35 or total < 30:
+            elif win_rate >= 0.35:
                 adj = 0.90
             else:
                 adj = 0.80

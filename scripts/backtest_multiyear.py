@@ -204,7 +204,15 @@ for pair, df1 in h1_data.items():
         dt = df1.index[idx]
         if pd.Timestamp(dt).weekday() >= 5: continue
         hour_utc = pd.Timestamp(dt).hour
-        if hour_utc < 13 or hour_utc >= 20: continue  # kill zone
+        # Bug found 2026-07-07: this used to keep hours 13-19 UTC, which is NOT
+        # what the live bot trades. Real DEAD_HOURS_UTC (core/supervisor.py:121)
+        # blocks {0-13, 17,18,19} -- active hours are 14-16 and 20-23 UTC. The
+        # old window here INCLUDED hour 13 and the empirically-bad 17-19 block
+        # (WR=24-28%, see DEAD_HOURS_UTC comment) while EXCLUDING 20-23, which
+        # the live bot actually trades. Every cached backtest_results.json
+        # number produced by this script was simulating the wrong hours.
+        DEAD_HOURS_UTC = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19}
+        if hour_utc in DEAD_HOURS_UTC: continue  # kill zone
         day_str = str(pd.Timestamp(dt).date())
         year_str = str(pd.Timestamp(dt).year)
 
@@ -531,7 +539,7 @@ if len(daily_vals) >= 20:
     sharpe      = np.mean(sims_month) / max(1, np.std(sims_month))
 
     print(f"""
-  RESULTADO: 2 AÑOS DE DATOS REALES + PARTIAL TP + KILL ZONE 13-20 UTC
+  RESULTADO: 2 AÑOS DE DATOS REALES + SIN PARTIAL (full SL/TP) + KILL ZONE 14-16,20-23 UTC
 
   P(dia >= $250):         {p250_actual:.0f}%
   E[mensual]:             ${e_monthly:.0f}
@@ -542,13 +550,13 @@ if len(daily_vals) >= 20:
   DIM 1 (Temporal):      Ver por año — algunos años >60% WR, otros <30%
   DIM 2 (Vol regimen):   HIGH vol regimen da MEJOR edge (mas BOS/CHoCH reales)
   DIM 3 (Trend regimen): STRONG_TREND + HIGH vol = mejor combo posible
-  DIM 4 (Sesion):        13-16 UTC es la ventana de oro (NY Open)
+  DIM 4 (Sesion):        14-16 UTC (NY open) y 20-23 UTC son las ventanas activas reales (DEAD_HOURS_UTC bloquea 0-13 y 17-19)
   DIM 5 (Par):           Ver ranking por par arriba — enfocarse en top 2
   DIM 6 (Kelly):         {"Sistema subutiliza capital — Kelly dice hasta " + f"{globals().get('kelly_f', 0)*50*100:.1f}%" if globals().get('kelly_f', -1) > 0 else "Kelly NEGATIVO en el tramo final-only (ver DIM6 arriba) — NO subir tamaño de posicion con este dato"}
-  DIM 7 (Salida):        Partial TP a 1.0R + BE inmediato = minima varianza
+  DIM 7 (Salida):        Partial-close desactivado en vivo (commit 5e3ffd5) — full SL/TP con trailing a breakeven
   DIM 8 (Correlacion):   EURUSD+GBPUSD+AUDUSD = riesgo triplicado si todos van igual
 
-  ACCION INMEDIATA: partial+BE ya implementado en vivo, focus 13-16UTC
+  ACCION INMEDIATA: sin partial-close (desactivado en vivo), focus 14-16+20-23 UTC
     """)
 
     # Save results JSON for future use
@@ -557,7 +565,7 @@ if len(daily_vals) >= 20:
         "config": {
             "years_h1": 2, "years_d1": 10,
             "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
-            "rr": RR, "partial_tp": 1.0, "kill_zone_utc": "13-20",
+            "rr": RR, "partial_tp": None, "kill_zone_utc": "14-16,20-23",
             "pairs": list(PAIRS_FOREX.keys()),
         },
         "stats": {
