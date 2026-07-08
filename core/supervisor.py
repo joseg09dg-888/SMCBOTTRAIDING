@@ -1217,8 +1217,10 @@ class TradingSupervisor:
             if signal.symbol not in SCAN_SYMBOLS:
                 return 0
             fp_candle = self._footprint.build_live_footprint(
-                signal.symbol, candle_open=signal.entry or 0, limit=500
+                signal.symbol, candle_open=signal.entry or 0
             )
+            if fp_candle is None:
+                return 0
             direction = "long" if signal.signal_type == SignalType.LONG else "short"
             return self._footprint.score_for_trade(fp_candle, direction, signal.entry or 0)
         def _instflow(): return self._inst_flow.score_adjustment(signal.symbol, bias)
