@@ -100,6 +100,7 @@ async def send_welcome(supervisor: TradingSupervisor, capital: float, auto: bool
 
     supervisor.capital = capital
     supervisor.risk_manager.capital = capital
+    supervisor._edge.capital = capital
 
     if auto and reason:
         reason_label = RESTART_REASONS.get(reason, reason)
