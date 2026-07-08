@@ -29,7 +29,7 @@ MIN_SCORE        = 80             # MT5_REAL_SCORE_THRESHOLD
 H4_THRESHOLD     = 95
 H1_THRESHOLD     = 100
 MAX_POSITIONS    = 3
-DEAD_HOURS_UTC   = set(range(0, 13))  # 0-12 = blocked
+DEAD_HOURS_UTC   = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19}  # fix 2026-07-08: was missing 13 and the 17-19 block (core/supervisor.py:121)
 DAILY_TARGET     = 250.0
 
 PAIRS_YFINANCE = {

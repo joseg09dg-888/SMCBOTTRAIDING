@@ -368,7 +368,11 @@ for pair in h1:
         bar = df1.iloc[idx]; dt = df1.index[idx]
         if pd.Timestamp(dt).weekday()>=5: continue
         hour_utc = pd.Timestamp(dt).hour
-        if hour_utc < 13 or hour_utc >= 20: continue  # Kill zone: 13-20 UTC
+        # Fix 2026-07-08: was 13-19 UTC, same bug found in backtest_multiyear.py --
+        # real DEAD_HOURS_UTC (core/supervisor.py:121) blocks {0-13,17,18,19},
+        # active hours are 14-16 and 20-23 UTC.
+        DEAD_HOURS_UTC = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19}
+        if hour_utc in DEAD_HOURS_UTC: continue
         day_str = pd.Timestamp(dt).date()
 
         closed=[]

@@ -754,7 +754,7 @@ class TelegramCommander:
             from connectors.metatrader_connector import MT5Connector
             from core.config import config as cfg
             _m = MT5Connector(cfg.mt5_login, cfg.mt5_password, cfg.mt5_server)
-            pos = _m.get_open_positions()
+            pos = _m.get_positions()
             open_pnl = sum(p.get("profit", 0.0) for p in pos)
             _info = _m.get_account_info()
             balance = _info.get("balance", 0.0) if _info else 0.0
