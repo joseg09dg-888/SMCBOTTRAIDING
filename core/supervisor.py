@@ -54,7 +54,7 @@ from core.risk_governor import RiskGovernor, fetch_recent_deals_by_symbol
 from core.volume_calculator import VolumeCalculator
 from core.market_hours import is_market_open, minutes_until_open
 
-from strategies.ftmo_agent import FTMOAgent, ChallengeType
+from strategies.ftmo_agent import FTMOAgent, ChallengeType, ChallengeState, ChallengeStatus, FTMORules
 
 from agents.lunar_agent import LunarCycleAgent
 from agents.elliott_agent import ElliottFibonacciAgent
@@ -344,7 +344,7 @@ class TradingSupervisor:
         # Load daily trade count from disk so pm2 restarts don't reset the limit
         self._daily_trades: Dict[str, int] = self._load_daily_trades()
 
-        # FTMO / Axi rules enforcement
+        # Risk-gate (Axi Select rules) enforcement
 
         # Axi Select runtime guards
         self._axi_guard      = AxiSelectGuard()
@@ -353,14 +353,37 @@ class TradingSupervisor:
         self._axi_enforcer   = ConsistencyEnforcer()
         self._axi_paused_today = False   # True si guard disparo emergency close
 
-        self._ftmo_agent = FTMOAgent()
+        self._risk_gate_agent = FTMOAgent()
 
-        self._ftmo_state = FTMOAgent.new_challenge(
-
-            initial_balance=100_000.0,  # Axi Select account size — NOT startup capital param
-
+        # Bug found 2026-07-07: this used to build FTMO's TWO_STEP rules
+        # (10% total DD, 5% daily loss) even though the user only trades
+        # Axi Select, not FTMO. The engine (drawdown/daily-loss/consecutive-
+        # loss gating, well tested) is generic -- only the numbers were
+        # wrong. Now built directly with Axi Select's real risk limits
+        # (agents/axi_select_agent.py: MAX_TOTAL_DRAWDOWN_PCT=8%,
+        # MAX_DAILY_DRAWDOWN_PCT=3%). profit_target_pct is set unreachably
+        # high because Axi Select is an ongoing funded account, not a
+        # timed pass/fail challenge -- it should never enter PASSED status.
+        _risk_gate_rules = FTMORules(
             challenge_type=ChallengeType.TWO_STEP,
-
+            initial_balance=100_000.0,  # Axi Select account size — NOT startup capital param
+            profit_target_pct=100.0,    # unreachable -- Axi has no challenge "pass" state
+            max_daily_loss_pct=0.03,    # Axi Select real limit (was FTMO's 5%)
+            max_total_drawdown_pct=0.08,  # Axi Select real limit (was FTMO's 10%)
+            trailing_drawdown=False,
+            min_trading_days=0,
+            profit_split_pct=0.80,
+        )
+        self._risk_gate_state = ChallengeState(
+            rules=_risk_gate_rules,
+            status=ChallengeStatus.ACTIVE,
+            current_balance=100_000.0,
+            start_date=datetime.now(timezone.utc).date(),
+            trading_days=0,
+            daily_pnl_today=0.0,
+            total_pnl=0.0,
+            max_drawdown_reached_pct=0.0,
+            consecutive_losses=0,
         )
 
         # Institutional agents -- enrichment layer (13 agents covering all dimensions)
@@ -1809,7 +1832,7 @@ class TradingSupervisor:
 
 
 
-        # ── FILTER 6: FTMO / Axi drawdown y perdida diaria ───────────────
+        # ── FILTER 6: Axi Select drawdown y perdida diaria ──────────────
 
         try:
 
@@ -1819,7 +1842,7 @@ class TradingSupervisor:
 
             )
 
-            self._ftmo_state.daily_pnl_today = daily_pnl
+            self._risk_gate_state.daily_pnl_today = daily_pnl
             # Keep daily_realized_pnl in sync with MT5 real closed P&L
             today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             if self._daily_pnl_date == today_utc and daily_pnl is not None:
@@ -1831,20 +1854,20 @@ class TradingSupervisor:
 
             )
 
-            self._ftmo_state.current_balance = acc_info.get("balance", self.capital)
+            self._risk_gate_state.current_balance = acc_info.get("balance", self.capital)
 
-            _equity = acc_info.get("equity", self._ftmo_state.current_balance)
-            can_trade, reason = self._ftmo_agent.can_trade(self._ftmo_state, equity=_equity)
+            _equity = acc_info.get("equity", self._risk_gate_state.current_balance)
+            can_trade, reason = self._risk_gate_agent.can_trade(self._risk_gate_state, equity=_equity)
 
             if not can_trade:
 
-                print(f"[FTMO] {signal.symbol}: BLOQUEADO -- {reason}", flush=True)
+                print(f"[RISK-GATE] {signal.symbol}: BLOQUEADO -- {reason}", flush=True)
 
                 try:
 
                     await self.telegram.send_glint_alert(
 
-                        f"<b>FTMO BLOQUEO</b>\n{signal.symbol}: {reason}"
+                        f"<b>RISK GATE BLOQUEO</b>\n{signal.symbol}: {reason}"
 
                     )
 
@@ -1856,7 +1879,7 @@ class TradingSupervisor:
 
         except Exception as _fe:
 
-            print(f"[FTMO] check error: {_fe}", flush=True)
+            print(f"[RISK-GATE] check error: {_fe}", flush=True)
 
 
 
@@ -1866,7 +1889,7 @@ class TradingSupervisor:
 
         # Scalp y swing tienen topes independientes
         # Modo recuperación: permite más scalps simultáneos para recuperar más rápido
-        _current_bal_r  = self._ftmo_state.current_balance or self.capital
+        _current_bal_r  = self._risk_gate_state.current_balance or self.capital
         _recovery_mode  = (
             self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
         ) and not self._daily_target_hit
@@ -1910,7 +1933,7 @@ class TradingSupervisor:
 
         # ── FILTER 7c: Posiciones abiertas perdiendo ─────────────────────────
         if existing:
-            _bal = self._ftmo_state.current_balance or self.capital
+            _bal = self._risk_gate_state.current_balance or self.capital
             _total_pnl = sum(p.get("profit", 0.0) for p in existing)
             _loss_limit = _bal * 0.025  # bloquear nuevas entradas si portfolio pierde >2.5% ($2,425 con $97K)
             for p in existing:
@@ -1943,7 +1966,7 @@ class TradingSupervisor:
         vc = VolumeCalculator()
 
         # Use real MT5 balance (not startup capital=1000) for correct lot sizing
-        live_capital = self._ftmo_state.current_balance if self._ftmo_state.current_balance > 1000 else self.capital
+        live_capital = self._risk_gate_state.current_balance if self._risk_gate_state.current_balance > 1000 else self.capital
         # Dynamic risk (halved 2026-06-14, WR=29.1%/PF=0.35 over 213 trades):
         # 1% for very high confidence (score>=90), 0.5% for high (>=75), 0.25% normal
         if signal.decision_score >= 90:
@@ -2371,7 +2394,7 @@ class TradingSupervisor:
 
     async def _position_monitor_loop(self):
 
-        """Every 3s: log open positions + detect closures → update learning + FTMO.
+        """Every 3s: log open positions + detect closures → update learning + risk-gate.
         CRITICO: 3s para detectar movimientos rapidos y proteger profits con BE/TRAIL.
         Era 60s — demasiado lento para mercados que mueven $18→$1 en segundos."""
 
@@ -2621,11 +2644,11 @@ class TradingSupervisor:
                         except Exception as _ue:
                             print(f"[LEARN] update error: {_ue}", flush=True)
 
-                    # Update FTMO state
+                    # Update risk-gate state
 
                     try:
 
-                        self._ftmo_agent.record_trade(self._ftmo_state, pnl)
+                        self._risk_gate_agent.record_trade(self._risk_gate_state, pnl)
 
                     except Exception:
 
@@ -2646,7 +2669,7 @@ class TradingSupervisor:
 
                         f"[LEARN] #{ticket} CERRADO: {result} | PnL={pnl:+.2f} USD"
 
-                        f" | Balance FTMO: ${self._ftmo_state.current_balance:,.2f}",
+                        f" | Balance: ${self._risk_gate_state.current_balance:,.2f}",
 
                         flush=True,
 
@@ -2681,7 +2704,7 @@ class TradingSupervisor:
                 if positions and _log_counter % 300 == 0:  # log cada 30s (300 × 0.1s)
 
                     total_pnl = sum(p.get("profit", 0.0) for p in positions)
-                    _bal_ref  = self._ftmo_state.current_balance or self.capital
+                    _bal_ref  = self._risk_gate_state.current_balance or self.capital
                     _total_tag = "GANANDO" if total_pnl >= 0 else "PERDIENDO"
 
                     lines = [f"[POS] {len(positions)} abiertas | {_total_tag} ${abs(total_pnl):.2f} vivo"]
@@ -2874,7 +2897,7 @@ class TradingSupervisor:
             import MetaTrader5 as _mt5
             from datetime import timezone as _tz
 
-            bal       = self._ftmo_state.current_balance or self.capital
+            bal       = self._risk_gate_state.current_balance or self.capital
             limit_usd = bal * 0.008  # 0.8% = emergency stop per position
 
             # ── 0. Daily profit target ────────────────────────────────────────
@@ -2941,15 +2964,15 @@ class TradingSupervisor:
             # Modo Recuperación — dos condiciones:
             #   1. Dia en rojo > $50
             #   2. Balance debajo del capital base $100K (recuperar lo perdido)
-            _current_bal   = self._ftmo_state.current_balance or self.capital
+            _current_bal   = self._risk_gate_state.current_balance or self.capital
             # Actualizar high-water mark (balance máximo histórico)
             if _current_bal > self._balance_peak:
                 self._balance_peak = _current_bal
                 print(f"[PEAK] Nuevo máximo histórico: ${self._balance_peak:,.2f}", flush=True)
 
             # Recovery solo por pérdida real del día — _below_peak eliminado porque
-            # FTMOAgent inicia current_balance=$100K causando falso drawdown desde día 1
-            # La protección multi-día ya la cubre: RiskGovernor + FTMOAgent drawdown limits
+            # risk-gate inicia current_balance=$100K causando falso drawdown desde día 1
+            # La protección multi-día ya la cubre: RiskGovernor + risk-gate drawdown limits
             _day_in_loss      = self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
             _in_recovery      = _day_in_loss and not self._scalp_daily_hit
 
@@ -3603,20 +3626,20 @@ class TradingSupervisor:
 
                 # â"€â"€ Full market scan â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-                # ── Reset FTMO diario + refresh daily_pnl ─────────────────
+                # ── Reset risk-gate diario + refresh daily_pnl ─────────────
                 _today_utc = datetime.now(timezone.utc).date()
                 if not hasattr(self, '_last_ftmo_day') or self._last_ftmo_day != _today_utc:
-                    self._ftmo_agent.new_trading_day(self._ftmo_state)
+                    self._risk_gate_agent.new_trading_day(self._risk_gate_state)
                     self._last_ftmo_day = _today_utc
                     self._daily_target_hit  = False
                     self._daily_protect_hit = False
                     self._axi_paused_today  = False
                     self._scalp_daily_hit   = False
                     self._scalp_realized_today = 0.0
-                    print(f"[FTMO] Nuevo dia {_today_utc} -- daily_pnl reseteado (streak preservado)", flush=True)
+                    print(f"[RISK-GATE] Nuevo dia {_today_utc} -- daily_pnl reseteado (streak preservado)", flush=True)
                     try:
                         _loop_ref = asyncio.get_running_loop()
-                        self._ftmo_state.daily_pnl_today = await _loop_ref.run_in_executor(
+                        self._risk_gate_state.daily_pnl_today = await _loop_ref.run_in_executor(
                             None, self.mt5.get_daily_pnl
                         )
                     except Exception:

@@ -78,7 +78,6 @@ COMMANDS = {
     "/elliott":          "Conteo de ondas de Elliott",
     "/edge":             "Statistical edge y winrate historico",
     "/footprint":        "Analisis footprint (delta, absorcion). Ej: /footprint BTC",
-    "/ftmo":             "Estado FTMO challenge y potencial de ingresos",
     "/axicheck":         "Verificacion 6 variables Axi Select (listo para live?)",
     "/plan":             "Plan financiero 70-20-10 — donde va el capital del bot",
     "/demo":             "Posiciones demo Binance crypto con P&L en vivo",
@@ -158,7 +157,6 @@ class TelegramCommander:
             "/elliott":          self._cmd_elliott,
             "/edge":             self._cmd_edge,
             "/footprint":        self._cmd_footprint,
-            "/ftmo":             self._cmd_ftmo,
             "/axi":              self._cmd_axi,
             "/axicheck":         self._cmd_axicheck,
             "/plan":             self._cmd_plan,
@@ -331,7 +329,7 @@ class TelegramCommander:
                     f"  Conservador: {blk_cons}\n"
                     f"  RR bajo: {blk_rr}\n"
                     f"  Limite diario: {blk_daily}\n"
-                    f"  FTMO: {blk_ftmo}\n"
+                    f"  Risk Gate: {blk_ftmo}\n"
                     f"  Duplicado: {blk_dup}\n"
                     f"  Claude veto: {blk_claude}\n"
                     f"Ultimo trade: {last_str} UTC"
@@ -569,7 +567,7 @@ class TelegramCommander:
             "Retail Psychology": "agents.retail_psychology_agent",
             "Energy Frequency": "agents.energy_frequency_agent",
             "Binance": "connectors.binance_connector",
-            "FTMO": "strategies.ftmo_agent",
+            "Risk Gate": "strategies.ftmo_agent",
             "Pairs Trading": "strategies.pairs_trading",
         }
         ok, fail = [], []
@@ -966,30 +964,6 @@ class TelegramCommander:
             return CommandResult(success=True, message=f"No hay datos de footprint para {symbol}.", action="footprint")
         return CommandResult(success=True, message=agent.format_telegram(candle, symbol), action="footprint")
 
-    def _cmd_ftmo(self) -> CommandResult:
-        from strategies.ftmo_agent import FTMOAgent, ChallengeType
-        from core.score_db import get_stats
-        agent = FTMOAgent()
-        state = FTMOAgent.new_challenge(initial_balance=10000.0, challenge_type=ChallengeType.TWO_STEP)
-        stats = get_stats()
-        if stats["executed"] > 0:
-            try:
-                from agents.report_agent import ReportAgent
-                from datetime import date
-                rpt = ReportAgent(capital=10000.0)
-                monthly = rpt.calculate_monthly_stats(date.today().year, date.today().month)
-                state = agent.record_trade(state, monthly.pnl)
-            except Exception:
-                pass
-        msg = agent.format_daily_report(state)
-        income = agent.calculate_monthly_income(200000, 0.05, 0.90)
-        msg += (
-            "\n━━━━━━━━━━━━━━━━━━━━\n"
-            "<b>POTENCIAL CON $200K FTMO</b>\n"
-            f"5%/mes x 90% split = ${income['net_monthly']:,.0f}/mes\n"
-            f"Ingreso anual: ${income['yearly']:,.0f}"
-        )
-        return CommandResult(success=True, message=msg, action="ftmo")
     def _cmd_axi(self) -> CommandResult:
         """Detailed Axi Select progress: edge score, stage, what's needed next."""
         from strategies.axi_select_agent import AxiSelectAgent, AxiStage
