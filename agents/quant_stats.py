@@ -54,7 +54,7 @@ class QuantStats:
 
     @staticmethod
     def calculate_sharpe(returns, risk_free=0.0, periods_per_year=252):
-        if not returns: return 0.0
+        if not returns or len(returns) < 2: return 0.0
         arr = np.array(returns) - risk_free
         std = np.std(arr, ddof=1)
         return 0.0 if std == 0 else float(np.mean(arr) / std * np.sqrt(periods_per_year))
@@ -64,7 +64,7 @@ class QuantStats:
         if not returns: return 0.0
         arr = np.array(returns) - risk_free
         down = arr[arr < 0]
-        if len(down) == 0: return 0.0
+        if len(down) < 2: return 0.0
         dstd = np.std(down, ddof=1)
         return 0.0 if dstd == 0 else float(np.mean(arr) / dstd * np.sqrt(periods_per_year))
 
