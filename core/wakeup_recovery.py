@@ -69,14 +69,15 @@ async def _fetch_price(symbol: str) -> Optional[float]:
     return None
 
 
-async def run_recovery(telegram_bot, capital: float) -> str:
+async def run_recovery(telegram_bot, capital: float, mt5_connector=None) -> str:
     """
     Called at auto-restart. Returns a summary string for the Telegram message.
 
     Steps:
     1. Load saved positions from disk
     2. For each position fetch current price
-    3. If adverse move > 2%: mark as closed (force-exit) and report
+    3. If adverse move > 2%: force-close the real position (if mt5_connector
+       and a ticket are available) and report
     4. Clear state file when done
     """
     saved_at, positions = load_positions()
@@ -94,6 +95,7 @@ async def run_recovery(telegram_bot, capital: float) -> str:
         entry = float(pos.get("entry") or 0)
         direction = pos.get("direction", "long").lower()
         size = float(pos.get("size") or 0)
+        ticket = pos.get("ticket")
 
         current = await _fetch_price(symbol)
         if current is None or entry == 0:
@@ -109,16 +111,38 @@ async def run_recovery(telegram_bot, capital: float) -> str:
 
         if move_pct < -ADVERSE_MOVE_PCT:
             est_pnl = move_pct * entry * size
-            closed.append(
-                f"  🔴 {symbol} {direction.upper()} CERRADO | "
-                f"Entry {entry:.4f} → {current:.4f} ({move_str}) | "
-                f"PnL est. ${est_pnl:.2f}"
-            )
+            # Bug found 2026-07-08: this branch always said "CERRADO" (closed)
+            # with an estimated PnL, but never actually called the broker to
+            # close the position -- it was purely a text label. The real
+            # position stayed open and exposed while the user believed it had
+            # been auto-closed for safety. Now actually closes it via MT5 when
+            # possible, and only claims "CERRADO" if that call succeeds.
+            really_closed = False
+            if mt5_connector is not None and ticket:
+                try:
+                    loop = asyncio.get_running_loop()
+                    really_closed = await loop.run_in_executor(
+                        None, mt5_connector.close_position, int(ticket)
+                    )
+                except Exception:
+                    really_closed = False
+            if really_closed:
+                closed.append(
+                    f"  🔴 {symbol} {direction.upper()} CERRADO | "
+                    f"Entry {entry:.4f} → {current:.4f} ({move_str}) | "
+                    f"PnL est. ${est_pnl:.2f}"
+                )
+            else:
+                closed.append(
+                    f"  🚨 {symbol} {direction.upper()} SIGUE ABIERTA (no se pudo cerrar) | "
+                    f"Entry {entry:.4f} → {current:.4f} ({move_str}) | "
+                    f"PnL flotante est. ${est_pnl:.2f} — REVISAR MANUALMENTE"
+                )
         else:
             safe.append(f"  🟢 {symbol} {direction.upper()} OK ({move_str})")
 
     if closed:
-        lines.append(f"\n*Posiciones cerradas por movimiento adverso > 2%:*")
+        lines.append(f"\n*Movimiento adverso > 2% detectado:*")
         lines.extend(closed)
 
     if safe:

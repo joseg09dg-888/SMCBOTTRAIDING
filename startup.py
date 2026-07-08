@@ -119,7 +119,7 @@ async def send_welcome(supervisor: TradingSupervisor, capital: float, auto: bool
     await supervisor.telegram.send_glint_alert(msg)
 
     if auto and reason in ("auto_restart", "watchdog", "crash"):
-        recovery_msg = await run_recovery(supervisor.telegram, capital)
+        recovery_msg = await run_recovery(supervisor.telegram, capital, mt5_connector=supervisor.mt5)
         if recovery_msg:
             print(recovery_msg)
             await supervisor.telegram.send_glint_alert(recovery_msg)
