@@ -511,6 +511,9 @@ if len(daily_vals) >= 20:
     print(f"    P(día >= $250):      {np.mean(sims_day >= 250)*100:5.0f}%")
     print(f"    P(día >= $500):      {np.mean(sims_day >= 500)*100:5.0f}%")
     print(f"    P(semana >= $1,250): {np.mean(sims_week >= 1250)*100:5.0f}%")
+    print(f"    P(semana >= $1,000): {np.mean(sims_week >= 1000)*100:5.0f}%")
+    print(f"    P(semana >= $2,000): {np.mean(sims_week >= 2000)*100:5.0f}%")
+    print(f"    P(semana entre $1,000-$2,000): {np.mean((sims_week >= 1000) & (sims_week <= 2000))*100:5.0f}%")
     print(f"    P(mes >= 5%=$4,851): {np.mean(sims_month >= 4851)*100:5.0f}%")
     print(f"    P(mes >= 4%=$3,881): {np.mean(sims_month >= 3881)*100:5.0f}%")
     print(f"    P(mes >= 3%=$2,910): {np.mean(sims_month >= 2910)*100:5.0f}%")
@@ -518,6 +521,12 @@ if len(daily_vals) >= 20:
     print(f"    P(día <= -$1,000):   {np.mean(sims_day <= -1000)*100:5.0f}%")
     print(f"    P(mes < -5%=-$4851): {np.mean(sims_month <= -4851)*100:5.0f}%")
     print(f"    Sharpe mensual:      {np.mean(sims_month)/max(1,np.std(sims_month)):.2f}")
+
+    # Percentile breakdown of THIS week specifically (5 trading days, real bootstrap)
+    print(f"\n  DISTRIBUCION SEMANAL (escenarios, 5 dias de trading, {len(daily_vals)} dias historicos reales):")
+    for wpct in [5, 25, 50, 75, 90]:
+        wval = np.percentile(sims_week, wpct)
+        print(f"    P{wpct:<3}: ${wval:8.0f}")
 
     # Percentile breakdown of monthly return
     print(f"\n  DISTRIBUCION MENSUAL (escenarios):")
