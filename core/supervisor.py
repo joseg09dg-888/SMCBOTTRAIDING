@@ -39,6 +39,8 @@ from connectors.economic_calendar import currencies_for_symbol, get_high_impact_
 
 from smc.momentum import MomentumIndicators
 
+from smc.bill_williams import BillWilliamsIndicators
+
 
 
 logger = logging.getLogger(__name__)
@@ -1208,7 +1210,7 @@ class TradingSupervisor:
         bias = "bullish" if signal.signal_type == SignalType.LONG else "bearish"
         prices = list(df["close"].astype(float).values) if not df.empty else []
 
-        _agent_names = ["lunar","elliott","chaos","edge","footprint","instflow","micro","fed","onchain","geo","retail","alt","energy","momentum"]
+        _agent_names = ["lunar","elliott","chaos","edge","footprint","instflow","micro","fed","onchain","geo","retail","alt","energy","momentum","billwilliams"]
         _agent_results = {}
 
         def _make(name, fn):
@@ -1276,8 +1278,17 @@ class TradingSupervisor:
                 return 0
             direction = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
             return MomentumIndicators(df).score_for_signal(direction).pts_adjustment
+        def _billwilliams():
+            # Agregado 2026-07-09: Alligator (lineas dormidas = mercado en
+            # rango) + Awesome Oscillator (momentum vs baseline 34 periodos).
+            # Fractales excluidos a proposito -- duplican la deteccion de
+            # swings que ya hace smc/structure.py.
+            if df.empty or len(df) < 34:
+                return 0
+            direction = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
+            return BillWilliamsIndicators(df).score_for_signal(direction).pts_adjustment
 
-        raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy, _momentum]
+        raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy, _momentum, _billwilliams]
         tasks = [_make(name, fn) for name, fn in zip(_agent_names, raw_tasks)]
 
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:

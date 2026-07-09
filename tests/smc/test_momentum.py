@@ -3,6 +3,7 @@ TDD tests for smc/momentum.py -- RSI + Bollinger Bands confirmation filter.
 """
 import pandas as pd
 import numpy as np
+import pytest
 from smc.momentum import MomentumIndicators
 
 
@@ -92,3 +93,60 @@ def test_short_not_penalized_on_uptrend():
     mi = MomentumIndicators(_df_trending_up())
     result = mi.score_for_signal("SHORT")
     assert result.pts_adjustment == 0
+
+
+# ── Stochastic ───────────────────────────────────────────────────────────
+
+def test_stochastic_neutral_insufficient_data():
+    mi = MomentumIndicators(_df_flat(n=5))
+    k, d = mi.stochastic()
+    assert k == 50.0 and d == 50.0
+
+
+def test_stochastic_high_on_uptrend():
+    mi = MomentumIndicators(_df_trending_up())
+    k, d = mi.stochastic()
+    assert k >= 80
+
+
+def test_stochastic_low_on_downtrend():
+    mi = MomentumIndicators(_df_trending_down())
+    k, d = mi.stochastic()
+    assert k <= 20
+
+
+def test_stochastic_neutral_flat_no_div_zero():
+    mi = MomentumIndicators(_df_flat())
+    k, d = mi.stochastic()
+    assert k == 50.0 and d == 50.0
+
+
+# ── Volume ────────────────────────────────────────────────────────────────
+
+def test_volume_ratio_none_without_volume_column():
+    mi = MomentumIndicators(_df_flat())
+    assert mi.volume_ratio() is None
+
+
+def test_volume_ratio_detects_low_volume():
+    df = _df_flat()
+    df["volume"] = [1000] * 59 + [200]  # last bar way below average
+    mi = MomentumIndicators(df)
+    ratio = mi.volume_ratio()
+    assert ratio is not None and ratio < 0.5
+
+
+def test_volume_ratio_normal_volume_near_one():
+    df = _df_flat()
+    df["volume"] = [1000] * 60
+    mi = MomentumIndicators(df)
+    ratio = mi.volume_ratio()
+    assert ratio == pytest.approx(1.0, abs=0.05)
+
+
+def test_low_volume_penalized_regardless_of_direction():
+    df = _df_flat()
+    df["volume"] = [1000] * 59 + [100]
+    mi = MomentumIndicators(df)
+    assert mi.score_for_signal("LONG").pts_adjustment < 0
+    assert mi.score_for_signal("SHORT").pts_adjustment < 0

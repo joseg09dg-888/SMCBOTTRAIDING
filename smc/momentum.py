@@ -1,7 +1,8 @@
 """
-Momentum/volatility indicators (RSI, Bollinger Bands) -- classic technical
-analysis tools requested to complement pure SMC structure, which has no
-concept of overbought/oversold or price extension from mean.
+Momentum/volatility indicators (RSI, Bollinger Bands, Stochastic, volume) --
+classic technical analysis tools requested to complement pure SMC structure,
+which has no concept of overbought/oversold, price extension from mean, or
+volume confirmation.
 """
 from dataclasses import dataclass
 from typing import Optional
@@ -15,6 +16,9 @@ class MomentumSignal:
     bb_upper: float
     bb_mid: float
     bb_lower: float
+    stoch_k: float
+    stoch_d: float
+    volume_ratio: Optional[float]
     pts_adjustment: int
     reason: str
 
@@ -52,6 +56,32 @@ class MomentumIndicators:
         std = float(window.std().iloc[-1])
         return mid + num_std * std, mid, mid - num_std * std
 
+    def stochastic(self, period: int = 14, smooth_d: int = 3) -> tuple[float, float]:
+        """Returns (%K, %D). Returns (50.0, 50.0) neutral if not enough data
+        or if the period's range is zero (flat price -- avoids div/0)."""
+        if len(self.df) < period:
+            return 50.0, 50.0
+        high, low, close = self.df["high"], self.df["low"], self.df["close"]
+        lowest_low = low.rolling(period).min()
+        highest_high = high.rolling(period).max()
+        rng = highest_high - lowest_low
+        k_series = 100 * (close - lowest_low) / rng.replace(0, pd.NA)
+        k_series = k_series.fillna(50.0)
+        last_k = float(k_series.iloc[-1])
+        last_d = float(k_series.rolling(smooth_d).mean().iloc[-1]) if len(k_series) >= smooth_d else last_k
+        return last_k, last_d
+
+    def volume_ratio(self, period: int = 20) -> Optional[float]:
+        """Current volume / average volume over `period`. None if the
+        dataframe has no volume column (some feeds don't provide it)."""
+        if "volume" not in self.df.columns or len(self.df) < period + 1:
+            return None
+        vol = self.df["volume"]
+        avg = float(vol.rolling(period).mean().iloc[-2])  # avg up to prior bar
+        if avg <= 0:
+            return None
+        return float(vol.iloc[-1]) / avg
+
     def score_for_signal(self, direction: str) -> MomentumSignal:
         """
         Penalizes entries into exhausted moves that pure SMC structure can't
@@ -61,6 +91,8 @@ class MomentumIndicators:
         """
         rsi = self.rsi()
         upper, mid, lower = self.bollinger_bands()
+        stoch_k, stoch_d = self.stochastic()
+        vol_ratio = self.volume_ratio()
         last_close = float(self.df["close"].iloc[-1])
         is_long = direction.upper() in ("LONG", "BUY")
 
@@ -81,5 +113,18 @@ class MomentumIndicators:
             pts -= 5
             reasons.append("precio bajo banda inferior de Bollinger")
 
+        if is_long and stoch_k >= 80 and stoch_d >= 80:
+            pts -= 5
+            reasons.append(f"Estocastico={stoch_k:.0f} sobrecomprado")
+        elif not is_long and stoch_k <= 20 and stoch_d <= 20:
+            pts -= 5
+            reasons.append(f"Estocastico={stoch_k:.0f} sobrevendido")
+
+        # Volumen bajo = movimiento sin conviccion real detras, sin importar
+        # la direccion -- penaliza igual a LONG y SHORT.
+        if vol_ratio is not None and vol_ratio < 0.5:
+            pts -= 5
+            reasons.append(f"volumen={vol_ratio:.2f}x promedio (bajo, sin conviccion)")
+
         reason = "; ".join(reasons) if reasons else "sin senal de sobreextension"
-        return MomentumSignal(rsi, upper, mid, lower, pts, reason)
+        return MomentumSignal(rsi, upper, mid, lower, stoch_k, stoch_d, vol_ratio, pts, reason)
