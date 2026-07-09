@@ -37,6 +37,8 @@ from strategies.event_driven import EventDrivenStrategy
 
 from connectors.economic_calendar import currencies_for_symbol, get_high_impact_window
 
+from smc.momentum import MomentumIndicators
+
 
 
 logger = logging.getLogger(__name__)
@@ -1206,7 +1208,7 @@ class TradingSupervisor:
         bias = "bullish" if signal.signal_type == SignalType.LONG else "bearish"
         prices = list(df["close"].astype(float).values) if not df.empty else []
 
-        _agent_names = ["lunar","elliott","chaos","edge","footprint","instflow","micro","fed","onchain","geo","retail","alt","energy"]
+        _agent_names = ["lunar","elliott","chaos","edge","footprint","instflow","micro","fed","onchain","geo","retail","alt","energy","momentum"]
         _agent_results = {}
 
         def _make(name, fn):
@@ -1265,8 +1267,17 @@ class TradingSupervisor:
         def _retail():   return self._retail_psych.score_adjustment(signal.symbol, df, bias)
         def _alt():      return self._alt_data.score_adjustment(signal.symbol, bias)
         def _energy():  return 0  # ELIMINADO: numerologia/tarot sin evidencia de edge
+        def _momentum():
+            # Agregado 2026-07-09: SMC estructural no tiene concepto de
+            # sobrecompra/sobreventa ni extension de precio -- RSI/Bollinger
+            # penalizan comprar ya sobrecomprado o vender ya sobrevendido,
+            # algo que la estructura sola no ve.
+            if df.empty or len(df) < 5:
+                return 0
+            direction = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
+            return MomentumIndicators(df).score_for_signal(direction).pts_adjustment
 
-        raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy]
+        raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy, _momentum]
         tasks = [_make(name, fn) for name, fn in zip(_agent_names, raw_tasks)]
 
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
