@@ -41,6 +41,8 @@ from smc.momentum import MomentumIndicators
 
 from smc.bill_williams import BillWilliamsIndicators
 
+from smc.liquidity_sweep import check_setup as _silver_bullet_check
+
 
 
 logger = logging.getLogger(__name__)
@@ -4000,6 +4002,26 @@ class TradingSupervisor:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
                                 else:
+                                    # ICT Silver Bullet gate (2026-07-09): dentro de la kill zone
+                                    # activa (14 UTC = 10-11am ET, la unica que solapa con las
+                                    # horas activas reales del bot), un trader ICT real exige la
+                                    # confluencia COMPLETA (sweep+FVG+kill zone) en vez de un score
+                                    # ponderado -- si falta cualquier pieza, no opera, sin importar
+                                    # que tan alto sume el resto. Fuera de esa hora, sigue el
+                                    # criterio de score de siempre (sin este gate adicional).
+                                    if tf == "H1" and datetime.now(timezone.utc).hour == 14:
+                                        try:
+                                            _sb_df = await loop.run_in_executor(
+                                                None, lambda s=symbol: self.mt5.get_ohlcv(s, "H1", 30)
+                                            )
+                                            _sb = _silver_bullet_check(_sb_df) if _sb_df is not None else None
+                                            _sb_dir = "bullish" if bias == "LONG" else "bearish"
+                                            if _sb is None or not _sb.valid or _sb.direction != _sb_dir:
+                                                print(f" -- [SILVER-BULLET] confluencia incompleta (sweep+FVG+killzone) -- skip", flush=True)
+                                                continue
+                                            print(f" -- [SILVER-BULLET] confluencia completa confirmada", flush=True)
+                                        except Exception as _sb_exc:
+                                            print(f" -- [SILVER-BULLET] error verificando (no bloqueo): {_sb_exc}", flush=True)
                                     print(f" -- ejecutando SWING (score={score}>={effective_threshold})")
                                     await self._send_mt5_real_order(signal)
                             except Exception as exc:
