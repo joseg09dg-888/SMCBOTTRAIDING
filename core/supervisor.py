@@ -3402,6 +3402,45 @@ class TradingSupervisor:
                                     except Exception:
                                         pass
 
+                # ── 3b. Structure invalidation: LOSING position whose H4 bias
+                # reversed against it. NOTE: H4=WAIT is deliberately NOT treated
+                # as invalidation here -- the scan loop already preserves the
+                # prior LONG/SHORT through WAIT reads to avoid closing on normal
+                # pullback noise (see BUG #H4-WAIT-PERMANENT). Only a genuine
+                # flip to the opposite direction counts -- that means the setup
+                # that justified the trade is gone, not just quiet.
+                # Added 2026-07-08: positions were holding to the full SL/36h
+                # timer even after their own structural justification reversed,
+                # with nothing acting on it until a human checked manually.
+                if pnl < 0:
+                    import time as _stime
+                    _pos_dir = "LONG" if is_buy else "SHORT"
+                    _opposite_dir = "SHORT" if is_buy else "LONG"
+                    _cur_h4_dir = self._mt5_h4_direction.get(sym)
+                    if _cur_h4_dir == _opposite_dir:
+                        _last_try = self._close_attempted.get(ticket, 0.0)
+                        if _stime.time() - _last_try >= 300:
+                            self._close_attempted[ticket] = _stime.time()
+                            print(
+                                f"[STRUCTURE-INVALID] {sym} #{ticket} era {_pos_dir}, "
+                                f"H4 ahora {_cur_h4_dir} -- perdiendo ${pnl:.2f} → cerrando",
+                                flush=True,
+                            )
+                            ok = await loop.run_in_executor(
+                                None, lambda t=ticket: self.mt5.close_position(t)
+                            )
+                            if ok:
+                                self._position_peaks.pop(ticket, None)
+                                self._close_attempted.pop(ticket, None)
+                                try:
+                                    await self.telegram.send_glint_alert(
+                                        f"<b>CIERRE POR REVERSION DE ESTRUCTURA</b>\n{sym} #{ticket}\n"
+                                        f"Era {_pos_dir}, H4 ahora {_cur_h4_dir} → cerrada en ${pnl:+.2f}"
+                                    )
+                                except Exception:
+                                    pass
+                            continue
+
                 # ── 4. Hard close LOSING position stuck > MAX_HOLD_HOURS ────
                 # Winners are handled by trail SL / breakeven — don't kill them early.
                 if pnl <= 0 and open_time > 0:
