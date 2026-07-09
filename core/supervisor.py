@@ -3117,8 +3117,18 @@ class TradingSupervisor:
             # posiciones) donde el mecanismo de partial-close (linea ~2438) esta pensado
             # para actuar. Resultado: dos trades reales (USDCAD, NZDUSD) que llegaron a
             # peak $30-90 volvieron a breakeven exacto ($0.00 neto) sin nunca tener
-            # oportunidad de alcanzar el partial ni el TP. Fix: umbral = 50% del riesgo
-            # real de la posicion (via SL distance), con piso de $10 para posiciones chicas.
+            # oportunidad de alcanzar el partial ni el TP. Fix original: umbral = 50% del
+            # riesgo real de la posicion (via SL distance), con piso de $10.
+            #
+            # BUG-BE-STILL-TOO-EARLY (2026-07-09): auditoria de episodes.db mostro avg
+            # WIN=$27.72 vs avg LOSS=$22.02 (ratio real 1.26x) pese a que el sistema esta
+            # calculado para RR=3.0 -- decenas de "wins" de $0.24-$8 en el historial son
+            # exactamente el patron de romper a breakeven apenas a mitad de camino del
+            # riesgo real. El umbral de 50% de 1R seguia siendo demasiado temprano -- el
+            # propio comentario original de esta funcion (arriba) dice "mover a breakeven
+            # cuando profit >= 1R", pero el codigo aplicaba 0.5R. Subido a 1.0R real para
+            # que las ganadoras tengan el espacio que el docstring siempre dijo que debian
+            # tener antes de asegurar breakeven.
             _be_moved = self.__dict__.setdefault("_breakeven_set", set())
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
@@ -3133,7 +3143,8 @@ class TradingSupervisor:
                 if sw_pnl > _peak:
                     self._position_peaks[sw_ticket] = sw_pnl
                     _peak = sw_pnl
-                # Umbral proporcional al riesgo real (50% de 1R), piso $10
+                # Umbral proporcional al riesgo real (100% de 1R, no 50% -- ver
+                # BUG-BE-STILL-TOO-EARLY arriba), piso $10
                 _be_trigger = 10.0
                 if sw_sl and sw_entry:
                     try:
@@ -3144,7 +3155,7 @@ class TradingSupervisor:
                         _be_sl_pips   = abs(sw_entry - sw_sl) / _be_pip_size if _be_pip_size else 0.0
                         _be_risk_usd  = sw.get("volume", 0.0) * _be_sl_pips * _be_pip_value
                         if _be_risk_usd > 0:
-                            _be_trigger = max(10.0, _be_risk_usd * 0.5)
+                            _be_trigger = max(10.0, _be_risk_usd * 1.0)
                     except Exception:
                         pass
                 # Cuando peak >= umbral → mover SL a breakeven en MT5 (una sola vez)
