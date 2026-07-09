@@ -65,16 +65,18 @@ class EventDrivenStrategy:
         datetime(2024, 4, 20, tzinfo=timezone.utc),
     ]
 
-    # FOMC meetings 2026 (approximate dates)
+    # FOMC meetings 2026 -- verificadas contra federalreserve.gov/monetarypolicy/fomccalendars.htm
+    # (2026-07-09: la lista anterior tenia 4 de 8 fechas mal -- faltaba la reunion de
+    # abril y octubre por completo, reemplazadas por fechas que no existen)
     FOMC_2026 = [
-        datetime(2026, 1, 29, 19, 0, tzinfo=timezone.utc),
-        datetime(2026, 3, 18, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 5, 7, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 6, 17, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 7, 29, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 9, 16, 18, 0, tzinfo=timezone.utc),
-        datetime(2026, 11, 4, 19, 0, tzinfo=timezone.utc),
-        datetime(2026, 12, 16, 19, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 28, 19, 0, tzinfo=timezone.utc),   # Jan 27-28, decision EST
+        datetime(2026, 3, 18, 18, 0, tzinfo=timezone.utc),   # Mar 17-18, decision EDT
+        datetime(2026, 4, 29, 18, 0, tzinfo=timezone.utc),   # Apr 28-29, decision EDT
+        datetime(2026, 6, 17, 18, 0, tzinfo=timezone.utc),   # Jun 16-17, decision EDT
+        datetime(2026, 7, 29, 18, 0, tzinfo=timezone.utc),   # Jul 28-29, decision EDT
+        datetime(2026, 9, 16, 18, 0, tzinfo=timezone.utc),   # Sep 15-16, decision EDT
+        datetime(2026, 10, 28, 18, 0, tzinfo=timezone.utc),  # Oct 27-28, decision EDT
+        datetime(2026, 12, 9, 19, 0, tzinfo=timezone.utc),   # Dec 8-9, decision EST
     ]
 
     # ── Halving ───────────────────────────────────────────────────────────

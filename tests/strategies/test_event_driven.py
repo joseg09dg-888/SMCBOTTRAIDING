@@ -71,8 +71,8 @@ def test_next_fomc_returns_future():
 
 def test_is_fomc_window_true():
     strat = EventDrivenStrategy()
-    # Jan 29 2026 19:00 UTC — during FOMC
-    fomc_time = datetime(2026, 1, 29, 19, 30, tzinfo=timezone.utc)
+    # Jan 28 2026 19:00 UTC — during FOMC (fecha real verificada contra federalreserve.gov)
+    fomc_time = datetime(2026, 1, 28, 19, 30, tzinfo=timezone.utc)
     assert strat.is_fomc_window(fomc_time) is True
 
 
@@ -127,7 +127,7 @@ def test_risk_normal():
 
 def test_risk_during_fomc():
     strat = EventDrivenStrategy()
-    fomc_time = datetime(2026, 1, 29, 19, 0, tzinfo=timezone.utc)
+    fomc_time = datetime(2026, 1, 28, 19, 0, tzinfo=timezone.utc)
     adj = strat.get_risk_adjustment(fomc_time)
     assert adj <= 0.5
 

@@ -33,6 +33,10 @@ from dashboard.telegram_commander import TelegramCommander
 
 from training.historical_agent import HistoricalDataAgent
 
+from strategies.event_driven import EventDrivenStrategy
+
+from connectors.economic_calendar import currencies_for_symbol, get_high_impact_window
+
 
 
 logger = logging.getLogger(__name__)
@@ -226,6 +230,8 @@ class TradingSupervisor:
         self.risk_manager   = RiskManager(config, capital)
 
         self.historical     = HistoricalDataAgent()
+
+        self.event_driven   = EventDrivenStrategy()
 
         self.decision       = DecisionFilter(config, self.risk_manager,
 
@@ -1623,6 +1629,35 @@ class TradingSupervisor:
         if getattr(self.commander, "state", None) and getattr(self.commander.state, "paused", False):
             print(f"[PAUSE] {signal.symbol}: bot pausado manualmente via Telegram — skip", flush=True)
             return
+
+        # ── NEWS BLACKOUT (FOMC/NFP) — regla documentada en CLAUDE.md
+        # ("no_operar_noticias") que nunca se habia conectado al pipeline real.
+        try:
+            _news_risk = self.event_driven.get_risk_adjustment()
+            if _news_risk <= 0.25 and not _is_scalp:
+                print(f"[NEWS-BLACKOUT] {signal.symbol}: ventana FOMC/NFP activa — skip swing", flush=True)
+                return
+        except Exception as _news_exc:
+            print(f"[NEWS-BLACKOUT] error (no bloqueo): {_news_exc}", flush=True)
+
+        # ── NEWS BLACKOUT (calendario real, no solo FOMC/NFP US) — Forex
+        # Factory feed gratis sin API key, cubre BCE/BOE/BOC/RBA/RBNZ/SNB/CPI
+        # etc. Complementa el bloque anterior (que solo sabia de FOMC/NFP
+        # hardcodeados) con eventos High-impact reales de CUALQUIER divisa
+        # del par. Fallback silencioso si el feed no responde (cache stale).
+        try:
+            _pair_currencies = currencies_for_symbol(signal.symbol)
+            if _pair_currencies and not _is_scalp:
+                _hi_event = get_high_impact_window(_pair_currencies, window_minutes=30)
+                if _hi_event:
+                    print(
+                        f"[NEWS-BLACKOUT] {signal.symbol}: {_hi_event['country']} "
+                        f"'{_hi_event['title']}' (High impact) a {_hi_event['time']:%H:%M UTC} — skip swing",
+                        flush=True,
+                    )
+                    return
+        except Exception as _cal_exc:
+            print(f"[NEWS-BLACKOUT] calendario real error (no bloqueo): {_cal_exc}", flush=True)
 
         # ── AXI SELECT GUARDS ──────────────────────────────────────────
         # Guard 1: emergency daily loss limit (-4%)
