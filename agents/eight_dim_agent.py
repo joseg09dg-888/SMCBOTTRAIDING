@@ -287,6 +287,17 @@ class EightDimensionAgent:
         Monthly profit lock: if Axi monthly profit > 4% → 0.3 (protect target).
         Reads episodes.db and axi_select_state.json.
         Returns 0.0–1.2.
+
+        BUG-DIM6-DEAD-COLUMNS (2026-07-09): this query used to select a
+        column named "outcome" ordered by "closed_at" -- neither exists in
+        the real episodes.db schema (the real columns are "result", a TEXT
+        'WIN'/'LOSS', and "ts"). Every call raised sqlite3.OperationalError,
+        silently swallowed by the bare except below, so this function ALWAYS
+        returned the safe-unblocked default (1.0) -- the 3-consecutive-loss
+        circuit breaker and the WR<40% size reduction have never fired once
+        in the bot's history, despite /status and the monitoring dashboards
+        showing "DIM6 CIRCUIT: 0/3 OK" every single check (that display reads
+        a separate scan_stats.json counter that was also never populated).
         """
         try:
             import sqlite3, os, json as _json
@@ -294,18 +305,18 @@ class EightDimensionAgent:
             if os.path.exists(db_path):
                 conn = sqlite3.connect(db_path, timeout=2)
                 rows = conn.execute(
-                    "SELECT outcome FROM episodes WHERE outcome IS NOT NULL "
-                    "ORDER BY closed_at DESC LIMIT 5"
+                    "SELECT result FROM episodes WHERE result IN ('WIN','LOSS') "
+                    "ORDER BY ts DESC LIMIT 5"
                 ).fetchall()
                 conn.close()
                 if rows:
                     outcomes = [r[0] for r in rows]
                     # Last 3 consecutive losses → circuit break
-                    if len(outcomes) >= 3 and all(o < 0 for o in outcomes[:3]):
+                    if len(outcomes) >= 3 and all(o == "LOSS" for o in outcomes[:3]):
                         return 0.0   # hard block — 24h cooling off
                     # Last 5 trades WR < 40% → reduce
                     if len(outcomes) >= 5:
-                        wr = sum(1 for o in outcomes if o > 0) / len(outcomes)
+                        wr = sum(1 for o in outcomes if o == "WIN") / len(outcomes)
                         if wr < 0.40:
                             return 0.60
         except Exception:
