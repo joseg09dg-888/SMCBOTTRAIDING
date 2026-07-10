@@ -62,6 +62,8 @@ rng = np.random.default_rng(42)
 # temporal -- ver cual filtro realmente ayuda antes de decidir la config final)
 ENABLE_MOMENTUM_FILTERS = False  # desactivado en vivo 2026-07-09 -- ver core/supervisor.py
 ENABLE_SILVER_BULLET_GATE = True  # activo en vivo pero nunca dispara en 2 anios de datos (inerte)
+ENABLE_REGIME_FILTER = False  # probado 2026-07-09: empeoro TODO (P(pasar Axi) 40.3%->31.5%,
+# E[mensual] $3395->$1559, Sharpe 0.476->0.20, P(mes<-5%) 6%->21%) -- rechazado
 
 # ── Data download ──────────────────────────────────────────────────────
 print("\n[DATA] Descargando datos historicos...")
@@ -293,6 +295,13 @@ for pair, df1 in h1_data.items():
         sig, score, atr_v = smc_signal(df1, idx, d_dir)
         if sig == "WAIT": continue
 
+        # DIAGNOSTICO 2026-07-09: DIM2/DIM3 del propio backtest concluyeron que
+        # HIGH vol + STRONG_TREND es la mejor combinacion posible -- nunca se
+        # habia probado como filtro duro, solo como observacion.
+        if ENABLE_REGIME_FILTER:
+            if vol_regime(df1, idx) != "HIGH" or trend_regime(df1, idx) != "STRONG_TREND":
+                continue
+
         # Filtros nuevos 2026-07-09: RSI/Bollinger/Estocastico/volumen (smc/momentum.py)
         # + Alligator/Awesome Oscillator (smc/bill_williams.py), mismo criterio que el
         # pipeline en vivo (_enrich_with_agents en core/supervisor.py) -- ajustan el
@@ -325,6 +334,14 @@ for pair, df1 in h1_data.items():
 
         # Risk scaling by score
         max_r, r_pct = risk_for_score(score)
+
+        # DIAGNOSTICO 2026-07-09: escalar riesgo SOLO donde hay edge real
+        # comprobado (episodes.db real: EURUSD PF=1.11, unico con neto positivo
+        # entre los pares activos), en vez de subir el riesgo parejo a todos
+        # (eso disparaba P(mes<-5%) de 6% a 16% -- ver commit e92f121).
+        _PAIR_RISK_MULT = {"EURUSD": 1.8}
+        _mult = _PAIR_RISK_MULT.get(pair, 1.0)
+        max_r *= _mult
 
         # Volume
         sl_dist_p = atr_v * 1.5
