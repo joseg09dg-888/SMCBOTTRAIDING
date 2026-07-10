@@ -139,3 +139,33 @@ def test_signal_agent_evaluate_long_returns_valid_signal():
     assert sig.entry > 0
     assert sig.stop_loss is not None
     assert sig.take_profit > sig.entry
+
+
+# ── BUG-TRIGGER-HARDCODED regression: trigger must reflect real confluence ──
+
+def test_trigger_reflects_actual_confluence_not_hardcoded_direction():
+    """Before the fix, trigger was hardcoded to 'CHoCH + OB retest' for every
+    bullish signal and 'BOS + FVG bajista' for every bearish one, regardless
+    of what actually fired -- this broke AutonomousLearner's per-setup
+    grouping (it was really grouping by direction, not by setup pattern)."""
+    agent = SignalAgent()
+    sig = agent.evaluate(
+        analysis_text="bullish trend BOS confirmado FVG presente setup valido",
+        symbol="BTCUSDT", timeframe="4h", current_price=67000.0, poi_zones=[],
+    )
+    assert "BOS" in sig.trigger
+    assert "FVG" in sig.trigger
+    assert "OB" not in sig.trigger  # no order block was present in this text
+
+
+def test_trigger_differs_for_different_confluence_same_direction():
+    agent = SignalAgent()
+    sig_bos_only = agent.evaluate(
+        analysis_text="bullish trend BOS confirmado setup valido",
+        symbol="EURUSD", timeframe="1h", current_price=1.1000, poi_zones=[],
+    )
+    sig_choch_ob = agent.evaluate(
+        analysis_text="bullish trend CHoCH detectado order block presente setup valido",
+        symbol="EURUSD", timeframe="1h", current_price=1.1000, poi_zones=[],
+    )
+    assert sig_bos_only.trigger != sig_choch_ob.trigger

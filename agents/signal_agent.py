@@ -262,6 +262,22 @@ class SignalAgent:
             tp_raw  = (entry + sl_dist * tp_mult) if is_bullish else (entry - sl_dist * tp_mult)
             tp = self._nearest_swing(entry, sl_dist, is_bullish=is_bullish, tp_raw=tp_raw, df=_df)
 
+        # BUG-TRIGGER-HARDCODED (2026-07-09): trigger/setup_type used to be a
+        # hardcoded literal keyed only on direction ("CHoCH + OB retest" for
+        # every bullish signal, "BOS + FVG bajista" for every bearish one) --
+        # it never reflected which confluence factors actually fired. Since
+        # AutonomousLearner groups by (setup_type, regime, session) to learn
+        # per-setup performance, this made that grouping meaningless (it was
+        # really just grouping by direction, mislabeled as a setup pattern).
+        # Now built from the real detected factors in analysis_text.
+        _factors = []
+        if "BOS" in analysis_text: _factors.append("BOS")
+        if "CHoCH" in analysis_text: _factors.append("CHoCH")
+        if "order block" in analysis_text: _factors.append("OB")
+        if "FVG" in analysis_text: _factors.append("FVG")
+        if "liquidity_sweep_confirmado" in analysis_text: _factors.append("sweep")
+        trigger = " + ".join(_factors) if _factors else "setup valido"
+
         signal = TradeSignal(
             symbol       = symbol,
             signal_type  = SignalType.LONG if is_bullish else SignalType.SHORT,
@@ -269,7 +285,7 @@ class SignalAgent:
             stop_loss    = round(sl, 5),
             take_profit  = round(tp, 5),
             timeframe    = timeframe,
-            trigger      = "CHoCH + OB retest" if is_bullish else "BOS + FVG bajista",
+            trigger      = trigger,
             confidence   = 0.75 if has_setup else 0.5,
             glint_context= glint_context,
         )
