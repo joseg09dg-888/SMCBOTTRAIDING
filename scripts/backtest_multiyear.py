@@ -34,7 +34,9 @@ print("=" * 72)
 
 CAPITAL = 96_184.0
 RISK_PCT = 0.005
-MAX_RISK = 275.0
+MAX_RISK = 275.0  # probado doblar a 550 (2026-07-09): P(pasar Axi)+2.5pp pero
+# P(mes<-5%) 6%->16% (casi triplico) -- Axi revienta la cuenta a ese drawdown,
+# no vale la pena el intercambio. Revertido a 275.
 RR = 3.0  # actualizado 2026-07-01: era 2.5, MIN_RR real subio a 3.0 (commit 468c476 + fix MIN-RR-OVERRIDE)
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
