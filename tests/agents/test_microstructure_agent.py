@@ -116,6 +116,16 @@ def test_unknown_symbol_returns_empty_levels(agent):
     assert levels == []
 
 
+# ── BUG-PSYCH-LEVELS-MISSING regression: all active pairs must have levels ──
+
+@pytest.mark.parametrize("symbol", ["USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"])
+def test_active_pairs_have_psychological_levels(agent, symbol):
+    """These 5 pairs had no PSYCH_LEVELS entry, silently zeroing the stop-hunt
+    bonus (up to 10/15 microstructure points) for every trade on them."""
+    levels = agent.get_psychological_levels(symbol, 1.0)
+    assert len(levels) > 0
+
+
 # ── Stop hunt detection ────────────────────────────────────────────────────
 
 def test_stop_hunt_detected_when_spike_and_return(agent):

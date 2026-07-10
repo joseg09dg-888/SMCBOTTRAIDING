@@ -55,6 +55,15 @@ PSYCH_LEVELS = {
     "XAUUSD":  [1800, 2000, 2200, 2500, 2700, 3000, 3200, 3500],
     "NAS100":  [15000, 16000, 17000, 18000, 19000, 20000, 21000],
     "US30":    [35000, 37000, 39000, 41000, 43000, 45000],
+    # BUG-PSYCH-LEVELS-MISSING (2026-07-09): 5 of the 6 currently active pairs
+    # had no entry here -- get_psychological_levels() returned [] for them,
+    # silently zeroing out the stop-hunt bonus (up to 10 of 15 microstructure
+    # points) for every trade on those symbols since they were added.
+    "USDCAD":  [1.3000, 1.3500, 1.4000, 1.4500],
+    "NZDUSD":  [0.5500, 0.6000, 0.6500],
+    "USDCHF":  [0.8000, 0.8500, 0.9000, 0.9500],
+    "EURAUD":  [1.6000, 1.6500, 1.7000, 1.7500],
+    "GBPCAD":  [1.8000, 1.8500, 1.9000, 1.9500],
     # yfinance aliases
     "EURUSD=X": [1.0500, 1.0700, 1.1000, 1.1200, 1.1500],
     "GC=F":     [1800, 2000, 2200, 2500, 2700, 3000],
