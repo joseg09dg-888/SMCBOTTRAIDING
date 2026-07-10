@@ -37,10 +37,6 @@ from strategies.event_driven import EventDrivenStrategy
 
 from connectors.economic_calendar import currencies_for_symbol, get_high_impact_window
 
-from smc.momentum import MomentumIndicators
-
-from smc.bill_williams import BillWilliamsIndicators
-
 from smc.liquidity_sweep import check_setup as _silver_bullet_check
 
 
@@ -1271,24 +1267,16 @@ class TradingSupervisor:
         def _retail():   return self._retail_psych.score_adjustment(signal.symbol, df, bias)
         def _alt():      return self._alt_data.score_adjustment(signal.symbol, bias)
         def _energy():  return 0  # ELIMINADO: numerologia/tarot sin evidencia de edge
-        def _momentum():
-            # Agregado 2026-07-09: SMC estructural no tiene concepto de
-            # sobrecompra/sobreventa ni extension de precio -- RSI/Bollinger
-            # penalizan comprar ya sobrecomprado o vender ya sobrevendido,
-            # algo que la estructura sola no ve.
-            if df.empty or len(df) < 5:
-                return 0
-            direction = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
-            return MomentumIndicators(df).score_for_signal(direction).pts_adjustment
-        def _billwilliams():
-            # Agregado 2026-07-09: Alligator (lineas dormidas = mercado en
-            # rango) + Awesome Oscillator (momentum vs baseline 34 periodos).
-            # Fractales excluidos a proposito -- duplican la deteccion de
-            # swings que ya hace smc/structure.py.
-            if df.empty or len(df) < 34:
-                return 0
-            direction = "LONG" if signal.signal_type == SignalType.LONG else "SHORT"
-            return BillWilliamsIndicators(df).score_for_signal(direction).pts_adjustment
+        def _momentum():  return 0  # DESACTIVADO 2026-07-09: backtest A/B contra 2
+            # años de datos reales (scripts/backtest_multiyear.py) mostro que estas
+            # penalizaciones (RSI/Bollinger/Estocastico/volumen) cortan el volumen de
+            # trades a la mitad (833->1767 al desactivarlas) sin mejorar la calidad lo
+            # suficiente para compensar -- P(pasar Axi 5%) bajo de 36.4% a 43.2% al
+            # quitarlas. Codigo y tests de smc/momentum.py se mantienen, solo se
+            # desconecta su contribucion al score en vivo.
+        def _billwilliams(): return 0  # DESACTIVADO 2026-07-09: mismo hallazgo que
+            # _momentum -- ver backtest A/B arriba. Codigo y tests de
+            # smc/bill_williams.py se mantienen, solo se desconecta la contribucion.
 
         raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy, _momentum, _billwilliams]
         tasks = [_make(name, fn) for name, fn in zip(_agent_names, raw_tasks)]

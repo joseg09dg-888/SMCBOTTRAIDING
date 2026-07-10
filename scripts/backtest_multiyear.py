@@ -23,6 +23,10 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 import yfinance as yf
 
+from smc.momentum import MomentumIndicators
+from smc.bill_williams import BillWilliamsIndicators
+from smc.liquidity_sweep import check_setup as silver_bullet_check
+
 print("=" * 72)
 print("  BACKTEST MULTI-ANUAL — 8 DIMENSIONES")
 print("  H1: 2 años | D1: 10 años | Monte Carlo: 100,000 sims")
@@ -34,12 +38,12 @@ MAX_RISK = 275.0
 RR = 3.0  # actualizado 2026-07-01: era 2.5, MIN_RR real subio a 3.0 (commit 468c476 + fix MIN-RR-OVERRIDE)
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
-    # actualizado 2026-07-05: MT5_SYMBOLS real (core/supervisor.py:143) = estos 7 pares
-    # (USDCHF/EURAUD/GBPCAD agregados hoy tras screening backtest positivo)
+    # actualizado 2026-07-09: GBPUSD removido -- auditoria de episodes.db (591 trades
+    # reales) lo mostro como el peor par activo (n=147, WR=25.9%, PF=0.53, neto -$887.55).
+    # USDCHF/EURAUD/GBPCAD agregados 2026-07-05 tras screening backtest positivo.
     "EURUSD": "EURUSD=X",
     "USDCAD": "USDCAD=X",
     "NZDUSD": "NZDUSD=X",
-    "GBPUSD": "GBPUSD=X",
     "USDCHF": "USDCHF=X",
     "EURAUD": "EURAUD=X",
     "GBPCAD": "GBPCAD=X",
@@ -51,6 +55,11 @@ PIP_VAL = {"EURUSD":10.0,"GBPUSD":10.0,"AUDUSD":10.0,"USDCAD":10.0,"NZDUSD":10.0
            "USDCHF":10.0,"EURAUD":6.6,"GBPCAD":7.1,"NAS100":1.0}
 
 rng = np.random.default_rng(42)
+
+# Toggles para aislar el efecto de cada filtro nuevo 2026-07-09 (diagnostico
+# temporal -- ver cual filtro realmente ayuda antes de decidir la config final)
+ENABLE_MOMENTUM_FILTERS = False  # desactivado en vivo 2026-07-09 -- ver core/supervisor.py
+ENABLE_SILVER_BULLET_GATE = True  # activo en vivo pero nunca dispara en 2 anios de datos (inerte)
 
 # ── Data download ──────────────────────────────────────────────────────
 print("\n[DATA] Descargando datos historicos...")
@@ -281,6 +290,30 @@ for pair, df1 in h1_data.items():
 
         sig, score, atr_v = smc_signal(df1, idx, d_dir)
         if sig == "WAIT": continue
+
+        # Filtros nuevos 2026-07-09: RSI/Bollinger/Estocastico/volumen (smc/momentum.py)
+        # + Alligator/Awesome Oscillator (smc/bill_williams.py), mismo criterio que el
+        # pipeline en vivo (_enrich_with_agents en core/supervisor.py) -- ajustan el
+        # score, no lo bloquean solos.
+        _mw = df1.iloc[max(0, idx - 80):idx + 1]
+        if ENABLE_MOMENTUM_FILTERS:
+            try:
+                score += MomentumIndicators(_mw).score_for_signal(sig).pts_adjustment
+                score += BillWilliamsIndicators(_mw).score_for_signal(sig).pts_adjustment
+            except Exception:
+                pass
+
+        # Silver Bullet ICT (2026-07-09): gate todo-o-nada SOLO en la kill zone
+        # activa (14 UTC) -- si falta sweep+FVG+killzone en la direccion de la
+        # senal, no se opera esa hora especifica, igual que en vivo.
+        if ENABLE_SILVER_BULLET_GATE and hour_utc == 14:
+            try:
+                _sb = silver_bullet_check(_mw)
+                _sb_dir = "bullish" if sig == "LONG" else "bearish"
+                if _sb is None or not _sb.valid or _sb.direction != _sb_dir:
+                    continue
+            except Exception:
+                pass
 
         # Threshold — actualizado 2026-07-05: MT5_SCORE_AUTO_REDUCE real=80 (core/supervisor.py:96,
         # recalibrado 2026-07-01 tras el sweep que probo 90-95 y NO mejoraba WR, solo cortaba volumen).
