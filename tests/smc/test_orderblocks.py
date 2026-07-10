@@ -79,3 +79,43 @@ def test_zero_close_bearish_no_crash():
     ob = OrderBlockDetector(df)
     blocks = ob.find_bearish_obs()
     assert isinstance(blocks, list)
+
+
+# ── BUG-OB-FOREX-DEAD regression: forex-scale prices must still detect OBs ──
+
+def _forex_scale_df(n=60):
+    """~EURUSD-like H1 series: small pip-scale moves, then one real
+    displacement impulse -- the 1.5% fixed-percent threshold would never
+    fire here (verified: max real EURUSD H1 move over 200 bars was 0.415%),
+    but the ATR-relative check should."""
+    import numpy as np
+    rng = np.random.default_rng(7)
+    base = 1.1400
+    closes = [base]
+    for _ in range(n - 1):
+        closes.append(closes[-1] + rng.normal(0, 0.0003))
+    # Inject one clear bearish-then-bullish-impulse pair near the end
+    closes[-3] = closes[-4] - 0.0010  # bearish candle (the OB)
+    closes[-2] = closes[-3] + 0.0060  # strong bullish impulse next candle
+    opens = [closes[i - 1] if i > 0 else closes[0] for i in range(n)]
+    highs = [max(o, c) + 0.0003 for o, c in zip(opens, closes)]
+    lows  = [min(o, c) - 0.0003 for o, c in zip(opens, closes)]
+    return pd.DataFrame({"open": opens, "high": highs, "low": lows, "close": closes})
+
+
+def test_bullish_ob_detected_at_forex_scale():
+    df = _forex_scale_df()
+    ob = OrderBlockDetector(df)
+    blocks = ob.find_bullish_obs()
+    assert len(blocks) >= 1, "OB detector debe encontrar impulsos reales a escala forex, no solo cripto"
+
+
+def test_atr_fallback_to_percentage_with_insufficient_data():
+    # Con muy pocas velas (sin ATR14 posible), debe usar el umbral porcentual
+    # de siempre -- no debe crashear ni comportarse distinto silenciosamente.
+    ob = OrderBlockDetector(pd.DataFrame({
+        "open": [100, 102], "high": [103, 105], "low": [99, 101], "close": [102, 103],
+    }))
+    assert ob._atr() is None
+    blocks = ob.find_bullish_obs()
+    assert isinstance(blocks, list)
