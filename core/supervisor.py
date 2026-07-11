@@ -364,7 +364,9 @@ class TradingSupervisor:
         self._axi_tracker    = AxiSelectTracker()
         self._axi_adjuster   = AxiCapitalAdjuster()
         self._axi_enforcer   = ConsistencyEnforcer()
-        self._axi_paused_today = False   # True si guard disparo emergency close
+        # BUG-AXI-GUARD-RESTART: paused-today state now lives in AxiSelectGuard
+        # itself (persisted to disk) so a pm2 restart mid-day can't silently
+        # un-pause the bot or reset the -4% loss baseline. See axi_select_guard.py.
 
         self._risk_gate_agent = FTMOAgent()
 
@@ -1678,7 +1680,7 @@ class TradingSupervisor:
 
         # ── AXI SELECT GUARDS ──────────────────────────────────────────
         # Guard 1: emergency daily loss limit (-4%)
-        if self._axi_paused_today:
+        if self._axi_guard.paused_today:
             print(f"[AXI-GUARD] {signal.symbol}: bot pausado — limite diario alcanzado hoy", flush=True)
             return
         # Guard 2: consistency rule — ningún día > 30% del profit mensual
@@ -3735,7 +3737,6 @@ class TradingSupervisor:
                     self._last_ftmo_day = _today_utc
                     self._daily_target_hit  = False
                     self._daily_protect_hit = False
-                    self._axi_paused_today  = False
                     self._scalp_daily_hit   = False
                     self._scalp_realized_today = 0.0
                     print(f"[RISK-GATE] Nuevo dia {_today_utc} -- daily_pnl reseteado (streak preservado)", flush=True)
@@ -3819,10 +3820,13 @@ class TradingSupervisor:
                             _eq  = _acc["equity"]
                             _bal = _acc.get("balance", _eq)
                             # AxiSelectGuard: emergencia si dia cae -4%
+                            # (day_start_balance + paused_today are persisted
+                            # to disk inside the guard -- survives pm2 restarts,
+                            # see BUG-AXI-GUARD-RESTART)
+                            _was_paused = self._axi_guard.paused_today
                             self._axi_guard.set_day_start(_bal)
                             _guard = self._axi_guard.check(_eq)
-                            if _guard.should_close and not self._axi_paused_today:
-                                self._axi_paused_today = True
+                            if _guard.should_close and not _was_paused:
                                 print(f"[AXI-GUARD] EMERGENCY CLOSE: {_guard.reason}", flush=True)
                                 try:
                                     await asyncio.get_running_loop().run_in_executor(
@@ -3835,10 +3839,6 @@ class TradingSupervisor:
                                     pass
                             elif _guard.warning_level:
                                 print(f"[AXI-GUARD] {_guard.reason}", flush=True)
-                            # Reset pausa al inicio del nuevo dia
-                            if self._axi_guard._day_start_date != getattr(self, "_axi_last_reset_date", None):
-                                self._axi_paused_today = False
-                                self._axi_last_reset_date = self._axi_guard._day_start_date
                             # AxiCapitalAdjuster: detecta si Axi escalo capital
                             _adj = self._axi_adjuster.check(_bal)
                             if _adj.adjusted:

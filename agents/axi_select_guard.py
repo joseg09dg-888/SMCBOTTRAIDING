@@ -6,8 +6,12 @@ cierra TODAS las posiciones y pausa el bot hasta el dia siguiente.
 Alerta Telegram a -3% (warning) y -4% (emergency close).
 """
 from __future__ import annotations
+import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+STATE_FILE = os.path.join("memory", "axi_select_state.json")
 
 
 @dataclass
@@ -36,6 +40,47 @@ class AxiSelectGuard:
     def __init__(self) -> None:
         self._day_start_balance: float | None = None
         self._day_start_date: str | None      = None
+        self._paused_today: bool              = False
+        self._load()
+
+    # ── persistence ──────────────────────────────────────────────────
+    # BUG-AXI-GUARD-RESTART (2026-07-09): day_start_balance/paused_today
+    # used to live only in memory. A pm2 restart mid-day (crash or watch
+    # reload) reset day_start_balance to whatever the balance happened to
+    # be at that moment AND silently unpaused the bot, letting it burn
+    # through another full -4% before the guard fired again -- across
+    # several restarts in one day this could blow well past the intended
+    # daily loss limit. Now persisted to the same state file the tracker
+    # and capital adjuster already use.
+    def _load(self) -> None:
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                self._day_start_balance = state.get("guard_day_start_balance")
+                self._day_start_date    = state.get("guard_day_start_date")
+                self._paused_today      = bool(state.get("guard_paused_today", False))
+            except Exception:
+                pass
+
+    def _save(self) -> None:
+        state: dict = {}
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+            except Exception:
+                pass
+        state["guard_day_start_balance"] = self._day_start_balance
+        state["guard_day_start_date"]    = self._day_start_date
+        state["guard_paused_today"]      = self._paused_today
+        os.makedirs("memory", exist_ok=True)
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+
+    @property
+    def paused_today(self) -> bool:
+        return self._paused_today
 
     def set_day_start(self, balance: float) -> None:
         """Llamar una vez al inicio de cada dia (o primer ciclo del dia)."""
@@ -43,6 +88,8 @@ class AxiSelectGuard:
         if self._day_start_date != today:
             self._day_start_balance = balance
             self._day_start_date    = today
+            self._paused_today      = False
+            self._save()
 
     def check(self, equity: float, capital_assigned: float | None = None) -> GuardResult:
         """
@@ -63,6 +110,10 @@ class AxiSelectGuard:
 
         should_close  = daily_pnl <= limit_usd
         warning_level = (not should_close) and (daily_pnl <= warning_usd)
+
+        if should_close and not self._paused_today:
+            self._paused_today = True
+            self._save()
 
         if should_close:
             reason = (f"EMERGENCY: dia {daily_pnl_pct*100:.1f}% "
