@@ -6,6 +6,14 @@ from unittest.mock import patch
 from agents.axi_select_tracker import AxiSelectTracker, TrackResult
 
 
+@pytest.fixture(autouse=True)
+def _isolated_cwd(tmp_path, monkeypatch):
+    """BUG-AXI-STATE-TORN-WRITE: record_day()/set_capital() persist to
+    memory/axi_select_state.json. Without this isolation those writes
+    land on the real production state file every time the suite runs."""
+    monkeypatch.chdir(tmp_path)
+
+
 def make_tracker(capital: float = 10_000.0, month: str = "2026-06") -> AxiSelectTracker:
     t = AxiSelectTracker()
     t._state = {

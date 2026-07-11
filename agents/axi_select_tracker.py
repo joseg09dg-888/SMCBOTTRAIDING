@@ -7,11 +7,12 @@ Persiste en memory/axi_select_state.json.
 Comando Telegram: /axi
 """
 from __future__ import annotations
-import json
 import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import List
+
+from core.atomic_json import read_json, write_json_atomic
 
 STATE_FILE = os.path.join("memory", "axi_select_state.json")
 MONTHLY_TARGET_PCT = 0.05   # 5%
@@ -57,19 +58,15 @@ class AxiSelectTracker:
 
     # ── persistence ──────────────────────────────────────────────────
     def _load(self) -> dict:
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return {"month": None, "records": [], "capital": 500.0,
-                "initial_month_balance": 500.0}
+        return read_json(STATE_FILE, {"month": None, "records": [], "capital": 500.0,
+                                       "initial_month_balance": 500.0})
 
     def _save(self) -> None:
-        os.makedirs("memory", exist_ok=True)
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(self._state, f, indent=2)
+        # Re-read + merge first: guard/adjuster write other keys to this
+        # same file and we must not clobber them with our in-memory copy.
+        disk = read_json(STATE_FILE, {})
+        disk.update(self._state)
+        write_json_atomic(STATE_FILE, disk)
 
     # ── public API ───────────────────────────────────────────────────
     def set_capital(self, capital: float) -> None:

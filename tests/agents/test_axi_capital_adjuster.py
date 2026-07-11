@@ -2,6 +2,15 @@ import pytest
 from agents.axi_capital_adjuster import AxiCapitalAdjuster, AdjustResult
 
 
+@pytest.fixture(autouse=True)
+def _isolated_cwd(tmp_path, monkeypatch):
+    """BUG-AXI-STATE-TORN-WRITE: several tests here call check() with a
+    real jump, which persists to memory/axi_select_state.json. Without
+    this isolation those writes land on the real production state file
+    every time the suite runs."""
+    monkeypatch.chdir(tmp_path)
+
+
 def make_adjuster(known: float = 500.0) -> AxiCapitalAdjuster:
     a = AxiCapitalAdjuster()
     a._known_capital = known

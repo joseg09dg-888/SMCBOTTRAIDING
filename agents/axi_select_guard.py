@@ -6,10 +6,11 @@ cierra TODAS las posiciones y pausa el bot hasta el dia siguiente.
 Alerta Telegram a -3% (warning) y -4% (emergency close).
 """
 from __future__ import annotations
-import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+from core.atomic_json import read_json, write_json_atomic
 
 STATE_FILE = os.path.join("memory", "axi_select_state.json")
 
@@ -53,30 +54,17 @@ class AxiSelectGuard:
     # daily loss limit. Now persisted to the same state file the tracker
     # and capital adjuster already use.
     def _load(self) -> None:
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    state = json.load(f)
-                self._day_start_balance = state.get("guard_day_start_balance")
-                self._day_start_date    = state.get("guard_day_start_date")
-                self._paused_today      = bool(state.get("guard_paused_today", False))
-            except Exception:
-                pass
+        state = read_json(STATE_FILE, {})
+        self._day_start_balance = state.get("guard_day_start_balance")
+        self._day_start_date    = state.get("guard_day_start_date")
+        self._paused_today      = bool(state.get("guard_paused_today", False))
 
     def _save(self) -> None:
-        state: dict = {}
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    state = json.load(f)
-            except Exception:
-                pass
+        state = read_json(STATE_FILE, {})
         state["guard_day_start_balance"] = self._day_start_balance
         state["guard_day_start_date"]    = self._day_start_date
         state["guard_paused_today"]      = self._paused_today
-        os.makedirs("memory", exist_ok=True)
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2)
+        write_json_atomic(STATE_FILE, state)
 
     @property
     def paused_today(self) -> bool:

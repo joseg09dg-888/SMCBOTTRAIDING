@@ -6,9 +6,10 @@ o > $1,000 en un ciclo), recalcula MAX_DOLLAR_RISK y volumenes.
 Persiste capital conocido en memory/axi_select_state.json.
 """
 from __future__ import annotations
-import json
 import os
 from dataclasses import dataclass
+
+from core.atomic_json import read_json, write_json_atomic
 
 STATE_FILE = os.path.join("memory", "axi_select_state.json")
 
@@ -49,26 +50,12 @@ class AxiCapitalAdjuster:
         self._known_capital: float = self._load_capital()
 
     def _load_capital(self) -> float:
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    return float(json.load(f).get("capital", 500.0))
-            except Exception:
-                pass
-        return 500.0
+        return float(read_json(STATE_FILE, {}).get("capital", 500.0))
 
     def _save_capital(self, capital: float) -> None:
-        state: dict = {}
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    state = json.load(f)
-            except Exception:
-                pass
+        state = read_json(STATE_FILE, {})
         state["capital"] = capital
-        os.makedirs("memory", exist_ok=True)
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2)
+        write_json_atomic(STATE_FILE, state)
 
     def _get_sizing(self, capital: float) -> tuple[float, float, float]:
         risk_pct = max_swing = max_scalp = 0.0
