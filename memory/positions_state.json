@@ -1,0 +1,23 @@
+{
+  "saved_at": 1783973303.0332654,
+  "positions": [
+    {
+      "symbol": "USDCAD",
+      "entry": 1.41429,
+      "direction": "long",
+      "size": 0.27,
+      "ticket": 74714955,
+      "sl": 1.4003999999999999,
+      "tp": 1.45731
+    },
+    {
+      "symbol": "GBPCAD",
+      "entry": 1.89346,
+      "direction": "long",
+      "size": 0.16,
+      "ticket": 74716227,
+      "sl": 1.86972,
+      "tp": 1.96705
+    }
+  ]
+}
