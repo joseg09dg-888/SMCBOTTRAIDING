@@ -1,38 +1,37 @@
 {
-  "date": "2026-07-06T21:39:16.443819",
+  "date": "2026-07-11T11:37:33.748269",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
     "threshold_h4_confirmed": 80,
     "threshold_h4_wait": 90,
     "rr": 3.0,
-    "partial_tp": 1.0,
-    "kill_zone_utc": "13-20",
+    "partial_tp": null,
+    "kill_zone_utc": "14-16,20-23",
     "pairs": [
       "EURUSD",
       "USDCAD",
       "NZDUSD",
-      "GBPUSD",
       "USDCHF",
       "EURAUD",
       "GBPCAD"
     ]
   },
   "stats": {
-    "total_trades": 2560,
-    "total_days": 454,
-    "wr_pct": 30.1,
-    "avg_daily": 332.28,
-    "p_day_250": 39.3,
-    "p_pass_axi": 57.0,
-    "e_monthly": 7247.32,
-    "sharpe": 0.683,
+    "total_trades": 1947,
+    "total_days": 441,
+    "wr_pct": 29.2,
+    "avg_daily": 212.82,
+    "p_day_250": 35.2,
+    "p_pass_axi": 47.1,
+    "e_monthly": 4669.19,
+    "sharpe": 0.49,
     "best_hours": [
+      15,
+      16,
+      23,
       14,
-      13,
-      18,
-      19,
-      15
+      20
     ]
   }
 }
