@@ -179,10 +179,16 @@ class QuantEdgeAgent:
             stress_passed = report.survival_rate >= 0.6
 
         # SP10 — Collective intelligence
+        # DESACTIVADO 2026-07-14: auditoria de los 9 agentes de enriquecimiento activos
+        # encontro que get_consensus_bias()/get_insider_activity() en quant_intel.py
+        # derivan "consenso de mercado" e "insider activity" de hash(symbol) % 100 --
+        # una constante por simbolo sin relacion con datos de mercado reales (el propio
+        # codigo la etiqueta "simulated"/"estimado"). Igual que Elliott (auditoria
+        # 2026-07-06), esto sumaba un sesgo fijo por simbolo al score real en cada
+        # trade, sin discriminar ganadoras de perdedoras. Se desconecta su
+        # contribucion; el resto de calculate_collective_score() (papers academicos)
+        # no se toca porque no depende de hash().
         ci_pts = 0
-        if self.collective:
-            setup_tags = setup.split("+")
-            ci_pts = self.collective.calculate_collective_score(symbol, setup_tags)
 
         # Composite edge score 0-100
         score = 50  # base
