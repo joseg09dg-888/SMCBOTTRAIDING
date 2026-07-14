@@ -3185,20 +3185,18 @@ class TradingSupervisor:
                     if _be_ok:
                         _be_moved.add(sw_ticket)
                         print(f"[BE-SET] {sw_sym} #{sw_ticket} peak=${_peak:.2f} → SL MT5 movido a entry {sw_entry:.5f}", flush=True)
-                # Cierre por software como respaldo (50% del peak, min $100 para swings grandes)
-                if _peak >= 100.0 and sw_pnl > 0 and sw_pnl <= _peak * 0.5:
-                    ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
-                    if ok:
-                        self._position_peaks.pop(sw_ticket, None)
-                        _be_moved.discard(sw_ticket)
-                        print(f"[SWING-TRAIL] {sw_sym} #{sw_ticket} ${sw_pnl:+.2f} cayó 50% del peak ${_peak:.2f} → asegurado", flush=True)
-                        try:
-                            await self.telegram.send_glint_alert(
-                                f"<b>SWING TRAIL LOCK</b>\n{sw_sym} #{sw_ticket}\n"
-                                f"Profit: ${sw_pnl:.2f} | Peak: ${_peak:.2f}\nAsegurado al 50% del máximo ✅"
-                            )
-                        except Exception:
-                            pass
+                # BUG-DOUBLE-PEAK-GUARD (2026-07-13): este cierre por software
+                # (peak>=$100, retrocede 50%) duplicaba al guardia PEAK-GUARD de
+                # mas abajo (linea ~3376: peak>=$200, retrocede 30%), pero con un
+                # umbral MUCHO mas bajo -- por eso este disparaba primero y
+                # aseguraba apenas $50 de una posicion con peak $100, sin dejarle
+                # nunca la oportunidad de llegar al TP real (a veces +$200-400).
+                # Auditoria de episodes.db: max win historico jamas alcanzado
+                # fue $279.04 pese a TPs disenados para RR=3.0 -- este guardia
+                # duplicado y prematuro es la causa mecanica. Eliminado; el
+                # breakeven-set de arriba (linea 3181) ya protege el capital sin
+                # cortar la ganancia, y PEAK-GUARD mas abajo protege peaks
+                # grandes con un umbral realista.
 
             # ── 0b. Swing dollar-stop: solo cierre de emergencia — dejar que SL del broker actúe
             # No cerrar antes del SL: los swings USDCAD necesitan tiempo para llegar al TP (+$247)
