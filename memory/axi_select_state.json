@@ -15,11 +15,16 @@
       "date": "2026-07-13",
       "pnl": 0.0,
       "pnl_pct": 0.0
+    },
+    {
+      "date": "2026-07-14",
+      "pnl": 0.0,
+      "pnl_pct": 0.0
     }
   ],
-  "capital": 96013.0,
+  "capital": 100000.0,
   "initial_month_balance": 100000.0,
   "guard_day_start_balance": 96013.0,
-  "guard_day_start_date": "2026-07-13",
+  "guard_day_start_date": "2026-07-14",
   "guard_paused_today": false
 }
