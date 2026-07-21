@@ -4078,8 +4078,28 @@ class TradingSupervisor:
                                 # AutonomousLearner: aplicar el weight_adj real calculado cada hora
                                 # (antes solo se calculaba y guardaba en episodes.db, nunca se usaba
                                 # para ajustar ninguna decision en vivo -- hallazgo 2026-07-06)
+                                #
+                                # BUG-LEARN-THR-HARDCODED (2026-07-21): esta llamada pasaba los
+                                # literales fijos "SMC"/"unknown"/"unknown" en vez del trigger real
+                                # de la señal -- exactamente la misma clase de bug que
+                                # BUG-TRIGGER-HARDCODED (2026-07-09), pero en este call site nunca
+                                # se corrigió. Efecto: TODA señal, de cualquier símbolo o setup,
+                                # consultaba siempre el mismo bucket ("SMC","unknown","unknown") --
+                                # 485 muestras, WR=25%, TODAS anteriores al fix del trigger real del
+                                # 09-jul (desde entonces episodes.db graba setup_type especifico como
+                                # "BOS + CHoCH + OB + FVG", nunca mas "SMC") -- un bucket muerto y
+                                # congelado que ya no puede recibir datos nuevos, aplicando SIEMPRE
+                                # un 25% extra de exigencia al threshold (adj=0.80) sin relacion con
+                                # la señal real que se estaba evaluando. Verificado en vivo el
+                                # 2026-07-21: 5,321 "sin setup" contra 1,069 bloqueos direccionales
+                                # combinados (D1/H4/TREND) en un solo dia -- el score casi nunca
+                                # llegaba a evaluarse. Fix: usar signal.trigger real (regime/session
+                                # quedan "unknown" -- no se calculan en este punto del scan, antes de
+                                # saber si el trade sigue adelante -- asi que ya no calzan con el
+                                # bucket viejo y el ajuste vuelve a neutral hasta que se acumule
+                                # historial real por (trigger, regime, session) especifico).
                                 _learner_thr = self._learner.effective_threshold(
-                                    effective_threshold, "SMC", "unknown", "unknown"
+                                    effective_threshold, signal.trigger, "unknown", "unknown"
                                 )
                                 if _learner_thr != effective_threshold:
                                     print(f" -- [LEARN-THR] {effective_threshold}->{_learner_thr}", end="", flush=True)
