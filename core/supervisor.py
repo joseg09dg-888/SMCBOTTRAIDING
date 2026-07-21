@@ -4098,8 +4098,15 @@ class TradingSupervisor:
                                 # saber si el trade sigue adelante -- asi que ya no calzan con el
                                 # bucket viejo y el ajuste vuelve a neutral hasta que se acumule
                                 # historial real por (trigger, regime, session) especifico).
+                                # BUG-TREND-BLOCK-DUMMY-SIGNAL (2026-07-21, encontrado en vivo
+                                # minutos despues del fix de arriba): el guard TREND-BLOCK (~linea
+                                # 1493) devuelve un objeto minimo `type('S', (), {...})()` con solo
+                                # signal_type/decision_score -- sin atributo .trigger. Cualquier
+                                # simbolo bloqueado por TREND-BLOCK (NZDUSD, visto en vivo) tiraba
+                                # AttributeError aqui mismo en cada ciclo. getattr con default en
+                                # vez de asumir que todo objeto "signal" tiene el mismo shape.
                                 _learner_thr = self._learner.effective_threshold(
-                                    effective_threshold, signal.trigger, "unknown", "unknown"
+                                    effective_threshold, getattr(signal, "trigger", "unknown"), "unknown", "unknown"
                                 )
                                 if _learner_thr != effective_threshold:
                                     print(f" -- [LEARN-THR] {effective_threshold}->{_learner_thr}", end="", flush=True)
