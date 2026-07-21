@@ -3452,32 +3452,57 @@ class TradingSupervisor:
                 # slots that a fresh, better setup could use instead. Close
                 # it once it's been open a long time and never showed real
                 # movement in either direction.
-                STAGNANT_HOURS    = 12.0
-                STAGNANT_PEAK_MAX = 15.0   # never even reached this much peak profit
+                # 2026-07-20 (pedido usuario): bajado de 12h a 4h -- no quiere
+                # posiciones ocupando un cupo todo el dia sin moverse. Y no
+                # debe forzar el cierre a la primera perdida que encuentre:
+                # una vez marcada estancada, prefiere cerrar en beneficio/
+                # breakeven; si esta perdiendo, da un margen corto
+                # (STAGNANT_GRACE_HOURS) esperando que suba a >=0 antes de
+                # forzar el cierre en la menor perdida disponible en ese
+                # momento -- nunca espera indefinidamente.
+                STAGNANT_HOURS       = 4.0
+                STAGNANT_PEAK_MAX    = 15.0   # never even reached this much peak profit
+                STAGNANT_GRACE_HOURS = 2.0    # margen extra esperando pnl >= 0 antes de forzar
                 if open_time > 0:
                     import time as _stagn_time
-                    age_h = (_stagn_time.time() - open_time) / 3600.0
+                    _now_stagn = _stagn_time.time()
+                    age_h = (_now_stagn - open_time) / 3600.0
                     peak_seen = self._position_peaks.get(ticket, max(pnl, 0.0))
+                    _stagn_flags = self.__dict__.setdefault("_stagnant_flagged", {})
                     if age_h >= STAGNANT_HOURS and peak_seen < STAGNANT_PEAK_MAX:
-                        print(
-                            f"[STAGNANT] {sym} #{ticket} abierta {age_h:.1f}h, peak nunca superó "
-                            f"${STAGNANT_PEAK_MAX:.0f} (max visto ${peak_seen:.2f}), actual ${pnl:+.2f} "
-                            f"→ cerrando, no llega a TP ni a SL",
-                            flush=True,
-                        )
-                        ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t, "STAGNANT")
-                        )
-                        if ok:
-                            self._position_peaks.pop(ticket, None)
-                            try:
-                                await self.telegram.send_glint_alert(
-                                    f"<b>CIERRE POR ESTANCAMIENTO</b>\n{sym} #{ticket}\n"
-                                    f"Abierta {age_h:.1f}h sin movimiento real → cerrada en ${pnl:+.2f}"
-                                )
-                            except Exception:
-                                pass
+                        flagged_at = _stagn_flags.get(ticket)
+                        if flagged_at is None:
+                            _stagn_flags[ticket] = _now_stagn
+                            flagged_at = _now_stagn
+                        grace_elapsed_h = (_now_stagn - flagged_at) / 3600.0
+                        should_close = pnl >= 0 or grace_elapsed_h >= STAGNANT_GRACE_HOURS
+                        if should_close:
+                            _motivo = "en breakeven/beneficio" if pnl >= 0 else f"forzado tras {grace_elapsed_h:.1f}h de margen"
+                            print(
+                                f"[STAGNANT] {sym} #{ticket} abierta {age_h:.1f}h, peak nunca superó "
+                                f"${STAGNANT_PEAK_MAX:.0f} (max visto ${peak_seen:.2f}) → cerrando {_motivo}, "
+                                f"actual ${pnl:+.2f} -- no llega a TP ni a SL",
+                                flush=True,
+                            )
+                            ok = await loop.run_in_executor(
+                                None, lambda t=ticket: self.mt5.close_position(t, "STAGNANT")
+                            )
+                            if ok:
+                                self._position_peaks.pop(ticket, None)
+                                _stagn_flags.pop(ticket, None)
+                                try:
+                                    await self.telegram.send_glint_alert(
+                                        f"<b>CIERRE POR ESTANCAMIENTO</b>\n{sym} #{ticket}\n"
+                                        f"Abierta {age_h:.1f}h sin movimiento real → cerrada {_motivo} en ${pnl:+.2f}"
+                                    )
+                                except Exception:
+                                    pass
+                        # Flagged as stagnant (closing now or still in the grace
+                        # window) -- either way, skip trailing-stop logic below,
+                        # it doesn't apply to a position that never developed.
                         continue
+                    else:
+                        _stagn_flags.pop(ticket, None)
 
                 # ── 2-3. Trailing stop (only for winning positions) ────────
                 if entry > 0 and sl_cur > 0:
