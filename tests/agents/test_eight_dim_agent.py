@@ -38,13 +38,21 @@ def episodes_db(tmp_path, monkeypatch):
     return db_path
 
 
-def _insert_episodes(db_path, results):
-    """results: list of 'WIN'/'LOSS', inserted oldest-first with increasing ts."""
+def _insert_episodes(db_path, results, symbol="EURUSD", start_minutes_ago=None):
+    """results: list of 'WIN'/'LOSS', inserted oldest-first with increasing ts.
+
+    Timestamps default to recent (within the last hour, relative to "now")
+    so they fall inside the 24h circuit-breaker window. Pass
+    start_minutes_ago to place the whole batch further in the past (e.g.
+    to test that the breaker expires after 24h)."""
+    from datetime import datetime, timezone, timedelta
+    base = datetime.now(timezone.utc) - timedelta(minutes=start_minutes_ago or len(results))
     conn = sqlite3.connect(str(db_path))
     for i, r in enumerate(results):
+        ts = (base + timedelta(minutes=i)).isoformat()
         conn.execute(
             "INSERT INTO episodes (ts, symbol, direction, result) VALUES (?,?,?,?)",
-            (f"2026-07-0{i+1}T12:00:00+00:00", "EURUSD", "BUY", r),
+            (ts, symbol, "BUY", r),
         )
     conn.commit()
     conn.close()
@@ -96,6 +104,24 @@ def test_no_episodes_db_returns_default(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # no memory/episodes.db here
     agent = EightDimensionAgent()
     assert agent._dim6_kelly("EURUSD") == 1.0
+
+
+def test_losses_older_than_24h_not_blocked(episodes_db):
+    """BUG-DIM6-GLOBAL-NO-EXPIRY regression: 3 losses that happened more
+    than 24h ago must NOT keep blocking the pair forever."""
+    _insert_episodes(episodes_db, ["WIN", "LOSS", "LOSS", "LOSS"], start_minutes_ago=60 * 48)
+    agent = EightDimensionAgent()
+    mult = agent._dim6_kelly("EURUSD")
+    assert mult != 0.0
+
+
+def test_losses_in_other_symbol_dont_block_this_one(episodes_db):
+    """BUG-DIM6-GLOBAL-NO-EXPIRY regression: the breaker must be scoped per
+    symbol -- losses in GBPCAD must not block USDCAD."""
+    _insert_episodes(episodes_db, ["WIN", "LOSS", "LOSS", "LOSS"], symbol="GBPCAD")
+    agent = EightDimensionAgent()
+    mult = agent._dim6_kelly("USDCAD")
+    assert mult != 0.0
 
 
 def test_analyze_blocks_trade_on_three_losses(episodes_db):

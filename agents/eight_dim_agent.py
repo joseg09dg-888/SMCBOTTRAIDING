@@ -282,39 +282,48 @@ class EightDimensionAgent:
     # ── DIM 6: Consecutive-loss circuit breaker ──────────────────────
     def _dim6_kelly(self, sym_base: str) -> float:
         """
-        Circuit breaker: if last 3 closed trades all lost → return 0.0 (block).
-        If last 5 trades WR < 40% → reduce to 0.6.
+        Circuit breaker: if a symbol's last 3 closed trades all lost AND the
+        most recent of those losses was within 24h → return 0.0 (block).
+        If that symbol's last 5 trades WR < 40% → reduce to 0.6.
         Monthly profit lock: if Axi monthly profit > 4% → 0.3 (protect target).
         Reads episodes.db and axi_select_state.json.
         Returns 0.0–1.2.
 
-        BUG-DIM6-DEAD-COLUMNS (2026-07-09): this query used to select a
-        column named "outcome" ordered by "closed_at" -- neither exists in
-        the real episodes.db schema (the real columns are "result", a TEXT
-        'WIN'/'LOSS', and "ts"). Every call raised sqlite3.OperationalError,
-        silently swallowed by the bare except below, so this function ALWAYS
-        returned the safe-unblocked default (1.0) -- the 3-consecutive-loss
-        circuit breaker and the WR<40% size reduction have never fired once
-        in the bot's history, despite /status and the monitoring dashboards
-        showing "DIM6 CIRCUIT: 0/3 OK" every single check (that display reads
-        a separate scan_stats.json counter that was also never populated).
+        BUG-DIM6-GLOBAL-NO-EXPIRY (2026-07-15): the query used to omit the
+        "WHERE symbol = ?" filter and never checked how long ago the losses
+        happened, despite the log message claiming "24h circuit breaker".
+        Result: 3 consecutive losses in ANY symbol blocked EVERY symbol from
+        trading, with no expiration, until a WIN occurred anywhere in the
+        database -- e.g. GBPCAD+USDCAD losses on 2026-07-13 silently blocked
+        EURUSD/USDCAD/USDCHF (all with valid, above-threshold setups) for 2
+        full days since no WIN had landed since 2026-07-07.
         """
         try:
-            import sqlite3, os, json as _json
+            import sqlite3, os
+            from datetime import datetime, timezone, timedelta
             db_path = os.path.join("memory", "episodes.db")
             if os.path.exists(db_path):
                 conn = sqlite3.connect(db_path, timeout=2)
                 rows = conn.execute(
-                    "SELECT result FROM episodes WHERE result IN ('WIN','LOSS') "
-                    "ORDER BY ts DESC LIMIT 5"
+                    "SELECT result, ts FROM episodes WHERE result IN ('WIN','LOSS') "
+                    "AND symbol = ? ORDER BY ts DESC LIMIT 5",
+                    (sym_base,),
                 ).fetchall()
                 conn.close()
                 if rows:
                     outcomes = [r[0] for r in rows]
-                    # Last 3 consecutive losses → circuit break
+                    # Last 3 consecutive losses for THIS symbol → circuit break,
+                    # but only while the most recent loss is still within 24h.
                     if len(outcomes) >= 3 and all(o == "LOSS" for o in outcomes[:3]):
-                        return 0.0   # hard block — 24h cooling off
-                    # Last 5 trades WR < 40% → reduce
+                        try:
+                            most_recent = datetime.fromisoformat(rows[0][1])
+                        except ValueError:
+                            most_recent = None
+                        if most_recent is not None:
+                            age = datetime.now(timezone.utc) - most_recent
+                            if age < timedelta(hours=24):
+                                return 0.0   # hard block — 24h cooling off
+                    # Last 5 trades for THIS symbol WR < 40% → reduce
                     if len(outcomes) >= 5:
                         wr = sum(1 for o in outcomes if o == "WIN") / len(outcomes)
                         if wr < 0.40:
