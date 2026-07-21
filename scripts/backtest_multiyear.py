@@ -32,6 +32,9 @@ print("  BACKTEST MULTI-ANUAL — 8 DIMENSIONES")
 print("  H1: 2 años | D1: 10 años | Monte Carlo: 100,000 sims")
 print("=" * 72)
 
+MAX_OPEN_TEST = int(os.environ.get("MAX_OPEN_TEST", "2"))  # 2026-07-16: parametrizado para comparar 2 vs 3 (pedido por Jose)
+PEAK_GUARD_MIN = float(os.environ.get("PEAK_GUARD_MIN", "200"))    # 2026-07-16: recalibracion pedida por Jose
+PEAK_GUARD_RETRACE = float(os.environ.get("PEAK_GUARD_RETRACE", "0.30"))
 CAPITAL = 96_184.0
 RISK_PCT = 0.005
 MAX_RISK = 275.0  # probado doblar a 550 (2026-07-09): P(pasar Axi)+2.5pp pero
@@ -233,11 +236,12 @@ for pair, df1 in h1_data.items():
         new_open = []
         for pos in open_pos:
             (eidx, direction, entry, sl, tp, vol_p, sl_dist,
-             partial_done, be_sl, pip_v, pair_p) = pos
+             partial_done, be_sl, pip_v, pair_p, peak_pnl) = pos
             pnl = None
 
             cur_h = bar["high"]
             cur_l = bar["low"]
+            cur_c = bar["close"]
 
             # Fix 2026-07-06: live bot no longer partial-closes at 1R+immediate-BE
             # (validated against 584 real trades: it was capping every winner near
@@ -280,11 +284,48 @@ for pair, df1 in h1_data.items():
                     pair_stats[pair_p]["trades"] += 1
                     pair_stats[pair_p]["wins"] += int(pnl > 0)
                     pair_stats[pair_p]["pnl"] += pnl
-            else:
-                new_open.append(pos)
+            if pnl is None:
+                # PEAK-GUARD sim (2026-07-16): track running peak floating $ this
+                # trade has reached (using bar's favorable extreme), close early
+                # if it retraces PEAK_GUARD_RETRACE from a peak >= PEAK_GUARD_MIN.
+                if direction == "LONG":
+                    fav_pnl = vol_p * (cur_h - entry) * pip_v / PIP_SZ[pair_p]
+                    close_pnl = vol_p * (cur_c - entry) * pip_v / PIP_SZ[pair_p]
+                else:
+                    fav_pnl = vol_p * (entry - cur_l) * pip_v / PIP_SZ[pair_p]
+                    close_pnl = vol_p * (entry - cur_c) * pip_v / PIP_SZ[pair_p]
+                if fav_pnl > peak_pnl:
+                    peak_pnl = fav_pnl
+                if (peak_pnl >= PEAK_GUARD_MIN
+                        and close_pnl < peak_pnl * (1.0 - PEAK_GUARD_RETRACE)):
+                    pnl = close_pnl
+                    if pnl != 0.0:
+                        daily_pnl[day_str] += pnl
+                        vr = vol_regime(df1, idx)
+                        tr = trend_regime(df1, idx)
+                        trade_log.append({
+                            "pair": pair_p, "type": "peak_guard", "pnl": pnl,
+                            "win": pnl > 0, "hour": hour_utc, "year": year_str,
+                            "vol_regime": vr, "trend_regime": tr,
+                        })
+                        regime_stats[(vr, tr)]["trades"] += 1
+                        regime_stats[(vr, tr)]["wins"] += int(pnl > 0)
+                        regime_stats[(vr, tr)]["pnl"] += pnl
+                        hour_stats[hour_utc]["trades"] += 1
+                        hour_stats[hour_utc]["wins"] += int(pnl > 0)
+                        hour_stats[hour_utc]["pnl"] += pnl
+                        year_stats[year_str]["trades"] += 1
+                        year_stats[year_str]["wins"] += int(pnl > 0)
+                        year_stats[year_str]["pnl"] += pnl
+                        pair_stats[pair_p]["trades"] += 1
+                        pair_stats[pair_p]["wins"] += int(pnl > 0)
+                        pair_stats[pair_p]["pnl"] += pnl
+                else:
+                    new_open.append((eidx, direction, entry, sl, tp, vol_p, sl_dist,
+                                      partial_done, be_sl, pip_v, pair_p, peak_pnl))
 
         open_pos = new_open
-        if len(open_pos) >= 2: continue  # actualizado 2026-07-01: MAX_OPEN_POSITIONS real=2 (era 4, commit 468c476 bajo 3->2)
+        if len(open_pos) >= MAX_OPEN_TEST: continue  # actualizado 2026-07-01: MAX_OPEN_POSITIONS real=2 (era 4, commit 468c476 bajo 3->2)
 
         # Signal generation
         d_dir = d1_trend(dfd, dt)
@@ -365,7 +406,7 @@ for pair, df1 in h1_data.items():
             sl_p = entry + sl_dist_p
             tp_p = entry - sl_dist_p * RR
 
-        open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, entry, pip_v, pair))
+        open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, entry, pip_v, pair, 0.0))
 
 print(f"\n  Total trades en 2 años: {len(trade_log)}")
 n_final = sum(1 for t in trade_log if t["type"] == "final")
@@ -641,9 +682,10 @@ if len(daily_vals) >= 20:
             "best_hours": best_hours[:5],
         }
     }
-    with open("memory/backtest_results.json", "w") as f:
+    _out_path = f"memory/backtest_results_maxopen{MAX_OPEN_TEST}.json" if MAX_OPEN_TEST != 2 else "memory/backtest_results.json"
+    with open(_out_path, "w") as f:
         json.dump(results, f, indent=2, default=str)
-    print("  Resultados guardados en memory/backtest_results.json")
+    print(f"  Resultados guardados en {_out_path}")
 else:
     print("  Insuficientes datos para Monte Carlo (necesita 20+ días)")
 

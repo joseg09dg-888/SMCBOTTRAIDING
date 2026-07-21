@@ -102,7 +102,11 @@ MT5_SCALP_THRESHOLD      = 105  # subido de 100→105
 MT5_SCORE_AUTO_REDUCE    = 80   # recalibrado 2026-07-01: barrido thr x RR en 2 años reales muestra 80+RR3.0 = optimo (WR=41.7%, P(pasar 5%)=28.4% vs 8.5% con 90-95)
 MT5_SCORE_REDUCE_AFTER_H = 4
 MAX_SCALP_POSITIONS      = 2    # max 2 simultáneos (era 3)
-MAX_OPEN_POSITIONS       = 2    # max 2 simultáneos (era 3)
+MAX_OPEN_POSITIONS       = 3    # 2026-07-17: backtest_multiyear.py confirmo 2 veces
+                                 # (sesiones separadas) que MAX_OPEN=3 supera a 2:
+                                 # P(mes>=5%) 44%->49%, E[mensual] $4104->$5287.
+                                 # Subido de nuevo (era 3 originalmente, se bajo a 2 sin
+                                 # evidencia registrada de por que).
 MIN_RR                   = 3.0  # subido de 2.5→3.0: con WR=32% necesitas RR>=3 para ser rentable
 DAILY_PROFIT_TARGET      = 250.0  # $250/dia → 5% mensual Axi Select
 INITIAL_CAPITAL          = 100_000.0
@@ -3148,6 +3152,17 @@ class TradingSupervisor:
             # cuando profit >= 1R", pero el codigo aplicaba 0.5R. Subido a 1.0R real para
             # que las ganadoras tengan el espacio que el docstring siempre dijo que debian
             # tener antes de asegurar breakeven.
+            #
+            # BUG-BE-KILLS-RR (2026-07-17): auditoria completa de episodes.db (593 trades
+            # cerrados) confirmo que el problema persistia incluso con el umbral en 1.0R:
+            # avg WIN=$27.72 vs avg LOSS=$20.15 -- RR real 1.38, contra el RR=3.0 de diseno.
+            # Causa mecanica: al llegar a 1R el SL saltaba a entry EXACTO (0R). Cualquier
+            # ruido normal de precio que retrocede hasta entry -- algo que pasa en casi
+            # toda posicion que ya estuvo en +1R -- saca el trade en ~$0 antes de que
+            # tenga oportunidad de acercarse al TP real (3R). Fix: subir el umbral a 2.0R
+            # (mas espacio antes de tocar el stop) y, al dispararse, asegurar 0.5R de
+            # ganancia en vez de breakeven exacto -- protege capital sin borrar la ganancia
+            # entera en el primer retroceso.
             _be_moved = self.__dict__.setdefault("_breakeven_set", set())
             for sw in list(swing_positions):
                 sw_pnl    = sw.get("profit", 0.0)
@@ -3162,29 +3177,36 @@ class TradingSupervisor:
                 if sw_pnl > _peak:
                     self._position_peaks[sw_ticket] = sw_pnl
                     _peak = sw_pnl
-                # Umbral proporcional al riesgo real (100% de 1R, no 50% -- ver
-                # BUG-BE-STILL-TOO-EARLY arriba), piso $10
+                # Umbral proporcional al riesgo real (2.0R -- ver BUG-BE-KILLS-RR
+                # arriba), piso $10
                 _be_trigger = 10.0
+                _be_sl_dist = 0.0
                 if sw_sl and sw_entry:
                     try:
                         from core.volume_calculator import VolumeCalculator as _VC
                         _be_base      = _VC._norm(sw_sym)
                         _be_pip_size  = _VC._PIP_SIZE.get(_be_base, 0.0001)
                         _be_pip_value = _VC._PIP_VALUE.get(_be_base, 10.0)
-                        _be_sl_pips   = abs(sw_entry - sw_sl) / _be_pip_size if _be_pip_size else 0.0
+                        _be_sl_dist   = abs(sw_entry - sw_sl)
+                        _be_sl_pips   = _be_sl_dist / _be_pip_size if _be_pip_size else 0.0
                         _be_risk_usd  = sw.get("volume", 0.0) * _be_sl_pips * _be_pip_value
                         if _be_risk_usd > 0:
-                            _be_trigger = max(10.0, _be_risk_usd * 1.0)
+                            _be_trigger = max(10.0, _be_risk_usd * 2.0)
                     except Exception:
                         pass
-                # Cuando peak >= umbral → mover SL a breakeven en MT5 (una sola vez)
+                # Cuando peak >= umbral → asegurar 0.5R de ganancia en MT5 (no breakeven
+                # exacto -- ver BUG-BE-KILLS-RR), una sola vez
                 if _peak >= _be_trigger and sw_ticket not in _be_moved and sw_entry > 0:
+                    _be_lock_price = sw_entry
+                    if _be_sl_dist > 0:
+                        _be_offset = _be_sl_dist * 0.5
+                        _be_lock_price = sw_entry + _be_offset if sw_type == "BUY" else sw_entry - _be_offset
                     _be_ok = await loop.run_in_executor(
-                        None, lambda t=sw_ticket, e=sw_entry, tp=sw_tp: self.mt5.modify_position_sl_tp(t, e, tp)
+                        None, lambda t=sw_ticket, e=_be_lock_price, tp=sw_tp: self.mt5.modify_position_sl_tp(t, e, tp)
                     )
                     if _be_ok:
                         _be_moved.add(sw_ticket)
-                        print(f"[BE-SET] {sw_sym} #{sw_ticket} peak=${_peak:.2f} → SL MT5 movido a entry {sw_entry:.5f}", flush=True)
+                        print(f"[BE-SET] {sw_sym} #{sw_ticket} peak=${_peak:.2f} → SL MT5 movido a +0.5R {_be_lock_price:.5f}", flush=True)
                 # BUG-DOUBLE-PEAK-GUARD (2026-07-13): este cierre por software
                 # (peak>=$100, retrocede 50%) duplicaba al guardia PEAK-GUARD de
                 # mas abajo (linea ~3376: peak>=$200, retrocede 30%), pero con un
