@@ -2522,92 +2522,17 @@ class TradingSupervisor:
 
                 current_tickets = {p["ticket"] for p in positions}
 
-                # ── Partial close 50% at 1:1 RR to lock profit ─────────────
-                # When profit >= 1×SL distance: close half the position,
-                # so even if the trade reverses, we keep at least some gain.
-                for p in positions:
-                    try:
-                        ticket  = p.get("ticket", 0)
-                        symbol  = p.get("symbol", "")
-                        ptype   = p.get("type", "").upper()
-                        entry   = p.get("price_open", 0.0)
-                        cur_sl  = p.get("sl", 0.0)
-                        cur_tp  = p.get("tp", 0.0)
-                        volume  = p.get("volume", 0.0)
-                        partial_done_key = f"partial_{ticket}"
-                        # Partial-close-at-1:1 caps wins at ~0.5R while a full SL loses
-                        # 1R. Originally disabled only for XAUUSD after an audit found
-                        # avg win $27 vs avg loss $209 -> neto -$979.74. Auditoria
-                        # 2026-07-06 sobre TODO el libro real (episodes.db) encontro el
-                        # MISMO patron generalizado: avg WIN $26.65 vs avg LOSS $19.62
-                        # (ratio 1.36:1, muy por debajo del RR=3.0 diseñado) porque el
-                        # 100% de los WIN recientes cierran en ~1.00R (el remanente del
-                        # 50% casi siempre vuelve a breakeven antes de alcanzar el TP
-                        # real). Se generaliza el skip a todos los simbolos -- dejar
-                        # correr a TP completo (RR configurado) con SL a breakeven via
-                        # el loop de trailing debajo (dispara a 1.5R, no a 1R), sin
-                        # partial-close prematuro.
-                        continue
-                        # Skip if already partially closed this trade
-                        if not (ticket and entry > 0 and cur_sl > 0 and volume > 0):
-                            continue
-                        if getattr(self, "_partial_closed", None) is None:
-                            self._partial_closed: set = set()
-                        if ticket in self._partial_closed:
-                            continue
-                        sl_dist  = abs(entry - cur_sl)
-                        if sl_dist <= 0:
-                            continue
-                        import MetaTrader5 as _mt5_mod2
-                        tick2 = _mt5_mod2.symbol_info_tick(symbol)
-                        if not tick2:
-                            continue
-                        cur_price = tick2.bid if ptype == "BUY" else tick2.ask
-                        if ptype == "BUY":
-                            profit_units = (cur_price - entry) / sl_dist
-                        else:
-                            profit_units = (entry - cur_price) / sl_dist
-                        if profit_units >= 1.0:
-                            half_vol = round(volume / 2, 2)
-                            ok = await loop.run_in_executor(
-                                None,
-                                lambda t=ticket, v=half_vol: self.mt5.partial_close_position(t, v)
-                            )
-                            if ok:
-                                self._partial_closed.add(ticket)
-                                pnl_now = p.get("profit", 0.0)
-                                # Move SL to breakeven immediately (not at 1.5R) — reduces
-                                # variance: remaining 50% is now risk-free after partial close
-                                _be_sl = entry + 0.0001 * sl_dist if ptype == "BUY" else entry - 0.0001 * sl_dist
-                                try:
-                                    await loop.run_in_executor(
-                                        None,
-                                        lambda t=ticket, be=round(_be_sl, 5), tp=cur_tp:
-                                        self.mt5.modify_position_sl_tp(t, be, tp)
-                                    )
-                                    print(
-                                        f"[PARTIAL+BE] {symbol} #{ticket} — cerrado 50% ({half_vol}L) "
-                                        f"al 1:1 RR | SL movido a BE {_be_sl:.5f} | P&L parcial ${pnl_now/2:.2f}",
-                                        flush=True,
-                                    )
-                                except Exception:
-                                    print(
-                                        f"[PARTIAL] {symbol} #{ticket} — cerrado 50% ({half_vol}L) "
-                                        f"al 1:1 RR | P&L parcial ${pnl_now/2:.2f}",
-                                        flush=True,
-                                    )
-                                try:
-                                    await self.telegram.send_glint_alert(
-                                        f"<b>CIERRE PARCIAL 50% + BE ✅</b>\n"
-                                        f"{symbol} #{ticket} — 1:1 RR alcanzado\n"
-                                        f"Cerrado {half_vol}L | P&amp;L asegurado: ${pnl_now/2:.2f}\n"
-                                        f"SL movido a breakeven — resto del trade GRATIS"
-                                    )
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-
+                # ── Partial close 50% at 1:1 RR — DISABLED, kept only as a note ──
+                # SIMPLIFY-2026-07-21: this used to be a `for p in positions: try:
+                # ... continue [unconditional] ... [58 more lines]` block -- every
+                # line after the continue was unreachable dead code (found while
+                # simplifying, no test could have caught it since it never ran).
+                # Audit 2026-07-06 on the full real trade book found partial-close
+                # caps wins at ~0.5R while a full SL loses 1R (avg WIN $26.65 vs
+                # avg LOSS $19.62, ratio 1.36:1 vs the RR=3.0 designed) because the
+                # 50% remainder almost always drifts back to breakeven before
+                # reaching the real TP. Left disabled — full TP with breakeven-via-
+                # trailing below (2.0R trigger) instead of a premature partial.
 
                 # ── Detect closed positions ───────────────────────────────
 
