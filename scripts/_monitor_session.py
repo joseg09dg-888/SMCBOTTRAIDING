@@ -149,10 +149,11 @@ if interesting:
     for l in interesting[-8:]:
         print(f"  {l[l.find('smc-bot'):].replace('0|smc-bot  | ', '')[:100]}")
 
-# Next setups from logs
-setups = [l for l in logs if "ejecutando SWING" in l or "ejecutando SCALP" in l]
+# Next setups from logs -- "intentando" (2026-07-20): supervisor.py aun no
+# confirma ejecucion real en este punto del log, solo que paso el threshold
+setups = [l for l in logs if "intentando SWING" in l or "ejecutando SCALP" in l]
 if setups:
-    print(f"\nULTIMO SETUP EJECUTADO:")
+    print(f"\nULTIMO SETUP INTENTADO:")
     print(f"  {setups[-1][-120:]}")
 
 print(f"\n{'='*60}")

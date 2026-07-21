@@ -1491,11 +1491,11 @@ class TradingSupervisor:
             _real_trend = "UP" if _sma50 > _sma200 else "DOWN"
             _smc_bias = smc.get("bias", "neutral")
             if _real_trend == "UP" and _smc_bias == "bearish":
-                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bearish pero SMA50>{_sma200:.5f} — tendencia REAL es UP, bloqueando SELL", flush=True)
+                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bearish pero SMA50={_sma50:.5f}>SMA200={_sma200:.5f} — tendencia REAL es UP, bloqueando SELL", flush=True)
                 from agents.signal_agent import SignalType as _ST2
                 return type('S', (), {'signal_type': _ST2.WAIT, 'decision_score': 0})()
             if _real_trend == "DOWN" and _smc_bias == "bullish":
-                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bullish pero SMA50<{_sma200:.5f} — tendencia REAL es DOWN, bloqueando BUY", flush=True)
+                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bullish pero SMA50={_sma50:.5f}<SMA200={_sma200:.5f} — tendencia REAL es DOWN, bloqueando BUY", flush=True)
                 from agents.signal_agent import SignalType as _ST2
                 return type('S', (), {'signal_type': _ST2.WAIT, 'decision_score': 0})()
 
@@ -2857,7 +2857,22 @@ class TradingSupervisor:
             pass
 
     def _recover_orphaned_episodes(self) -> None:
-        """On startup: backfill outcomes for tickets that closed during a prior restart."""
+        """On startup: backfill outcomes for tickets that closed during a prior restart.
+
+        BUG-ORPHAN-SILENT-DROP (2026-07-20): both branches below used to
+        unconditionally add the ticket to `removed` -- even when the closing
+        deal wasn't found, and even when update_episode_result raised (the
+        exception was swallowed by a bare `except: pass` with no log line).
+        Either path stopped tracking the ticket forever, leaving its
+        episodes.db row with result=NULL permanently and silently -- no
+        warning, no retry on the next restart. Found via 2 real orphaned
+        rows (EURAUD #76484092, GBPCAD #76484444, both closed 2026-07-17
+        with deals that WERE present in MT5 history when queried manually
+        3 days later) that episodes.db never recorded. Fix: only drop a
+        ticket from tracking once its result is actually persisted; keep
+        retrying indefinitely otherwise, with a visible warning each time
+        so a repeat failure is never silent again.
+        """
         try:
             import MetaTrader5 as _mt5_oe
             from datetime import timedelta
@@ -2874,22 +2889,22 @@ class TradingSupervisor:
             removed = []
             for ticket, episode_id in orphaned.items():
                 d = closing.get(ticket)
-                if d:
-                    pnl = round(d.profit + d.swap + d.commission, 2)
-                    result = "WIN" if pnl > 0 else "LOSS"
-                    try:
-                        update_episode_result(
-                            episode_id,
-                            exit_price=d.price, pnl=pnl, result=result,
-                            lesson=f"Backfill: {result} PnL={pnl:+.2f}",
-                            conn=self._episodic_conn,
-                        )
-                        print(f"[LEARN] backfill ticket={ticket} -> {result} pnl={pnl:+.2f}", flush=True)
-                    except Exception:
-                        pass
+                if not d:
+                    print(f"[LEARN] orphan ticket={ticket}: sin deal de cierre en 90 dias -- se reintenta en el proximo restart", flush=True)
+                    continue
+                pnl = round(d.profit + d.swap + d.commission, 2)
+                result = "WIN" if pnl > 0 else "LOSS"
+                try:
+                    update_episode_result(
+                        episode_id,
+                        exit_price=d.price, pnl=pnl, result=result,
+                        lesson=f"Backfill: {result} PnL={pnl:+.2f}",
+                        conn=self._episodic_conn,
+                    )
+                    print(f"[LEARN] backfill ticket={ticket} -> {result} pnl={pnl:+.2f}", flush=True)
                     removed.append(ticket)
-                else:
-                    removed.append(ticket)
+                except Exception as _upd_exc:
+                    print(f"[LEARN] orphan ticket={ticket}: update_episode_result fallo ({_upd_exc}) -- se reintenta en el proximo restart", flush=True)
             for t in removed:
                 self._open_episodes.pop(t, None)
             if removed:
@@ -4030,7 +4045,14 @@ class TradingSupervisor:
                                             print(f" -- [SILVER-BULLET] confluencia completa confirmada", flush=True)
                                         except Exception as _sb_exc:
                                             print(f" -- [SILVER-BULLET] error verificando (no bloqueo): {_sb_exc}", flush=True)
-                                    print(f" -- ejecutando SWING (score={score}>={effective_threshold})")
+                                    # BUG-EXEC-LOG-MISLEADING (2026-07-20): este print decia
+                                    # "ejecutando SWING" pero _send_mt5_real_order todavia tiene
+                                    # ~10 filtros propios (hora muerta, cooldown, RR, spread,
+                                    # AXI guards, max posiciones...) que pueden abortar la orden
+                                    # despues de este punto -- el log mentia sobre una accion que
+                                    # no habia pasado. "intentando" refleja lo que de verdad se
+                                    # sabe en este punto del codigo.
+                                    print(f" -- intentando SWING (score={score}>={effective_threshold})")
                                     await self._send_mt5_real_order(signal)
                             except Exception as exc:
                                 print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
