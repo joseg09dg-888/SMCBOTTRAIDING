@@ -67,9 +67,26 @@ _SESSION_MULT: Dict[int, Tuple[float, str]] = {
 }
 
 # ── Correlation groups (no more than 1 trade per group) ───────────────
+# BUG-CORR-GROUPS-STALE (2026-07-21): this list was built around the pair
+# set active weeks ago (GBPUSD, AUDUSD -- both suspended since, see
+# bug_tracker) and never updated when USDCHF/EURAUD/GBPCAD became active
+# -- those 3 fell through "unclassified = no restriction" (_dim8_correlation
+# returns True immediately when a symbol isn't in any group), so 3 of the
+# 6 pairs this bot actually trades today had ZERO correlation protection.
+# Rebuilt from a real 2-year correlation matrix over the CURRENT 6 active
+# pairs (scripts/backtest_multiyear.py DIM8 output, 2026-07-21): only
+# EURUSD/NZDUSD clears the same >0.65 threshold this file already used
+# (r=+0.70). Everything else among the active pairs is either a natural
+# hedge (EURUSD/USDCHF r=-0.83) or moderate (EURUSD/GBPCAD r=+0.45,
+# USDCAD/USDCHF r=+0.54) -- below the threshold, left ungrouped rather
+# than lowering the bar without evidence. Re-run the correlation matrix
+# whenever the active pair list changes; this list goes stale silently.
 _CORR_GROUPS: List[List[str]] = [
-    ["EURUSD", "GBPUSD", "AUDUSD", "NZDUSD"],   # USD-bear group (r > 0.65)
-    ["USDCAD"],                                   # USD-bull solo (inverse)
+    ["EURUSD", "NZDUSD"],                         # r=+0.70 (2026-07-21 real 2y data)
+    ["USDCAD"],
+    ["USDCHF"],
+    ["EURAUD"],
+    ["GBPCAD"],
     ["NAS100", "NAS100.fs", "US30", "US30.fs"],   # indices (uncorrelated with FX)
 ]
 
