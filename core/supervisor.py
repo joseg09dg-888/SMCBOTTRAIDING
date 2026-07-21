@@ -2505,7 +2505,7 @@ class TradingSupervisor:
                         pnl    = p.get("profit", 0.0)
                         symbol = p.get("symbol", "?")
                         ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t)
+                            None, lambda t=ticket: self.mt5.close_position(t, "IDX-NO-SL")
                         )
                         if ok:
                             _close_when_open.discard(ticket)
@@ -2788,7 +2788,7 @@ class TradingSupervisor:
                             # Solo cerrar scalps (vol <= 0.1L) — swings siguen corriendo
                             if _p.get("volume", 0) <= 0.10:
                                 try:
-                                    _ok = await loop.run_in_executor(None, lambda t=_p["ticket"]: self.mt5.close_position(t))
+                                    _ok = await loop.run_in_executor(None, lambda t=_p["ticket"]: self.mt5.close_position(t, "META-DIA-SCALP"))
                                     print(f"[META-DIA] Scalp cerrado {_p['symbol']} #{_p['ticket']} PnL=${_p.get('profit',0):.2f}", flush=True)
                                 except Exception:
                                     pass
@@ -3017,7 +3017,7 @@ class TradingSupervisor:
                     t_ticket = sp["ticket"]
                     t_sym    = sp.get("symbol", "?")
                     t_pnl    = sp.get("profit", 0.0)
-                    ok = await loop.run_in_executor(None, lambda t=t_ticket: self.mt5.close_position(t))
+                    ok = await loop.run_in_executor(None, lambda t=t_ticket: self.mt5.close_position(t, "META-SWING"))
                     if ok:
                         self._position_peaks.pop(t_ticket, None)
                         print(f"[META-CLOSE-SWING] {t_sym} #{t_ticket} cerrado ${t_pnl:+.2f}", flush=True)
@@ -3111,7 +3111,7 @@ class TradingSupervisor:
             # Meta diaria scalp $60 alcanzada → cerrar todos los scalps abiertos
             if self._scalp_daily_hit and scalp_positions:
                 for sp in list(scalp_positions):
-                    ok = await loop.run_in_executor(None, lambda t=sp["ticket"]: self.mt5.close_position(t))
+                    ok = await loop.run_in_executor(None, lambda t=sp["ticket"]: self.mt5.close_position(t, "SCALP-DAY"))
                     if ok:
                         self._position_peaks.pop(sp["ticket"], None)
                         print(f"[SCALP-DAY] {sp.get('symbol','?')} cerrado ${sp.get('profit',0):+.2f} (meta $60 scalp cumplida)", flush=True)
@@ -3122,7 +3122,7 @@ class TradingSupervisor:
                     sp_ticket = sp["ticket"]
                     sp_sym    = sp.get("symbol", "?")
                     if sp_pnl >= SCALP_MIN_PROFIT:
-                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
+                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t, "SCALP-TP"))
                         if ok:
                             self._position_peaks.pop(sp_ticket, None)
                             self._scalp_realized_today += sp_pnl
@@ -3139,7 +3139,7 @@ class TradingSupervisor:
                                 except Exception:
                                     pass
                     elif sp_pnl <= SCALP_MAX_LOSS:
-                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t))
+                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t, "SCALP-SL"))
                         if ok:
                             self._position_peaks.pop(sp_ticket, None)
                             self._scalp_realized_today += sp_pnl
@@ -3245,7 +3245,7 @@ class TradingSupervisor:
                 sw_sym    = sw.get("symbol", "?")
                 sw_auto_close = sw_pnl <= SWING_MAX_LOSS  # solo emergencia — NO cerrar por tiempo
                 if sw_auto_close:
-                    ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t))
+                    ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t, "SWING-STOP"))
                     if ok:
                         self._position_peaks.pop(sw_ticket, None)
                         # Registrar cooldown: no reabrir este par/dirección por 4 horas
@@ -3282,7 +3282,7 @@ class TradingSupervisor:
                             flush=True,
                         )
                         ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t)
+                            None, lambda t=ticket: self.mt5.close_position(t, "FRIDAY-CLOSE")
                         )
                         if ok:
                             self._position_peaks.pop(ticket, None)
@@ -3329,7 +3329,7 @@ class TradingSupervisor:
                     flush=True,
                 )
                 ok = await loop.run_in_executor(
-                    None, lambda t=drag_ticket: self.mt5.close_position(t)
+                    None, lambda t=drag_ticket: self.mt5.close_position(t, "ANTI-DRAG")
                 )
                 if ok:
                     self._position_peaks.pop(drag_ticket, None)
@@ -3382,7 +3382,7 @@ class TradingSupervisor:
                                 flush=True,
                             )
                             await loop.run_in_executor(
-                                None, lambda t=ticket: self.mt5.close_position(t)
+                                None, lambda t=ticket: self.mt5.close_position(t, "NO-SL-CLOSE")
                             )
                             self._position_peaks.pop(ticket, None)
                             continue
@@ -3395,7 +3395,7 @@ class TradingSupervisor:
                         flush=True,
                     )
                     ok = await loop.run_in_executor(
-                        None, lambda t=ticket: self.mt5.close_position(t)
+                        None, lambda t=ticket: self.mt5.close_position(t, "LOSS-LIMIT")
                     )
                     if ok:
                         self._position_peaks.pop(ticket, None)
@@ -3426,7 +3426,7 @@ class TradingSupervisor:
                             flush=True,
                         )
                         ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t)
+                            None, lambda t=ticket: self.mt5.close_position(t, "PEAK-GUARD")
                         )
                         if ok:
                             self._position_peaks.pop(ticket, None)
@@ -3440,6 +3440,44 @@ class TradingSupervisor:
                         continue
                 else:
                     self._position_peaks.pop(ticket, None)
+
+                # ── 1c. Stagnation guard ────────────────────────────────────
+                # BUG-STAGNANT-NO-GUARD (2026-07-20): a position that never
+                # loses enough to trip LOSS-LIMIT and never wins enough to
+                # trip PEAK-GUARD ($200) had NO guard at all -- it could sit
+                # open indefinitely, drifting near breakeven for a full day
+                # or more, without ever reaching its real SL or TP. That's
+                # capital tied up producing neither a result nor a learning
+                # signal, and it occupies one of only MAX_OPEN_POSITIONS
+                # slots that a fresh, better setup could use instead. Close
+                # it once it's been open a long time and never showed real
+                # movement in either direction.
+                STAGNANT_HOURS    = 12.0
+                STAGNANT_PEAK_MAX = 15.0   # never even reached this much peak profit
+                if open_time > 0:
+                    import time as _stagn_time
+                    age_h = (_stagn_time.time() - open_time) / 3600.0
+                    peak_seen = self._position_peaks.get(ticket, max(pnl, 0.0))
+                    if age_h >= STAGNANT_HOURS and peak_seen < STAGNANT_PEAK_MAX:
+                        print(
+                            f"[STAGNANT] {sym} #{ticket} abierta {age_h:.1f}h, peak nunca superó "
+                            f"${STAGNANT_PEAK_MAX:.0f} (max visto ${peak_seen:.2f}), actual ${pnl:+.2f} "
+                            f"→ cerrando, no llega a TP ni a SL",
+                            flush=True,
+                        )
+                        ok = await loop.run_in_executor(
+                            None, lambda t=ticket: self.mt5.close_position(t, "STAGNANT")
+                        )
+                        if ok:
+                            self._position_peaks.pop(ticket, None)
+                            try:
+                                await self.telegram.send_glint_alert(
+                                    f"<b>CIERRE POR ESTANCAMIENTO</b>\n{sym} #{ticket}\n"
+                                    f"Abierta {age_h:.1f}h sin movimiento real → cerrada en ${pnl:+.2f}"
+                                )
+                            except Exception:
+                                pass
+                        continue
 
                 # ── 2-3. Trailing stop (only for winning positions) ────────
                 if entry > 0 and sl_cur > 0:
@@ -3527,7 +3565,7 @@ class TradingSupervisor:
                                 flush=True,
                             )
                             ok = await loop.run_in_executor(
-                                None, lambda t=ticket: self.mt5.close_position(t)
+                                None, lambda t=ticket: self.mt5.close_position(t, "STRUCT-INVALID")
                             )
                             if ok:
                                 self._position_peaks.pop(ticket, None)
@@ -3558,7 +3596,7 @@ class TradingSupervisor:
                             flush=True,
                         )
                         ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t)
+                            None, lambda t=ticket: self.mt5.close_position(t, "TIME-CLOSE-36H")
                         )
                         if ok:
                             self._position_peaks.pop(ticket, None)

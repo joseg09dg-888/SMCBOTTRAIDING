@@ -283,8 +283,8 @@ class EightDimensionAgent:
     def _dim6_kelly(self, sym_base: str) -> float:
         """
         Circuit breaker: if a symbol's last 3 closed trades all lost AND the
-        most recent of those losses was within 24h → return 0.0 (block).
-        If that symbol's last 5 trades WR < 40% → reduce to 0.6.
+        most recent of those losses was within DIM6_BLOCK_HOURS → return 0.0
+        (block). If that symbol's last 5 trades WR < 40% → reduce to 0.6.
         Monthly profit lock: if Axi monthly profit > 4% → 0.3 (protect target).
         Reads episodes.db and axi_select_state.json.
         Returns 0.0–1.2.
@@ -297,10 +297,17 @@ class EightDimensionAgent:
         database -- e.g. GBPCAD+USDCAD losses on 2026-07-13 silently blocked
         EURUSD/USDCAD/USDCHF (all with valid, above-threshold setups) for 2
         full days since no WIN had landed since 2026-07-07.
+
+        2026-07-20: window lowered from 24h to DIM6_BLOCK_HOURS=8 per user
+        request -- 24h was keeping a symbol shut for a full session or more
+        after 3 losses, on a bot that already re-evaluates threshold/WR
+        adaptively every cycle; 8h clears the block by the next active
+        trading window instead of skipping it entirely.
         """
         try:
             import sqlite3, os
             from datetime import datetime, timezone, timedelta
+            DIM6_BLOCK_HOURS = 8
             db_path = os.path.join("memory", "episodes.db")
             if os.path.exists(db_path):
                 conn = sqlite3.connect(db_path, timeout=2)
@@ -313,7 +320,7 @@ class EightDimensionAgent:
                 if rows:
                     outcomes = [r[0] for r in rows]
                     # Last 3 consecutive losses for THIS symbol → circuit break,
-                    # but only while the most recent loss is still within 24h.
+                    # but only while the most recent loss is still within the window.
                     if len(outcomes) >= 3 and all(o == "LOSS" for o in outcomes[:3]):
                         try:
                             most_recent = datetime.fromisoformat(rows[0][1])
@@ -321,8 +328,8 @@ class EightDimensionAgent:
                             most_recent = None
                         if most_recent is not None:
                             age = datetime.now(timezone.utc) - most_recent
-                            if age < timedelta(hours=24):
-                                return 0.0   # hard block — 24h cooling off
+                            if age < timedelta(hours=DIM6_BLOCK_HOURS):
+                                return 0.0   # hard block — cooling off
                     # Last 5 trades for THIS symbol WR < 40% → reduce
                     if len(outcomes) >= 5:
                         wr = sum(1 for o in outcomes if o == "WIN") / len(outcomes)

@@ -563,7 +563,17 @@ class MT5Connector:
             logger.error(f"MT5 modify_position_sl_tp error: {e}")
             return False
 
-    def close_position(self, ticket: int) -> bool:
+    def close_position(self, ticket: int, comment: str = "SMC Bot Close") -> bool:
+        """comment tags WHICH internal guard triggered the close (max ~25 chars,
+        MT5 truncates/rejects longer comments) -- BUG-CLOSE-REASON-OPAQUE
+        (2026-07-20): every close_position() call used the same generic
+        "SMC Bot Close" comment, so a historical audit of 605 closed
+        positions could see that 74% were closed by bot logic (not real
+        SL/TP) but could NOT tell which of the ~14 different guards (loss
+        limit, peak-guard, 36h timeout, Friday close, anti-drag, structure
+        invalidation...) was actually doing it. Callers now pass a distinct
+        tag per guard so this is diagnosable from MT5 deal history going
+        forward."""
         if not HAS_MT5:
             return False
         try:
@@ -594,7 +604,7 @@ class MT5Connector:
                 "action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol,
                 "volume": p.volume, "type": close_type,
                 "position": ticket, "price": price,
-                "deviation": 20, "comment": "SMC Bot Close",
+                "deviation": 20, "comment": comment[:25],
                 "type_filling": _fill_mode,
             }
             result = mt5.order_send(request)
