@@ -2556,19 +2556,13 @@ class TradingSupervisor:
                     if ticket in _close_when_open:
                         pnl    = p.get("profit", 0.0)
                         symbol = p.get("symbol", "?")
-                        ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t, "IDX-NO-SL")
+                        ok = await self._close_guarded(
+                            loop, ticket, "IDX-NO-SL",
+                            f"<b>CIERRE AUTOMATICO</b>\n{symbol} #{ticket} sin SL -- cerrado\nP&L: ${pnl:+.2f} USD"
                         )
                         if ok:
                             _close_when_open.discard(ticket)
-                            msg = f"[AUTO-CLOSE] {symbol} #{ticket} cerrado (sin SL) | P&L: ${pnl:+.2f}"
-                            print(msg, flush=True)
-                            try:
-                                await self.telegram.send_glint_alert(
-                                    f"<b>CIERRE AUTOMATICO</b>\n{symbol} #{ticket} sin SL -- cerrado\nP&L: ${pnl:+.2f} USD"
-                                )
-                            except Exception:
-                                pass
+                            print(f"[AUTO-CLOSE] {symbol} #{ticket} cerrado (sin SL) | P&L: ${pnl:+.2f}", flush=True)
                         else:
                             print(f"[AUTO-CLOSE] {symbol} #{ticket} sin SL -- mercado cerrado, reintentando", flush=True)
 
@@ -2766,7 +2760,7 @@ class TradingSupervisor:
                             # Solo cerrar scalps (vol <= 0.1L) — swings siguen corriendo
                             if _p.get("volume", 0) <= 0.10:
                                 try:
-                                    _ok = await loop.run_in_executor(None, lambda t=_p["ticket"]: self.mt5.close_position(t, "META-DIA-SCALP"))
+                                    _ok = await self._close_guarded(loop, _p["ticket"], "META-DIA-SCALP")
                                     print(f"[META-DIA] Scalp cerrado {_p['symbol']} #{_p['ticket']} PnL=${_p.get('profit',0):.2f}", flush=True)
                                 except Exception:
                                     pass
@@ -2833,6 +2827,32 @@ class TradingSupervisor:
                 _f.write(json.dumps(self._open_episodes))
         except Exception:
             pass
+
+    async def _close_guarded(self, loop, ticket: int, reason: str,
+                              telegram_html: str = None) -> bool:
+        """Shared close path for every position-management guard.
+        SIMPLIFY-2026-07-21: replaces 14 near-identical inline blocks
+        (close call + peak cleanup + Telegram alert) scattered across
+        _manage_open_positions -- see docs/superpowers/plans/
+        2026-07-21-supervisor-close-consolidation.md for the audit that
+        found them. Behavior is unchanged: same close_position(ticket,
+        reason) call, same peak-pop-on-success, same best-effort alert.
+        telegram_html=None for the 2 batch-close call sites (META-DIA-SCALP,
+        META-SWING) that already send one alert for the whole batch after
+        the loop instead of per-position -- consolidating the close+peak-pop
+        there without forcing a per-position alert that never existed.
+        """
+        ok = await loop.run_in_executor(
+            None, lambda t=ticket, r=reason: self.mt5.close_position(t, r)
+        )
+        if ok:
+            self._position_peaks.pop(ticket, None)
+            if telegram_html:
+                try:
+                    await self.telegram.send_glint_alert(telegram_html)
+                except Exception:
+                    pass
+        return ok
 
     def _recover_orphaned_episodes(self) -> None:
         """On startup: backfill outcomes for tickets that closed during a prior restart.
@@ -2995,9 +3015,8 @@ class TradingSupervisor:
                     t_ticket = sp["ticket"]
                     t_sym    = sp.get("symbol", "?")
                     t_pnl    = sp.get("profit", 0.0)
-                    ok = await loop.run_in_executor(None, lambda t=t_ticket: self.mt5.close_position(t, "META-SWING"))
+                    ok = await self._close_guarded(loop, t_ticket, "META-SWING")
                     if ok:
-                        self._position_peaks.pop(t_ticket, None)
                         print(f"[META-CLOSE-SWING] {t_sym} #{t_ticket} cerrado ${t_pnl:+.2f}", flush=True)
                 try:
                     await self.telegram.send_glint_alert(
@@ -3089,9 +3108,8 @@ class TradingSupervisor:
             # Meta diaria scalp $60 alcanzada → cerrar todos los scalps abiertos
             if self._scalp_daily_hit and scalp_positions:
                 for sp in list(scalp_positions):
-                    ok = await loop.run_in_executor(None, lambda t=sp["ticket"]: self.mt5.close_position(t, "SCALP-DAY"))
+                    ok = await self._close_guarded(loop, sp["ticket"], "SCALP-DAY")
                     if ok:
-                        self._position_peaks.pop(sp["ticket"], None)
                         print(f"[SCALP-DAY] {sp.get('symbol','?')} cerrado ${sp.get('profit',0):+.2f} (meta $60 scalp cumplida)", flush=True)
             else:
                 # Gestión individual de cada scalp
@@ -3100,9 +3118,8 @@ class TradingSupervisor:
                     sp_ticket = sp["ticket"]
                     sp_sym    = sp.get("symbol", "?")
                     if sp_pnl >= SCALP_MIN_PROFIT:
-                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t, "SCALP-TP"))
+                        ok = await self._close_guarded(loop, sp_ticket, "SCALP-TP")
                         if ok:
-                            self._position_peaks.pop(sp_ticket, None)
                             self._scalp_realized_today += sp_pnl
                             print(f"[SCALP-TP] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
                             if not self._scalp_daily_hit and self._scalp_realized_today >= SCALP_DAILY_TARGET:
@@ -3117,9 +3134,8 @@ class TradingSupervisor:
                                 except Exception:
                                     pass
                     elif sp_pnl <= SCALP_MAX_LOSS:
-                        ok = await loop.run_in_executor(None, lambda t=sp_ticket: self.mt5.close_position(t, "SCALP-SL"))
+                        ok = await self._close_guarded(loop, sp_ticket, "SCALP-SL")
                         if ok:
-                            self._position_peaks.pop(sp_ticket, None)
                             self._scalp_realized_today += sp_pnl
                             print(f"[SCALP-SL] {sp_sym} #{sp_ticket} ${sp_pnl:+.2f} | total scalp hoy=${self._scalp_realized_today:.2f}", flush=True)
 
@@ -3223,9 +3239,11 @@ class TradingSupervisor:
                 sw_sym    = sw.get("symbol", "?")
                 sw_auto_close = sw_pnl <= SWING_MAX_LOSS  # solo emergencia — NO cerrar por tiempo
                 if sw_auto_close:
-                    ok = await loop.run_in_executor(None, lambda t=sw_ticket: self.mt5.close_position(t, "SWING-STOP"))
+                    ok = await self._close_guarded(
+                        loop, sw_ticket, "SWING-STOP",
+                        f"<b>SWING STOP -$50</b>\n{sw_sym} #{sw_ticket}\nCerrado en ${sw_pnl:.2f}"
+                    )
                     if ok:
-                        self._position_peaks.pop(sw_ticket, None)
                         # Registrar cooldown: no reabrir este par/dirección por 4 horas
                         import time as _t; _sw_dir = "BUY" if sw.get("type") == "BUY" else "SELL"
                         self._symbol_sl_time[f"{sw_sym}_{_sw_dir}"] = _t.time()
@@ -3234,12 +3252,6 @@ class TradingSupervisor:
                         except Exception:
                             pass
                         print(f"[SWING-STOP] {sw_sym} #{sw_ticket} cerrado ${sw_pnl:+.2f} → COOLDOWN 4h (persistido)", flush=True)
-                        try:
-                            await self.telegram.send_glint_alert(
-                                f"<b>SWING STOP -$50</b>\n{sw_sym} #{sw_ticket}\nCerrado en ${sw_pnl:.2f}"
-                            )
-                        except Exception:
-                            pass
 
             now_utc = datetime.now(timezone.utc)
             if now_utc.weekday() == 4:  # Friday
@@ -3259,20 +3271,13 @@ class TradingSupervisor:
                             f"— cerrando antes del fin de semana (19:30 UTC)",
                             flush=True,
                         )
-                        ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t, "FRIDAY-CLOSE")
+                        ok = await self._close_guarded(
+                            loop, ticket, "FRIDAY-CLOSE",
+                            f"<b>CIERRE VIERNES</b> {sym} #{ticket}\n"
+                            f"Cerrado antes del fin de semana.\n"
+                            f"P&amp;L: ${pnl:.2f}"
                         )
-                        if ok:
-                            self._position_peaks.pop(ticket, None)
-                            try:
-                                await self.telegram.send_glint_alert(
-                                    f"<b>CIERRE VIERNES</b> {sym} #{ticket}\n"
-                                    f"Cerrado antes del fin de semana.\n"
-                                    f"P&amp;L: ${pnl:.2f}"
-                                )
-                            except Exception:
-                                pass
-                        else:
+                        if not ok:
                             print(f"[FRIDAY-CLOSE] ERROR cerrando {sym} #{ticket}", flush=True)
                     # Reload positions after Friday cleanup
                     positions = await loop.run_in_executor(None, self.mt5.get_positions)
@@ -3306,19 +3311,13 @@ class TradingSupervisor:
                     f"→ cerrando perdedora para proteger ganancias",
                     flush=True,
                 )
-                ok = await loop.run_in_executor(
-                    None, lambda t=drag_ticket: self.mt5.close_position(t, "ANTI-DRAG")
+                ok = await self._close_guarded(
+                    loop, drag_ticket, "ANTI-DRAG",
+                    f"<b>ANTI-DRAG CLOSE</b>\n{drag_sym} #{drag_ticket}\n"
+                    f"Perdida ${abs(drag_pnl):.2f} cancelaba ganancias (neto ${net_pnl:+.2f})\n"
+                    f"→ Perdedora cerrada. Ganadoras protegidas."
                 )
                 if ok:
-                    self._position_peaks.pop(drag_ticket, None)
-                    try:
-                        await self.telegram.send_glint_alert(
-                            f"<b>ANTI-DRAG CLOSE</b>\n{drag_sym} #{drag_ticket}\n"
-                            f"Perdida ${abs(drag_pnl):.2f} cancelaba ganancias (neto ${net_pnl:+.2f})\n"
-                            f"→ Perdedora cerrada. Ganadoras protegidas."
-                        )
-                    except Exception:
-                        pass
                     # Reload positions after close
                     positions = await loop.run_in_executor(None, self.mt5.get_positions)
                     if not positions:
@@ -3359,10 +3358,7 @@ class TradingSupervisor:
                                 f"[NO-SL CLOSE] {sym} #{ticket} sin SL y perdiendo ${abs(pnl):.2f} → cerrando",
                                 flush=True,
                             )
-                            await loop.run_in_executor(
-                                None, lambda t=ticket: self.mt5.close_position(t, "NO-SL-CLOSE")
-                            )
-                            self._position_peaks.pop(ticket, None)
+                            await self._close_guarded(loop, ticket, "NO-SL-CLOSE")
                             continue
 
                 # ── 1. Loss protection ─────────────────────────────────────
@@ -3380,18 +3376,11 @@ class TradingSupervisor:
                         f" > limite ${_ticket_limit_usd:.0f} → cerrando",
                         flush=True,
                     )
-                    ok = await loop.run_in_executor(
-                        None, lambda t=ticket: self.mt5.close_position(t, "LOSS-LIMIT")
+                    await self._close_guarded(
+                        loop, ticket, "LOSS-LIMIT",
+                        f"<b>AUTO-CIERRE PERDIDA</b>\n{sym} #{ticket}\n"
+                        f"Perdida ${abs(pnl):.2f} > limite → cerrado"
                     )
-                    if ok:
-                        self._position_peaks.pop(ticket, None)
-                        try:
-                            await self.telegram.send_glint_alert(
-                                f"<b>AUTO-CIERRE PERDIDA</b>\n{sym} #{ticket}\n"
-                                f"Perdida ${abs(pnl):.2f} > limite → cerrado"
-                            )
-                        except Exception:
-                            pass
                     continue
 
                 # ── 1b. Peak-profit retracement guard ─────────────────────
@@ -3411,18 +3400,11 @@ class TradingSupervisor:
                             f"actual=${pnl:.2f} (retroceso {(1-pnl/peak)*100:.0f}%) → cerrando para asegurar ganancia",
                             flush=True,
                         )
-                        ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t, "PEAK-GUARD")
+                        await self._close_guarded(
+                            loop, ticket, "PEAK-GUARD",
+                            f"<b>GANANCIA ASEGURADA</b>\n{sym} #{ticket}\n"
+                            f"Peak: ${peak:.2f} → Retroceso 30% → cerrado en ${pnl:.2f}"
                         )
-                        if ok:
-                            self._position_peaks.pop(ticket, None)
-                            try:
-                                await self.telegram.send_glint_alert(
-                                    f"<b>GANANCIA ASEGURADA</b>\n{sym} #{ticket}\n"
-                                    f"Peak: ${peak:.2f} → Retroceso 30% → cerrado en ${pnl:.2f}"
-                                )
-                            except Exception:
-                                pass
                         continue
                 else:
                     self._position_peaks.pop(ticket, None)
@@ -3470,19 +3452,13 @@ class TradingSupervisor:
                                 f"actual ${pnl:+.2f} -- no llega a TP ni a SL",
                                 flush=True,
                             )
-                            ok = await loop.run_in_executor(
-                                None, lambda t=ticket: self.mt5.close_position(t, "STAGNANT")
+                            ok = await self._close_guarded(
+                                loop, ticket, "STAGNANT",
+                                f"<b>CIERRE POR ESTANCAMIENTO</b>\n{sym} #{ticket}\n"
+                                f"Abierta {age_h:.1f}h sin movimiento real → cerrada {_motivo} en ${pnl:+.2f}"
                             )
                             if ok:
-                                self._position_peaks.pop(ticket, None)
                                 _stagn_flags.pop(ticket, None)
-                                try:
-                                    await self.telegram.send_glint_alert(
-                                        f"<b>CIERRE POR ESTANCAMIENTO</b>\n{sym} #{ticket}\n"
-                                        f"Abierta {age_h:.1f}h sin movimiento real → cerrada {_motivo} en ${pnl:+.2f}"
-                                    )
-                                except Exception:
-                                    pass
                         # Flagged as stagnant (closing now or still in the grace
                         # window) -- either way, skip trailing-stop logic below,
                         # it doesn't apply to a position that never developed.
@@ -3575,19 +3551,13 @@ class TradingSupervisor:
                                 f"H4 ahora {_cur_h4_dir} -- perdiendo ${pnl:.2f} → cerrando",
                                 flush=True,
                             )
-                            ok = await loop.run_in_executor(
-                                None, lambda t=ticket: self.mt5.close_position(t, "STRUCT-INVALID")
+                            ok = await self._close_guarded(
+                                loop, ticket, "STRUCT-INVALID",
+                                f"<b>CIERRE POR REVERSION DE ESTRUCTURA</b>\n{sym} #{ticket}\n"
+                                f"Era {_pos_dir}, H4 ahora {_cur_h4_dir} → cerrada en ${pnl:+.2f}"
                             )
                             if ok:
-                                self._position_peaks.pop(ticket, None)
                                 self._close_attempted.pop(ticket, None)
-                                try:
-                                    await self.telegram.send_glint_alert(
-                                        f"<b>CIERRE POR REVERSION DE ESTRUCTURA</b>\n{sym} #{ticket}\n"
-                                        f"Era {_pos_dir}, H4 ahora {_cur_h4_dir} → cerrada en ${pnl:+.2f}"
-                                    )
-                                except Exception:
-                                    pass
                             continue
 
                 # ── 4. Hard close LOSING position stuck > MAX_HOLD_HOURS ────
@@ -3606,19 +3576,13 @@ class TradingSupervisor:
                             f"perdiendo ${pnl:.2f} → cerrando (limite {MAX_HOLD_HOURS}h)",
                             flush=True,
                         )
-                        ok = await loop.run_in_executor(
-                            None, lambda t=ticket: self.mt5.close_position(t, "TIME-CLOSE-36H")
+                        ok = await self._close_guarded(
+                            loop, ticket, "TIME-CLOSE-36H",
+                            f"<b>CIERRE POR TIEMPO</b>\n{sym} #{ticket}\n"
+                            f"Abierta {age_h:.1f}h perdiendo → cerrada en ${pnl:+.2f}"
                         )
                         if ok:
-                            self._position_peaks.pop(ticket, None)
                             self._close_attempted.pop(ticket, None)
-                            try:
-                                await self.telegram.send_glint_alert(
-                                    f"<b>CIERRE POR TIEMPO</b>\n{sym} #{ticket}\n"
-                                    f"Abierta {age_h:.1f}h perdiendo → cerrada en ${pnl:+.2f}"
-                                )
-                            except Exception:
-                                pass
                         else:
                             print(f"[TIME-CLOSE] {sym} #{ticket} close FALLO — reintento en 5min", flush=True)
 
