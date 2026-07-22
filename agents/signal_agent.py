@@ -229,10 +229,20 @@ class SignalAgent:
         _df = df if df is not None else self._last_df
 
         # Count confluence factors to set TP multiplier (more confluence = bolder target)
+        # BUG-CONFLUENCE-NON-DISCRIMINATING (2026-07-21, trading-strategy expert
+        # panel, reproduced live against real market data for EURUSD/BTC/NAS100/
+        # GBPJPY): "BOS" and "order block" appeared in analysis_text in ~100% of
+        # scans because they counted ANY occurrence within a 200-candle window,
+        # not a quality-confirmed one -- n_confluence>=3 fired almost always,
+        # collapsing tp_mult to a de facto hardcoded 3.0x. This is the exact same
+        # gap already fixed for has_setup earlier tonight (BUG-SETUP-QUALITY-
+        # GATES-UNENFORCED): _has_displacement_bos and _in_ote are the real ICT
+        # quality preconditions for BOS and OB respectively. Applying the same
+        # standard here instead of counting raw presence.
         n_confluence = sum([
-            "BOS" in analysis_text,
+            "displacement_BOS_confirmado" in analysis_text,
             "CHoCH" in analysis_text,
-            "order block" in analysis_text,
+            "OTE_zone_activa" in analysis_text,
             "FVG" in analysis_text,
         ])
         tp_mult = 3.0 if n_confluence >= 3 else (2.5 if n_confluence == 2 else 2.0)
