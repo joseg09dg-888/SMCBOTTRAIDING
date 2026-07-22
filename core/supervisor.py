@@ -344,7 +344,19 @@ class TradingSupervisor:
         # drawdown-based risk multiplier, persisted across restarts.
         self.risk_governor = RiskGovernor(
             all_symbols=MT5_SYMBOLS,
-            dd_tiers=(),         # volumen fijo — sin reduccion por drawdown
+            # BUG-DD-TIERS-DISABLED (2026-07-21, risk-management expert panel):
+            # dd_tiers=() meant risk_multiplier() was provably always 1.0 no
+            # matter how close the account got to the 8% total drawdown
+            # ceiling (5.6% safety-block on new entries, strategies/ftmo_agent.py)
+            # -- full size right up to a binary hard stop, no graduated taper.
+            # Tiers below cut size well before the 5.6% new-entry block: by
+            # 6% drawdown, size is already at 25%, so the hard stop at 5.6%
+            # is reached with sizing already well reduced, not at full risk.
+            dd_tiers=(
+                (0.06, 0.25),
+                (0.045, 0.50),
+                (0.03, 0.75),
+            ),
             min_trades=30,       # necesita 30 trades antes de suspender (evita suspension por 1 mal dia)
             suspend_wr=0.10,     # solo suspende si WR < 10% sostenido
             initial_suspended={
@@ -464,6 +476,13 @@ class TradingSupervisor:
         self._daily_realized_pnl: float = 0.0   # closed trades today
         self._daily_target_hit: bool = False     # DAILY_PROFIT_TARGET hit — day locked, no new trades
         self._daily_protect_hit: bool = False    # reserved (unused)
+        # Cumulative/total drawdown emergency force-close — fires once, does
+        # NOT reset daily (unlike AxiSelectGuard) since a total-DD breach
+        # means the challenge is already failing, not "wait for tomorrow"
+        self._dd_force_closed: bool = False
+        # ticket -> intended dollar risk at open time (swings only), used to
+        # scale LOSS-LIMIT proportionally instead of a flat balance percentage
+        self._position_intended_risk: Dict[int, float] = {}
         # Scalp daily target: $60 acumulado en scalps → cierra todos los scalps
         self._scalp_realized_today: float = 0.0
         self._scalp_daily_hit: bool = False
@@ -2089,6 +2108,8 @@ class TradingSupervisor:
                     _step = _sym_info.volume_step if _sym_info.volume_step > 0 else 0.01
                     volume = max(round(int(_raw_vol / _step) * _step, 8), _sym_info.volume_min)
                     print(f"[RISK-CAP] {signal.symbol}: riesgo ${_dollar_risk:.0f} > ${MAX_DOLLAR_RISK} — vol={volume}L", flush=True)
+                    _dollar_risk = volume * _sl_in_pips * _vc_pip_value  # recompute after the cap for accurate LOSS-LIMIT sizing below
+                _intended_risk_usd = _dollar_risk
         # Proteccion: swing con vol<0.11L seria tratado como scalp por el monitor — skip
         if not _is_scalp and volume < 0.11:
             print(f"[SKIP-MINVOL] {signal.symbol}: vol={volume:.2f}L < 0.11 minimo swing — skip (evita que monitor lo cierre como scalp)", flush=True)
@@ -2115,6 +2136,18 @@ class TradingSupervisor:
         if "ticket" in result:
 
             print(f"[MT5 REAL] {signal.symbol} {order_type} #{result['ticket']} @{result.get('price', 0):.5f} score={signal.decision_score}", flush=True)
+
+            # BUG-LOSS-LIMIT-FLAT (2026-07-21, risk-management expert panel):
+            # the software backstop that force-closes a losing position
+            # (LOSS-LIMIT) used one flat 0.8%-of-balance threshold for every
+            # trade regardless of what risk_pct (0.25/0.5/1%) it was actually
+            # sized for -- a 0.25%-risk trade (~$242) was only backstopped at
+            # 0.8% (~$776, >3x intended) if the broker-side SL failed to hold
+            # (documented as real in metatrader_connector.py). Store the real
+            # intended risk per ticket so _manage_open_positions can scale
+            # LOSS-LIMIT off of it instead of a flat balance percentage.
+            if not _is_scalp:
+                self._position_intended_risk[result["ticket"]] = _intended_risk_usd
 
             # ── Real cost capture (spread/slippage) — feeds future backtest cost model ──
             _spread_pips_ep = result.get("spread_pips")
@@ -2539,6 +2572,7 @@ class TradingSupervisor:
                 closed = _known_tickets - current_tickets
 
                 for ticket in closed:
+                    self._position_intended_risk.pop(ticket, None)
                     # Cooldown 2h en cualquier cierre (SL, TP, o manual)
                     # Evita que el bot re-abra inmediatamente el mismo par
                     _closed_sym, _closed_dir = _ticket_info.pop(ticket, ("", "BUY"))
@@ -3313,10 +3347,18 @@ class TradingSupervisor:
                             continue
 
                 # ── 1. Loss protection ─────────────────────────────────────
-                if pnl < -limit_usd:
+                # BUG-LOSS-LIMIT-FLAT (2026-07-21): used to be one flat
+                # 0.8%-of-balance threshold (limit_usd) for every trade
+                # regardless of intended risk_pct -- see _position_intended_risk
+                # comment at open time. Scale to 2x the trade's actual intended
+                # risk when known (swings only); fall back to the flat balance
+                # limit for scalps or any ticket opened before this fix.
+                _intended = self._position_intended_risk.get(ticket)
+                _ticket_limit_usd = max(10.0, _intended * 2.0) if _intended else limit_usd
+                if pnl < -_ticket_limit_usd:
                     print(
                         f"[AUTO-CLOSE] {sym} #{ticket} perdiendo ${abs(pnl):.2f}"
-                        f" > limite ${limit_usd:.0f} → cerrando",
+                        f" > limite ${_ticket_limit_usd:.0f} → cerrando",
                         flush=True,
                     )
                     ok = await loop.run_in_executor(
@@ -3862,6 +3904,39 @@ class TradingSupervisor:
                                     pass
                             elif _guard.warning_level:
                                 print(f"[AXI-GUARD] {_guard.reason}", flush=True)
+                            # ── Cumulative/total drawdown force-close ──────────
+                            # BUG-DD-NO-FORCE-CLOSE (2026-07-21, found by the
+                            # risk-management expert panel): check_drawdown_limit
+                            # (strategies/ftmo_agent.py) only ever fed into
+                            # can_trade (blocks NEW entries in _send_mt5_real_order)
+                            # -- it never closed positions already open. Unlike
+                            # AxiSelectGuard (daily -4%, resets every UTC day),
+                            # the cumulative 8% ceiling has no force-close at all,
+                            # so a string of sub-4%-per-day losing days (e.g.
+                            # -3.9% repeated) never trips the daily guard while
+                            # still compounding past 8-10% total, with open
+                            # positions left to ride their own SL/LOSS-LIMIT/
+                            # TIME-CLOSE-36H exits. Fires once (not daily-reset,
+                            # since this is a total-drawdown event, not a daily
+                            # one) -- a real breach here means the challenge is
+                            # already failing, not "wait for tomorrow".
+                            if not self._dd_force_closed:
+                                self._risk_gate_state.current_balance = _bal
+                                _dd_ok, _dd_reason = self._risk_gate_agent.check_drawdown_limit(
+                                    self._risk_gate_state, equity=_eq
+                                )
+                                if not _dd_ok:
+                                    print(f"[DD-GUARD] EMERGENCY CLOSE: {_dd_reason}", flush=True)
+                                    self._dd_force_closed = True
+                                    try:
+                                        await asyncio.get_running_loop().run_in_executor(
+                                            None, self.mt5.close_all_positions
+                                        )
+                                        await self.telegram.send_glint_alert(
+                                            f"<b>DRAWDOWN TOTAL — CIERRE DE EMERGENCIA</b>\n{_dd_reason}"
+                                        )
+                                    except Exception:
+                                        pass
                             # AxiCapitalAdjuster: detecta si Axi escalo capital
                             _adj = self._axi_adjuster.check(_bal)
                             if _adj.adjusted:

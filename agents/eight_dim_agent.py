@@ -7,7 +7,12 @@ Las 8 dimensiones del mercado:
   DIM 3 — Tendencia:     STRONG_TREND vs CHOPPY vs LATERAL
   DIM 4 — Sesión:        horas UTC con mejor WR histórico (13-16 = gold)
   DIM 5 — Par:           performance relativa del par vs los demás
-  DIM 6 — Kelly:         sizing óptimo por Kelly fraction
+  DIM 6 — Circuit breaker: 3 perdidas seguidas=BLOCK | WR<40%=REDUCE | profit mensual 4%+=LOCK
+                           (BUG-DIM6-FAKE-KELLY 2026-07-21: esto NUNCA fue Kelly -- no hay
+                           formula f*=(bp-(1-p))/b en ningun lado de este archivo, es un
+                           heuristico discreto. La formula de Kelly real solo existe, sin
+                           conectar, en scripts/backtest_multiyear.py. Renombrado para dejar
+                           de mentir sobre lo que este DIM realmente calcula.)
   DIM 7 — Salida:        nivel óptimo de partial TP (1.0R + BE)
   DIM 8 — Correlación:   portafolio — evitar riesgo duplicado entre pares
 
@@ -154,8 +159,8 @@ class EightDimensionAgent:
         dims["DIM5_pair"] = self._dim5_pair(sym_base, df_h1)
 
         # DIM 6 — Consecutive-loss circuit breaker + monthly profit lock
-        dims["DIM6_kelly"] = self._dim6_kelly(sym_base)
-        if dims["DIM6_kelly"] == 0.0:
+        dims["DIM6_circuit_breaker"] = self._dim6_circuit_breaker(sym_base)
+        if dims["DIM6_circuit_breaker"] == 0.0:
             result.allowed = False
             result.reason = "DIM6-BLOCK: 3 consecutive losses — 24h circuit breaker active"
             result.dim_scores = dims
@@ -187,12 +192,12 @@ class EightDimensionAgent:
         pair_mod = dims["DIM5_pair"]  # 0.8 – 1.2
 
         # Circuit breaker / monthly lock (DIM 6)
-        kelly_mod = dims["DIM6_kelly"]  # 0.3 / 0.6 / 1.0
+        dim6_mod = dims["DIM6_circuit_breaker"]  # 0.3 / 0.6 / 1.0
 
         # Exit quality (DIM 7) — if ATR is too narrow, partial TP may not work
         exit_mod = dims["DIM7_exit"]  # 0.9 – 1.1
 
-        final_mult = regime_mult * sess_mult * temporal_mod * pair_mod * kelly_mod * exit_mod
+        final_mult = regime_mult * sess_mult * temporal_mod * pair_mod * dim6_mod * exit_mod
 
         # Clip to sane range [0.4, 1.4]
         result.score_mult = float(max(0.4, min(1.4, final_mult)))
@@ -297,7 +302,7 @@ class EightDimensionAgent:
             return 1.0
 
     # ── DIM 6: Consecutive-loss circuit breaker ──────────────────────
-    def _dim6_kelly(self, sym_base: str) -> float:
+    def _dim6_circuit_breaker(self, sym_base: str) -> float:
         """
         Circuit breaker: if a symbol's last 3 closed trades all lost AND the
         most recent of those losses was within DIM6_BLOCK_HOURS → return 0.0
@@ -469,7 +474,7 @@ class EightDimensionAgent:
             "DIM3_trend":       "EMA alignment: STRONG_TREND/MILD_TREND/CHOPPY",
             "DIM4_session":     "ICT Kill Zone quality (13-14 UTC = GOLD)",
             "DIM5_pair":        "Pair momentum relative to 24h average",
-            "DIM6_kelly":       "Circuit breaker: 3 consec losses=BLOCK | monthly 4%+=LOCK | WR<40%=REDUCE",
+            "DIM6_circuit_breaker":       "Circuit breaker: 3 consec losses=BLOCK | monthly 4%+=LOCK | WR<40%=REDUCE",
             "DIM7_exit":        "ATR expansion/contraction for exit quality",
             "DIM8_correlation": "Portfolio correlation guard (no duplicate risk)",
         }

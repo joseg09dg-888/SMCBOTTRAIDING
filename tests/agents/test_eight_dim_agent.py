@@ -1,7 +1,7 @@
 """
 TDD tests for agents/eight_dim_agent.py -- DIM6 circuit breaker regression.
 
-BUG-DIM6-DEAD-COLUMNS: _dim6_kelly() queried columns ("outcome", "closed_at")
+BUG-DIM6-DEAD-COLUMNS: _dim6_circuit_breaker() queried columns ("outcome", "closed_at")
 that don't exist in the real episodes.db schema ("result", "ts"). Every call
 raised sqlite3.OperationalError, silently swallowed, always falling through
 to the safe-unblocked default (1.0) -- the 3-consecutive-loss circuit
@@ -18,7 +18,7 @@ from agents.eight_dim_agent import EightDimensionAgent
 @pytest.fixture
 def episodes_db(tmp_path, monkeypatch):
     """Creates a real episodes.db with the ACTUAL production schema in a
-    temp memory/ dir and chdirs there, matching how _dim6_kelly() looks it
+    temp memory/ dir and chdirs there, matching how _dim6_circuit_breaker() looks it
     up (relative path 'memory/episodes.db')."""
     memory_dir = tmp_path / "memory"
     memory_dir.mkdir()
@@ -72,21 +72,21 @@ def test_query_uses_real_schema_columns_not_outcome_closed_at(episodes_db):
     the real schema without raising."""
     _insert_episodes(episodes_db, ["WIN", "WIN", "WIN"])
     agent = EightDimensionAgent()
-    mult = agent._dim6_kelly("EURUSD")
+    mult = agent._dim6_circuit_breaker("EURUSD")
     assert mult == 1.0  # no losses -> unrestricted, but query must not have crashed
 
 
 def test_three_consecutive_losses_blocks(episodes_db):
     _insert_episodes(episodes_db, ["WIN", "LOSS", "LOSS", "LOSS"])
     agent = EightDimensionAgent()
-    mult = agent._dim6_kelly("EURUSD")
+    mult = agent._dim6_circuit_breaker("EURUSD")
     assert mult == 0.0
 
 
 def test_no_three_consecutive_losses_not_blocked(episodes_db):
     _insert_episodes(episodes_db, ["LOSS", "WIN", "LOSS", "LOSS"])
     agent = EightDimensionAgent()
-    mult = agent._dim6_kelly("EURUSD")
+    mult = agent._dim6_circuit_breaker("EURUSD")
     assert mult != 0.0
 
 
@@ -96,14 +96,14 @@ def test_low_win_rate_last_five_reduces_multiplier(episodes_db):
     # at the front so the harder block doesn't pre-empt this check.
     _insert_episodes(episodes_db, ["LOSS", "LOSS", "LOSS", "WIN", "LOSS"])
     agent = EightDimensionAgent()
-    mult = agent._dim6_kelly("EURUSD")
+    mult = agent._dim6_circuit_breaker("EURUSD")
     assert mult == 0.60
 
 
 def test_no_episodes_db_returns_default(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # no memory/episodes.db here
     agent = EightDimensionAgent()
-    assert agent._dim6_kelly("EURUSD") == 1.0
+    assert agent._dim6_circuit_breaker("EURUSD") == 1.0
 
 
 def test_losses_older_than_24h_not_blocked(episodes_db):
@@ -111,7 +111,7 @@ def test_losses_older_than_24h_not_blocked(episodes_db):
     than 24h ago must NOT keep blocking the pair forever."""
     _insert_episodes(episodes_db, ["WIN", "LOSS", "LOSS", "LOSS"], start_minutes_ago=60 * 48)
     agent = EightDimensionAgent()
-    mult = agent._dim6_kelly("EURUSD")
+    mult = agent._dim6_circuit_breaker("EURUSD")
     assert mult != 0.0
 
 
@@ -120,7 +120,7 @@ def test_losses_in_other_symbol_dont_block_this_one(episodes_db):
     symbol -- losses in GBPCAD must not block USDCAD."""
     _insert_episodes(episodes_db, ["WIN", "LOSS", "LOSS", "LOSS"], symbol="GBPCAD")
     agent = EightDimensionAgent()
-    mult = agent._dim6_kelly("USDCAD")
+    mult = agent._dim6_circuit_breaker("USDCAD")
     assert mult != 0.0
 
 
