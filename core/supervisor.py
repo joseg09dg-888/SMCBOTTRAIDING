@@ -1067,7 +1067,26 @@ class TradingSupervisor:
                     _ote_high = _swing_low + (_swing_high - _swing_low) * 0.79
                     _in_ote   = _ote_low <= current_close <= _ote_high
 
-        has_setup = (is_bullish or is_bearish) and (has_ob or has_fvg or has_bos) and _pd_ok
+        # BUG-SETUP-QUALITY-GATES-UNENFORCED (2026-07-21, trading-strategy
+        # expert panel): _has_displacement_bos and _in_ote were both computed
+        # with comments explicitly stating they're the ICT/SMC quality
+        # precondition for BOS and OB entries respectively ("filtra BOS
+        # falsos causados por velas pequenas", "ICT Unicorn: solo entrar
+        # cuando precio retrocede al 62-79% del impulso") -- but has_setup
+        # never actually required them, so a weak non-displacement BOS or an
+        # OB entry outside the OTE zone qualified identically to a genuine
+        # one. Now each factor requires its own documented quality gate: OB
+        # only counts if price is in its OTE retracement zone, BOS only
+        # counts if it broke on a displacement candle. FVG has no documented
+        # quality gate in this codebase, so it's unchanged. This tightens
+        # qualification to match what the code already claimed to enforce --
+        # it will reduce trade frequency on weak/premature setups, which is
+        # the intended effect, not a side effect.
+        has_setup = (
+            (is_bullish or is_bearish)
+            and (has_fvg or (has_ob and _in_ote) or (has_bos and _has_displacement_bos))
+            and _pd_ok
+        )
 
 
 
