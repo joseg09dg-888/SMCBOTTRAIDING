@@ -33,6 +33,8 @@ print("  H1: 2 años | D1: 10 años | Monte Carlo: 100,000 sims")
 print("=" * 72)
 
 MAX_OPEN_TEST = int(os.environ.get("MAX_OPEN_TEST", "2"))  # 2026-07-16: parametrizado para comparar 2 vs 3 (pedido por Jose)
+REQUIRE_D1 = os.environ.get("REQUIRE_D1", "1") == "1"  # 2026-07-21: medir impacto real de D1-FILTER (ver smc_signal())
+REQUIRE_H4 = os.environ.get("REQUIRE_H4", "1") == "1"  # 2026-07-21: medir impacto real de H4-FILTER
 PEAK_GUARD_MIN = float(os.environ.get("PEAK_GUARD_MIN", "200"))    # 2026-07-16: recalibracion pedida por Jose
 PEAK_GUARD_RETRACE = float(os.environ.get("PEAK_GUARD_RETRACE", "0.30"))
 CAPITAL = 96_184.0
@@ -140,8 +142,22 @@ def trend_regime(df, idx):
         return "MILD_TREND"
     return "CHOPPY"
 
-def smc_signal(df, idx, bias):
-    """Score 0-100. Returns (signal_dir, score, atr_val)."""
+def smc_signal(df, idx):
+    """Score 0-100 for BOTH directions independently, return whichever
+    qualifies. Returns (signal_dir, score, atr_val).
+
+    2026-07-21: rewritten to decouple signal generation from D1/H4 bias --
+    it used to take `bias` as a parameter and only ever score the ONE
+    direction it was told to look for (`if bias=="LONG": ...`), so a
+    genuine bearish setup during a nominal D1 uptrend was never even
+    evaluated -- the backtest could never measure what happens if
+    D1-FILTER/H4-FILTER (which gate on real code in core/supervisor.py)
+    were relaxed, because the bias was baked into signal generation
+    itself rather than applied as a separate post-hoc gate the way the
+    live bot actually works (SMC structure generates a real bullish/
+    bearish read independently; D1-FILTER/H4-FILTER are separate hard
+    checks applied AFTER). See REQUIRE_D1/REQUIRE_H4 at the call site.
+    """
     if idx < 60: return "WAIT", 0, 0.0
     w = df.iloc[max(0,idx-80):idx+1]
     if len(w) < 40: return "WAIT", 0, 0.0
@@ -158,24 +174,28 @@ def smc_signal(df, idx, bias):
     # Order Block (last strong impulse candle)
     body = (c - w["open"]).abs().iloc[-15:]
     ob_strong = body.max() > atr_v * 0.8
-    score = 0; sig = "WAIT"
-    if bias == "LONG":
-        if bos_bull: score += 35
-        if e8 > e21:  score += 15
-        if e21 > e50: score += 12
-        if cur > e21: score += 10
-        if ob_strong: score += 12
-        if cur > c.iloc[-4]: score += 16  # momentum
-        sig = "LONG" if score >= 50 else "WAIT"
-    elif bias == "SHORT":
-        if bos_bear: score += 35
-        if e8 < e21:  score += 15
-        if e21 < e50: score += 12
-        if cur < e21: score += 10
-        if ob_strong: score += 12
-        if cur < c.iloc[-4]: score += 16
-        sig = "SHORT" if score >= 50 else "WAIT"
-    return sig, min(100, int(score * 1.25)), float(atr_v)
+
+    score_long = 0
+    if bos_bull: score_long += 35
+    if e8 > e21:  score_long += 15
+    if e21 > e50: score_long += 12
+    if cur > e21: score_long += 10
+    if ob_strong: score_long += 12
+    if cur > c.iloc[-4]: score_long += 16  # momentum
+
+    score_short = 0
+    if bos_bear: score_short += 35
+    if e8 < e21:  score_short += 15
+    if e21 < e50: score_short += 12
+    if cur < e21: score_short += 10
+    if ob_strong: score_short += 12
+    if cur < c.iloc[-4]: score_short += 16
+
+    if score_long >= 50 and score_long >= score_short:
+        return "LONG", min(100, int(score_long * 1.25)), float(atr_v)
+    if score_short >= 50 and score_short > score_long:
+        return "SHORT", min(100, int(score_short * 1.25)), float(atr_v)
+    return "WAIT", 0, float(atr_v)
 
 def d1_trend(dfd, dt):
     s = dfd[dfd.index.date <= pd.Timestamp(dt).date()]
@@ -327,14 +347,20 @@ for pair, df1 in h1_data.items():
         open_pos = new_open
         if len(open_pos) >= MAX_OPEN_TEST: continue  # actualizado 2026-07-01: MAX_OPEN_POSITIONS real=2 (era 4, commit 468c476 bajo 3->2)
 
-        # Signal generation
-        d_dir = d1_trend(dfd, dt)
-        if d_dir == "UNKNOWN": continue
-        h4_d = h4_bias(df1, dt)
-        if h4_d not in (d_dir, "WAIT"): continue
-
-        sig, score, atr_v = smc_signal(df1, idx, d_dir)
+        # Signal generation -- decoupled from D1/H4 bias (see smc_signal()
+        # docstring, 2026-07-21). REQUIRE_D1/REQUIRE_H4 let this backtest
+        # measure the real impact of relaxing D1-FILTER/H4-FILTER (live in
+        # core/supervisor.py), which the old bias-baked-into-generation
+        # design could never test.
+        sig, score, atr_v = smc_signal(df1, idx)
         if sig == "WAIT": continue
+
+        d_dir = d1_trend(dfd, dt)
+        if REQUIRE_D1:
+            if d_dir == "UNKNOWN": continue
+            if sig != d_dir: continue
+        h4_d = h4_bias(df1, dt)
+        if REQUIRE_H4 and h4_d not in (sig, "WAIT"): continue
 
         # DIAGNOSTICO 2026-07-09: DIM2/DIM3 del propio backtest concluyeron que
         # HIGH vol + STRONG_TREND es la mejor combinacion posible -- nunca se
