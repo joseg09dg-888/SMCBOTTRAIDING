@@ -460,6 +460,22 @@ class TradingSupervisor:
         }
         # Peak-profit tracker: ticket → max PnL seen this session
         self._position_peaks: Dict[int, float] = {}
+        # BUG-STAGNANT-PEAK-SHARED-STATE (2026-07-22): the stagnation guard
+        # used to read peak profit from _position_peaks, the SAME dict
+        # PEAK-GUARD unconditionally pops (deletes) every time pnl dips <= 0
+        # (see the "else: self._position_peaks.pop(ticket, None)" a few
+        # lines below the PEAK-GUARD block). That's correct for PEAK-GUARD's
+        # own purpose (track the CURRENT positive streak's peak for
+        # retracement), but wrong for STAGNANT's purpose (has this position
+        # EVER shown real movement since it opened) -- a position that
+        # touched $16 once, dipped negative, then sat flat would have that
+        # $16 silently erased, making it look "never above $15" again and
+        # produce inconsistent re-flagging. Found live: a real EURAUD
+        # position's stagnant-close attempt fired once, then never retried
+        # for 4+ hours despite the position remaining open and clearly
+        # meeting the guard's own conditions -- root cause traced to this
+        # shared, resettable state. Dedicated tracker here never resets.
+        self._position_lifetime_peak: Dict[int, float] = {}
         # Time-close retry cooldown: ticket → last attempt timestamp
         self._close_attempted: Dict[int, float] = {}
         # Symbol cooldown tras SL: (symbol, direction) → timestamp del SL
@@ -2586,6 +2602,8 @@ class TradingSupervisor:
 
                 for ticket in closed:
                     self._position_intended_risk.pop(ticket, None)
+                    self._position_lifetime_peak.pop(ticket, None)
+                    self.__dict__.get("_stagnant_flagged", {}).pop(ticket, None)
                     # Cooldown 2h en cualquier cierre (SL, TP, o manual)
                     # Evita que el bot re-abra inmediatamente el mismo par
                     _closed_sym, _closed_dir = _ticket_info.pop(ticket, ("", "BUY"))
@@ -3435,7 +3453,13 @@ class TradingSupervisor:
                     import time as _stagn_time
                     _now_stagn = _stagn_time.time()
                     age_h = (_now_stagn - open_time) / 3600.0
-                    peak_seen = self._position_peaks.get(ticket, max(pnl, 0.0))
+                    # Dedicated, never-reset lifetime peak (see
+                    # BUG-STAGNANT-PEAK-SHARED-STATE at __init__) -- unlike
+                    # _position_peaks, this only ever grows for the life of
+                    # the ticket, independent of PEAK-GUARD's own resets.
+                    _lifetime_peak = max(self._position_lifetime_peak.get(ticket, 0.0), pnl)
+                    self._position_lifetime_peak[ticket] = _lifetime_peak
+                    peak_seen = _lifetime_peak
                     _stagn_flags = self.__dict__.setdefault("_stagnant_flagged", {})
                     if age_h >= STAGNANT_HOURS and peak_seen < STAGNANT_PEAK_MAX:
                         flagged_at = _stagn_flags.get(ticket)
@@ -3459,6 +3483,14 @@ class TradingSupervisor:
                             )
                             if ok:
                                 _stagn_flags.pop(ticket, None)
+                            else:
+                                # BUG-STAGNANT-SILENT-RETRY-STALL (2026-07-22):
+                                # a failed close used to leave no trace beyond
+                                # this print never repeating -- found live when
+                                # a real position's stagnant-close attempt
+                                # failed once and then went unexplained-silent
+                                # for 4+ hours. Now explicit every time it fails.
+                                print(f"[STAGNANT] {sym} #{ticket} cierre fallo, reintenta el proximo ciclo", flush=True)
                         # Flagged as stagnant (closing now or still in the grace
                         # window) -- either way, skip trailing-stop logic below,
                         # it doesn't apply to a position that never developed.
