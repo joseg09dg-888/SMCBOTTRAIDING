@@ -1723,7 +1723,7 @@ class TradingSupervisor(PositionGuardsMixin):
         # Claude API confirmation disabled to preserve credits.
         return True, signal.decision_score, "auto-confirm"
 
-    async def _send_mt5_real_order(self, signal: TradeSignal):
+    async def _send_mt5_real_order(self, signal: TradeSignal, _8d_precomputed=None):
 
         """Send a real order to MT5 demo -- strict quality filters applied."""
 
@@ -1736,26 +1736,32 @@ class TradingSupervisor(PositionGuardsMixin):
 
         # ── 8D DIM 8: Portfolio correlation guard ──────────────────────
         # Blocks duplicate USD exposure (e.g. EURUSD + GBPUSD + AUDUSD all BUY)
-        _8d_result = None  # BUG-LEARN-UNKNOWN fix: usado luego para poblar regime del episodio
-        try:
-            if not hasattr(self, "_eight_dim_agent"):
-                from agents.eight_dim_agent import EightDimensionAgent
-                self._eight_dim_agent = EightDimensionAgent()
-            loop8 = __import__("asyncio").get_event_loop()
-            _open8 = await loop8.run_in_executor(None, self.mt5.get_positions)
-            _8d_result = self._eight_dim_agent.analyze(
-                signal.symbol,
-                self._df_cache.get(signal.symbol),
-                _open8 or [],
-                direction=order_type
-            )
-            if not _8d_result.allowed:
-                print(f"[8D-BLOCK] {signal.symbol}: {_8d_result.reason}", flush=True)
-                return
-            _8d_regime = f"vol={_8d_result.vol_regime} trend={_8d_result.trend_regime}"
-            print(f"[8D] {signal.symbol}: score_mult={_8d_result.score_mult:.2f} {_8d_regime}", flush=True)
-        except Exception as _8d_exc:
-            print(f"[8D] error (no bloqueo): {_8d_exc}", flush=True)
+        # BUG-8D-SCOREMULT-UNUSED (2026-07-24): the scan loop now runs this same
+        # analysis BEFORE the threshold check (to actually apply score_mult, see
+        # that call site) and passes the result here via _8d_precomputed so it
+        # isn't computed twice -- re-run only as a fallback for any future
+        # caller that doesn't precompute it.
+        _8d_result = _8d_precomputed
+        if _8d_result is None:
+            try:
+                if not hasattr(self, "_eight_dim_agent"):
+                    from agents.eight_dim_agent import EightDimensionAgent
+                    self._eight_dim_agent = EightDimensionAgent()
+                loop8 = __import__("asyncio").get_event_loop()
+                _open8 = await loop8.run_in_executor(None, self.mt5.get_positions)
+                _8d_result = self._eight_dim_agent.analyze(
+                    signal.symbol,
+                    self._df_cache.get(signal.symbol),
+                    _open8 or [],
+                    direction=order_type
+                )
+                if not _8d_result.allowed:
+                    print(f"[8D-BLOCK] {signal.symbol}: {_8d_result.reason}", flush=True)
+                    return
+                _8d_regime = f"vol={_8d_result.vol_regime} trend={_8d_result.trend_regime}"
+                print(f"[8D] {signal.symbol}: score_mult={_8d_result.score_mult:.2f} {_8d_regime}", flush=True)
+            except Exception as _8d_exc:
+                print(f"[8D] error (no bloqueo): {_8d_exc}", flush=True)
 
         # ── PAUSA MANUAL (Telegram /pause) ────────────────────────────
         if getattr(self.commander, "state", None) and getattr(self.commander.state, "paused", False):
@@ -3406,7 +3412,42 @@ class TradingSupervisor(PositionGuardsMixin):
                                 if _learner_thr != effective_threshold:
                                     print(f" -- [LEARN-THR] {effective_threshold}->{_learner_thr}", end="", flush=True)
                                     effective_threshold = _learner_thr
-                                if signal.signal_type == SignalType.WAIT or score < effective_threshold:
+
+                                # BUG-8D-SCOREMULT-UNUSED (2026-07-24): EightDimensionAgent's own
+                                # docstring documents the intended usage as
+                                # "effective_score = int(base_score * result.score_mult)" applied
+                                # BEFORE the threshold check -- score_mult is derived from real
+                                # 2-year-backtest session/volatility/correlation stats (see DIM4/DIM8
+                                # in CLAUDE.md), exactly the "backtest-derived intelligence should
+                                # inform live decisions" gap flagged live tonight. But the only call
+                                # site (_send_mt5_real_order) runs AFTER this threshold comparison
+                                # already decided to trade, so score_mult was computed and logged
+                                # every scan and then thrown away -- only the binary `allowed` block
+                                # had any live effect. Run the same analysis here, before the
+                                # threshold check, so score_mult actually scales the decision; pass
+                                # the result down to _send_mt5_real_order so it isn't recomputed
+                                # (avoids a duplicate MT5 positions_get() + duplicate log line).
+                                _8d_result = None
+                                _8d_adj_score = score
+                                try:
+                                    if not hasattr(self, "_eight_dim_agent"):
+                                        from agents.eight_dim_agent import EightDimensionAgent
+                                        self._eight_dim_agent = EightDimensionAgent()
+                                    _8d_open = await loop.run_in_executor(None, self.mt5.get_positions)
+                                    _8d_dir = "BUY" if signal.signal_type == SignalType.LONG else "SELL"
+                                    _8d_result = self._eight_dim_agent.analyze(
+                                        symbol, self._df_cache.get(symbol), _8d_open or [], direction=_8d_dir
+                                    )
+                                    if not _8d_result.allowed:
+                                        print(f" -- [8D-BLOCK] {_8d_result.reason}")
+                                        continue
+                                    _8d_adj_score = int(score * _8d_result.score_mult)
+                                    if _8d_adj_score != score:
+                                        print(f" -- [8D] score {score}->{_8d_adj_score} (mult={_8d_result.score_mult:.2f})", end="", flush=True)
+                                except Exception as _8d_exc:
+                                    print(f" -- [8D] error (no bloqueo): {_8d_exc}", end="", flush=True)
+
+                                if signal.signal_type == SignalType.WAIT or _8d_adj_score < effective_threshold:
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
                                 else:
@@ -3438,7 +3479,7 @@ class TradingSupervisor(PositionGuardsMixin):
                                     # no habia pasado. "intentando" refleja lo que de verdad se
                                     # sabe en este punto del codigo.
                                     print(f" -- intentando SWING (score={score}>={effective_threshold})")
-                                    await self._send_mt5_real_order(signal)
+                                    await self._send_mt5_real_order(signal, _8d_precomputed=_8d_result)
                             except Exception as exc:
                                 print(f"[MT5][{symbol}] Error: {exc.__class__.__name__}")
                             await asyncio.sleep(0.5)
