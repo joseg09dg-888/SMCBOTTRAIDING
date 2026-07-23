@@ -976,11 +976,25 @@ class TradingSupervisor:
 
 
 
-        # Solo OBs dentro del 1% — OBs lejanos son irrelevantes para scalps M15
+        # BUG-POI-STALE-ORDER (2026-07-23): find_bullish_obs()/find_bearish_obs()
+        # return candidates in ASCENDING index order (oldest-in-the-window
+        # first, since they iterate `for i in range(1, n-1)`). Taking the
+        # first 5 via `(bull_obs + bear_obs)[:5]` therefore inspected the 5
+        # OLDEST order blocks in the 200-candle lookback -- not the most
+        # recent, actionable ones. A stale OB from ~190 candles back is very
+        # unlikely to still be within 1% of current price (price has almost
+        # always moved on by then), so this silently discarded perfectly
+        # good recent order blocks sitting later in the list, and poi_zones[0]
+        # (used both for the OTE retracement-zone math and as the real entry
+        # price anchor in agents/signal_agent.py) could end up empty or
+        # anchored to an irrelevant historical level even when a genuinely
+        # recent, nearby OB existed. Sort by recency (highest index = most
+        # recent candle) before applying the same 1%-proximity filter.
         current_close = float(df["close"].iloc[-1]) if len(df) > 0 else 0.0
         _max_poi_dist  = current_close * 0.01 if current_close > 0 else float("inf")
         poi_zones = []
-        for ob in (bull_obs + bear_obs)[:5]:
+        _recent_obs = sorted(bull_obs + bear_obs, key=lambda o: o.get("index", 0), reverse=True)
+        for ob in _recent_obs[:5]:
             zone_mid = (ob.get("zone_high", 0) + ob.get("zone_low", 0)) / 2.0
             if zone_mid > 0 and abs(zone_mid - current_close) <= _max_poi_dist:
                 poi_zones.append(ob)
