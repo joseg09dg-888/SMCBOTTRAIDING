@@ -130,9 +130,16 @@ def test_friday_cutoff_is_1600_utc():
 
 
 def test_friday_preclose_hour_in_manage_positions():
-    """FRIDAY_CLOSE_HOUR must be 19 to close losers at 19:30 UTC."""
-    import pathlib
-    src = pathlib.Path("core/supervisor.py").read_text(encoding="utf-8")
+    """FRIDAY_CLOSE_HOUR must be 19 to close losers at 19:30 UTC.
+
+    _manage_open_positions lives in core/position_guards.py (PositionGuardsMixin,
+    mixed into TradingSupervisor) since the 2026-07-23 simplification split --
+    check the source via the actual bound method so this stays correct
+    regardless of which file defines it.
+    """
+    import inspect
+    from core.supervisor import TradingSupervisor
+    src = inspect.getsource(TradingSupervisor._manage_open_positions)
     assert "FRIDAY_CLOSE_HOUR = 19" in src, "FRIDAY_CLOSE_HOUR must be 19 UTC"
     assert "FRIDAY_CLOSE_MIN  = 30" in src, "FRIDAY_CLOSE_MIN must be 30"
 
