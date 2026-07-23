@@ -14,3 +14,12 @@ MAX_OPEN_POSITIONS       = 3    # 2026-07-17: backtest_multiyear.py confirmo 2 v
                                  # evidencia registrada de por que).
 DAILY_PROFIT_TARGET      = 250.0  # $250/dia → 5% mensual Axi Select
 INITIAL_CAPITAL          = 100_000.0
+
+# Recovery — simplificado: solo para emergencias
+RECOVERY_SCALP_TP        = 10.0  # igual que normal
+RECOVERY_SCALP_SL        = -4.0  # igual que normal
+RECOVERY_TRIGGER_LOSS    = -150.0  # recovery si pierde $150 en el día (era -50: demasiado agresivo)
+ACCEL_TRIGGER_PROFIT     = 50.0   # aceleración si gana $50 en el día
+ACCEL_SCALP_TP           = 10.0
+ACCEL_SCALP_SL           = -4.0
+ACCEL_MAX_SCALPS         = 5

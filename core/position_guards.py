@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import asyncio
 import json
+import os
 
 from core.supervisor_constants import (
     MT5_REAL_SCORE_THRESHOLD,
@@ -8,6 +9,13 @@ from core.supervisor_constants import (
     MAX_OPEN_POSITIONS,
     DAILY_PROFIT_TARGET,
     INITIAL_CAPITAL,
+    RECOVERY_SCALP_TP,
+    RECOVERY_SCALP_SL,
+    RECOVERY_TRIGGER_LOSS,
+    ACCEL_TRIGGER_PROFIT,
+    ACCEL_SCALP_TP,
+    ACCEL_SCALP_SL,
+    ACCEL_MAX_SCALPS,
 )
 
 

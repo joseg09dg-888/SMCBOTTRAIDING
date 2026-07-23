@@ -105,6 +105,13 @@ from core.supervisor_constants import (
     MAX_OPEN_POSITIONS,
     DAILY_PROFIT_TARGET,
     INITIAL_CAPITAL,
+    RECOVERY_SCALP_TP,
+    RECOVERY_SCALP_SL,
+    RECOVERY_TRIGGER_LOSS,
+    ACCEL_TRIGGER_PROFIT,
+    ACCEL_SCALP_TP,
+    ACCEL_SCALP_SL,
+    ACCEL_MAX_SCALPS,
 )
 
 MT5_SCALP_THRESHOLD      = 105  # subido de 100→105
@@ -113,15 +120,8 @@ MAX_SCALP_POSITIONS      = 2    # max 2 simultáneos (era 3)
 MIN_RR                   = 3.0  # subido de 2.5→3.0: con WR=32% necesitas RR>=3 para ser rentable
 
 # Recovery — simplificado: solo para emergencias
-RECOVERY_SCALP_TP        = 10.0  # igual que normal
-RECOVERY_SCALP_SL        = -4.0  # igual que normal
 RECOVERY_MAX_SCALPS      = 3
-RECOVERY_TRIGGER_LOSS    = -150.0  # recovery si pierde $150 en el día (era -50: demasiado agresivo)
 RECOVERY_DRAWDOWN_FROM_PEAK = 3000.0  # Axi 5% daily = $4,850 — solo recovery en emergencia real
-ACCEL_TRIGGER_PROFIT     = 50.0   # aceleración si gana $50 en el día
-ACCEL_SCALP_TP           = 10.0
-ACCEL_SCALP_SL           = -4.0
-ACCEL_MAX_SCALPS         = 5
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
 # Horas bloqueadas — backtest 2 años (700 dias, 6 pares) demuestra:
