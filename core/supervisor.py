@@ -1043,7 +1043,26 @@ class TradingSupervisor:
 
         has_ob  = bool(bull_obs if is_bullish else bear_obs)
 
-        has_fvg = bool(bull_fvgs if is_bullish else bear_fvgs)
+        # BUG-FVG-STALE-ANY (2026-07-23): same staleness class as
+        # BUG-POI-STALE-ORDER, but never fixed for FVGs -- the comment on
+        # BUG-SETUP-QUALITY-GATES-UNENFORCED even says so explicitly ("FVG
+        # has no documented quality gate in this codebase, so it's
+        # unchanged"). `bool(bull_fvgs if is_bullish else bear_fvgs)` is
+        # True whenever ANY gap of that direction exists ANYWHERE in the
+        # 200-candle window, however old or far from current price -- and
+        # since has_fvg alone (no other condition) satisfies has_setup's
+        # first OR branch, it can single-handedly qualify a "setup" with
+        # zero relation to what price is actually doing right now. FVGs are
+        # common (any 3-candle gap), so in practice this branch fires
+        # almost every scan, making the OB/BOS quality gates below it moot.
+        # Apply the same 1%-proximity + most-recent-first filter used for
+        # order blocks above.
+        _dir_fvgs   = bull_fvgs if is_bullish else bear_fvgs
+        _recent_fvgs = sorted(_dir_fvgs, key=lambda g: g.get("index", 0), reverse=True)
+        has_fvg = any(
+            abs(g.get("midpoint", 0) - current_close) <= _max_poi_dist
+            for g in _recent_fvgs[:5]
+        )
 
         has_bos = bool(bos_list)
 
@@ -1073,7 +1092,18 @@ class TradingSupervisor:
 
         # Displacement Candle en BOS reciente — filtra BOS falsos causados por velas pequenas
         # Solo cuenta un BOS como valido si fue roto por una vela de rango expandido (>1.5x ATR)
-        _has_displacement_bos = any(b.get("is_displacement", False) for b in bos_list)
+        # BUG-DISPLACEMENT-STALE-ANY (2026-07-23): same staleness class as
+        # BUG-POI-STALE-ORDER above. `any(...)` over the WHOLE 200-candle
+        # bos_list means a genuine displacement BOS from ~190 candles ago
+        # (even one in the OPPOSITE direction) satisfied this "quality
+        # gate" for a completely unrelated, non-displacement, current-day
+        # BOS -- exactly the gate BUG-SETUP-QUALITY-GATES-UNENFORCED was
+        # supposed to enforce. Restrict to the most recent BOS that matches
+        # the trade's actual direction; if none exists (or it wasn't a
+        # displacement candle), the gate correctly fails.
+        _dir_word = "bullish" if is_bullish else "bearish"
+        _dir_bos  = [b for b in bos_list if b.get("direction") == _dir_word]
+        _has_displacement_bos = bool(_dir_bos) and bool(_dir_bos[-1].get("is_displacement", False))
 
         # OTE Zone (Optimal Trade Entry) — Fibonacci 62-79% del swing que creo el OB
         # ICT Unicorn: solo entrar cuando precio retrocede al 62-79% del impulso bullish/bearish
@@ -1126,7 +1156,17 @@ class TradingSupervisor:
 
         if has_bos:    analysis_text += " BOS confirmado"
 
-        if choch_list: analysis_text += " CHoCH detectado"
+        # BUG-CHOCH-STALE-ANY (2026-07-23): same staleness class as
+        # BUG-DISPLACEMENT-STALE-ANY above -- `if choch_list` fires on ANY
+        # CHoCH anywhere in the 200-candle window, direction irrelevant.
+        # This string feeds n_confluence in signal_agent.py, so a CHoCH from
+        # ~190 candles back (even the opposite direction) could inflate
+        # confluence and push tp_mult higher on a setup with no real recent
+        # character change. Restrict to the most recent CHoCH matching the
+        # trade's actual direction, same fix as applied to displacement BOS.
+        _dir_choch    = [c for c in choch_list if c.get("direction") == _dir_word]
+        has_recent_choch = bool(_dir_choch)
+        if has_recent_choch: analysis_text += " CHoCH detectado"
 
         if has_ob:     analysis_text += " order block presente"
 
@@ -1150,7 +1190,7 @@ class TradingSupervisor:
 
             "has_bos": has_bos,
 
-            "has_choch": bool(choch_list),
+            "has_choch": has_recent_choch,
 
             "has_setup":           has_setup,
 
@@ -3396,11 +3436,34 @@ class TradingSupervisor:
                 # ── 1. Loss protection ─────────────────────────────────────
                 # BUG-LOSS-LIMIT-FLAT (2026-07-21): used to be one flat
                 # 0.8%-of-balance threshold (limit_usd) for every trade
-                # regardless of intended risk_pct -- see _position_intended_risk
-                # comment at open time. Scale to 2x the trade's actual intended
-                # risk when known (swings only); fall back to the flat balance
-                # limit for scalps or any ticket opened before this fix.
-                _intended = self._position_intended_risk.get(ticket)
+                # regardless of intended risk_pct.
+                # BUG-INTENDED-RISK-LOST-ON-RESTART (2026-07-23): the fix above
+                # stored intended risk in `self._position_intended_risk`, an
+                # in-memory dict populated only at order-open time. ANY pm2
+                # restart wipes it -- every position that was already open
+                # silently falls back to the flat 0.8%-of-balance limit again
+                # (~$760 on a $95K account), regardless of how small its real
+                # intended risk was. Confirmed live: EURAUD #78900206 lost its
+                # entry from before today's restart and bled from -$49 to
+                # -$85+ with no scaled backstop active. Fixed by computing
+                # intended risk directly from the position's own live
+                # volume/entry/SL (broker truth, survives every restart)
+                # instead of trusting fragile session memory. Falls back to
+                # the in-memory value, then the flat limit, only if the
+                # position has no SL set yet (can't compute risk).
+                _intended = None
+                if sl_cur and sl_cur > 0 and entry > 0:
+                    try:
+                        from core.volume_calculator import VolumeCalculator as _VC
+                        _base_sym    = _VC._norm(sym)
+                        _pip_size    = _VC._PIP_SIZE.get(_base_sym, 0.0001)
+                        _pip_value   = _VC._PIP_VALUE.get(_base_sym, 10.0)
+                        _sl_dist_cur = abs(entry - sl_cur)
+                        _intended    = p.get("volume", 0.0) * (_sl_dist_cur / _pip_size) * _pip_value
+                    except Exception:
+                        _intended = None
+                if not _intended:
+                    _intended = self._position_intended_risk.get(ticket)
                 _ticket_limit_usd = max(10.0, _intended * 2.0) if _intended else limit_usd
                 if pnl < -_ticket_limit_usd:
                     print(

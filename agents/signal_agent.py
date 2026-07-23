@@ -258,7 +258,6 @@ class SignalAgent:
                 sl       = entry - sl_dist
                 tp_raw   = entry + sl_dist * tp_mult
                 tp = self._nearest_swing(entry, sl_dist, is_bullish=True, tp_raw=tp_raw, df=_df)
-                sl       = entry - sl_dist
             else:
                 entry    = poi.get("zone_high", current_price)
                 sl_dist  = self._sl_distance(symbol, entry, _df)
