@@ -3416,20 +3416,24 @@ class TradingSupervisor:
                     continue
 
                 # ── 1b. Peak-profit retracement guard ─────────────────────
-                # Only fires when peak profit is large (>= $200) to avoid killing
-                # small winners. Closes if profit retreats 30% from peak.
+                # Closes if profit retreats 30% from peak, once peak clears
+                # PEAK_MIN_USD (floor exists so market noise on a $1-2
+                # winner doesn't trigger a close).
                 # BUG-PEAK-GUARD-TOO-HIGH (2026-07-22): $200 meant a position
                 # had to be a genuinely large winner before ANY profit
                 # protection applied -- found live when a real EURUSD swing
-                # peaked at $108 (a real, meaningful move, not noise) and
-                # gave the entire thing back to a loss with zero protection,
-                # because $108 < $200 never triggered this guard at all.
-                # Lowered to $50 -- still well above the $15 "no real
-                # movement" floor the stagnation guard uses, but low enough
-                # to actually protect swings in the range this bot's
-                # position sizing realistically produces before reaching a
-                # full multi-hundred-dollar TP.
-                PEAK_MIN_USD      = 50.0
+                # peaked at $108 and gave it all back with zero protection.
+                # Lowered to $50.
+                # BUG-PEAK-GUARD-STILL-TOO-HIGH (2026-07-23): $50 was STILL
+                # too high -- GBPCAD #(2nd of the day) peaked at only
+                # $25.34, never tripped this guard, and fully reversed to
+                # -$159.76 (closed by SWING-STOP). Two real incidents now
+                # (EURUSD $108->loss, GBPCAD $25->-$160) both show the same
+                # pattern: profit is given back to zero protection because
+                # the peak never cleared the floor. Lowered to $15 -- same
+                # floor as the stagnation guard's "no real movement"
+                # threshold, so any peak that isn't pure noise is protected.
+                PEAK_MIN_USD      = 15.0
                 PEAK_RETRACE_PCT  = 0.30    # close if profit drops 30% from peak
                 if pnl > 0:
                     peak = self._position_peaks.get(ticket, 0.0)
