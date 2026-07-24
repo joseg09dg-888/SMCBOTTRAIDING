@@ -636,7 +636,19 @@ class PositionGuardsMixin:
                 # them needs to target *those specific conditions*, not a
                 # blanket floor lowered for the whole system without
                 # measuring the tradeoff first.
-                PEAK_MIN_USD      = 200.0
+                # BUG-PEAK-GUARD-200-NOT-OPTIMAL (2026-07-24): the $200
+                # revert above was only checked against $15/$50/disabled --
+                # never swept across the full realistic range. After adding
+                # STAGNANT/TIME-CLOSE-36H/FRIDAY-CLOSE to the backtest (they
+                # drive 77% of real live closes and were never modeled
+                # before, so every prior backtest number was measured
+                # against an unrealistic simulation), re-ran the sweep:
+                # $50->28% pass/$1,717/Sharpe0.29, $100->36%/$2,735/0.40,
+                # $200->40%/$3,360/0.44, $300->43%/$3,939/0.49,
+                # $400->44%/$4,213/0.51 (best), disabled->44%/$4,154/0.48.
+                # Monotonically improves from $50 to ~$300-400 then
+                # plateaus. $400 wins on all 3 metrics.
+                PEAK_MIN_USD      = 400.0
                 PEAK_RETRACE_PCT  = 0.30    # close if profit drops 30% from peak
                 if pnl > 0:
                     peak = self._position_peaks.get(ticket, 0.0)

@@ -37,12 +37,25 @@ REQUIRE_D1 = os.environ.get("REQUIRE_D1", "1") == "1"  # 2026-07-21: medir impac
 REQUIRE_H4 = os.environ.get("REQUIRE_H4", "1") == "1"  # 2026-07-21: medir impacto real de H4-FILTER
 PEAK_GUARD_MIN = float(os.environ.get("PEAK_GUARD_MIN", "200"))    # 2026-07-16: recalibracion pedida por Jose
 PEAK_GUARD_RETRACE = float(os.environ.get("PEAK_GUARD_RETRACE", "0.30"))
+# 2026-07-24: STAGNANT/TIME-CLOSE-36H/FRIDAY-CLOSE were NEVER simulated here --
+# live data shows they (not TP/SL/PEAK-GUARD) drive 77% of real closes, so every
+# conclusion drawn from this backtest before today was measured against a model
+# missing the dominant real exit mechanism. Added to match core/position_guards.py
+# exactly (values there as of 2026-07-24), parametrized for sweeping.
+STAGNANT_HOURS       = float(os.environ.get("STAGNANT_HOURS", "4.0"))
+STAGNANT_PEAK_MAX    = float(os.environ.get("STAGNANT_PEAK_MAX", "15.0"))
+STAGNANT_GRACE_HOURS = float(os.environ.get("STAGNANT_GRACE_HOURS", "2.0"))
+MAX_HOLD_HOURS       = float(os.environ.get("MAX_HOLD_HOURS_TEST", "36.0"))
+SWING_MAX_LOSS_ABS   = float(os.environ.get("SWING_MAX_LOSS_TEST", "150.0"))
+FRIDAY_CLOSE_HOUR    = 19  # UTC -- matches live; DEAD_HOURS_UTC below already
+                           # skips hour 19, so the sim's earliest reachable
+                           # Friday close check is hour 20, same as live effect
 CAPITAL = 96_184.0
 RISK_PCT = 0.005
 MAX_RISK = 275.0  # probado doblar a 550 (2026-07-09): P(pasar Axi)+2.5pp pero
 # P(mes<-5%) 6%->16% (casi triplico) -- Axi revienta la cuenta a ese drawdown,
 # no vale la pena el intercambio. Revertido a 275.
-RR = 3.0  # actualizado 2026-07-01: era 2.5, MIN_RR real subio a 3.0 (commit 468c476 + fix MIN-RR-OVERRIDE)
+RR = float(os.environ.get("RR_TEST", "3.0"))  # 2026-07-24: parametrizado -- live data shows only 2.8% of real closes hit the designed TP (77% close via guards instead), testing whether a more reachable RR changes that
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
     # actualizado 2026-07-09: GBPUSD removido -- auditoria de episodes.db (591 trades
@@ -254,10 +267,12 @@ for pair, df1 in h1_data.items():
 
         # Manage open positions (partial TP + BE at 1.0R, full TP/SL)
         new_open = []
+        is_friday = pd.Timestamp(dt).weekday() == 4
         for pos in open_pos:
             (eidx, direction, entry, sl, tp, vol_p, sl_dist,
-             partial_done, be_sl, pip_v, pair_p, peak_pnl) = pos
+             partial_done, be_sl, pip_v, pair_p, peak_pnl, stagn_flag_idx) = pos
             pnl = None
+            age_h = idx - eidx  # H1 bars: 1 bar == 1 hour
 
             cur_h = bar["high"]
             cur_l = bar["low"]
@@ -271,6 +286,21 @@ for pair, df1 in h1_data.items():
             # matching core/supervisor.py's current live exit logic. Trailing-to-BE
             # at 1.5R still exists live but only protects against giveback after
             # 1.5R -- doesn't change the SL/TP outcome distribution modeled here.
+            # SWING-STOP sim (2026-07-24): tried modeling the flat -$150
+            # emergency backstop here, approximated via bar adverse-excursion.
+            # REVERTED same-session: it made close-type proportions LESS
+            # realistic, not more -- final_SL dropped to 0.1% of closes
+            # (live measured 20.1%) because designed_sl_loss > $150 for most
+            # simulated positions, so SWING-STOP pre-empted the real SL on
+            # almost every losing trade. That means the backtest's position
+            # sizing doesn't match live's actual SL-risk distribution closely
+            # enough for this specific refinement to be trustworthy yet --
+            # needs the sizing model calibrated first, not just this guard
+            # bolted on. Left disabled; STAGNANT/TIME-CLOSE/FRIDAY-CLOSE
+            # (added earlier this session) still measurably improved realism
+            # and are kept.
+            top_close_type = None
+
             if direction == "LONG":
                 if cur_l <= sl:
                     pnl = -vol_p * sl_dist * pip_v / PIP_SZ[pair_p]
@@ -288,7 +318,7 @@ for pair, df1 in h1_data.items():
                     vr = vol_regime(df1, idx)
                     tr = trend_regime(df1, idx)
                     trade_log.append({
-                        "pair": pair_p, "type": "final", "pnl": pnl,
+                        "pair": pair_p, "type": top_close_type or "final", "pnl": pnl,
                         "win": pnl > 0, "hour": hour_utc, "year": year_str,
                         "vol_regime": vr, "trend_regime": tr,
                     })
@@ -316,15 +346,45 @@ for pair, df1 in h1_data.items():
                     close_pnl = vol_p * (entry - cur_c) * pip_v / PIP_SZ[pair_p]
                 if fav_pnl > peak_pnl:
                     peak_pnl = fav_pnl
+
+                close_type = None
                 if (peak_pnl >= PEAK_GUARD_MIN
                         and close_pnl < peak_pnl * (1.0 - PEAK_GUARD_RETRACE)):
                     pnl = close_pnl
+                    close_type = "peak_guard"
+                # BUG-BACKTEST-NO-STAGNANT-TIME-FRIDAY (2026-07-24): these 3
+                # guards drive 77% of real live closes (measured against 45
+                # days of MT5 deal history) but were never modeled here --
+                # every conclusion this script produced before today was
+                # measured against a simulation missing the dominant real
+                # exit mechanism. Added to mirror core/position_guards.py
+                # exactly: FRIDAY-CLOSE closes everyone regardless of P&L;
+                # STAGNANT closes a position that's been open STAGNANT_HOURS+
+                # and never reached STAGNANT_PEAK_MAX profit (immediately if
+                # pnl>=0, else after STAGNANT_GRACE_HOURS more); TIME-CLOSE
+                # only force-closes LOSING positions past MAX_HOLD_HOURS
+                # (winners are left to run / get caught by PEAK-GUARD).
+                elif is_friday and hour_utc >= FRIDAY_CLOSE_HOUR + 1:
+                    pnl = close_pnl
+                    close_type = "friday_close"
+                elif age_h >= STAGNANT_HOURS and peak_pnl < STAGNANT_PEAK_MAX:
+                    if stagn_flag_idx is None:
+                        stagn_flag_idx = idx
+                    grace_h = idx - stagn_flag_idx
+                    if close_pnl >= 0 or grace_h >= STAGNANT_GRACE_HOURS:
+                        pnl = close_pnl
+                        close_type = "stagnant"
+                elif close_pnl <= 0 and age_h >= MAX_HOLD_HOURS:
+                    pnl = close_pnl
+                    close_type = "time_close"
+
+                if close_type is not None:
                     if pnl != 0.0:
                         daily_pnl[day_str] += pnl
                         vr = vol_regime(df1, idx)
                         tr = trend_regime(df1, idx)
                         trade_log.append({
-                            "pair": pair_p, "type": "peak_guard", "pnl": pnl,
+                            "pair": pair_p, "type": close_type, "pnl": pnl,
                             "win": pnl > 0, "hour": hour_utc, "year": year_str,
                             "vol_regime": vr, "trend_regime": tr,
                         })
@@ -342,7 +402,7 @@ for pair, df1 in h1_data.items():
                         pair_stats[pair_p]["pnl"] += pnl
                 else:
                     new_open.append((eidx, direction, entry, sl, tp, vol_p, sl_dist,
-                                      partial_done, be_sl, pip_v, pair_p, peak_pnl))
+                                      partial_done, be_sl, pip_v, pair_p, peak_pnl, stagn_flag_idx))
 
         open_pos = new_open
         if len(open_pos) >= MAX_OPEN_TEST: continue  # actualizado 2026-07-01: MAX_OPEN_POSITIONS real=2 (era 4, commit 468c476 bajo 3->2)
@@ -432,7 +492,7 @@ for pair, df1 in h1_data.items():
             sl_p = entry + sl_dist_p
             tp_p = entry - sl_dist_p * RR
 
-        open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, entry, pip_v, pair, 0.0))
+        open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, entry, pip_v, pair, 0.0, None))
 
 print(f"\n  Total trades en 2 años: {len(trade_log)}")
 n_final = sum(1 for t in trade_log if t["type"] == "final")
@@ -442,6 +502,19 @@ n_days = len(daily_pnl)
 avg_d = np.mean(list(daily_pnl.values())) if daily_pnl else 0
 print(f"  Parciales (50% a 1R): {n_partial} | Finals: {n_final} | Wins: {n_wins}/{n_final} = {n_wins/max(1,n_final)*100:.1f}% WR")
 print(f"  Días con trades: {n_days} | Avg diario: ${avg_d:.0f}")
+
+# 2026-07-24: como % del total de cierres reales (fuente de verdad: MT5 deal
+# history), TP real=2.8%, SL real=20.1%, guardias(stagnant/time/friday/peak)=77.1%
+_close_types = defaultdict(int)
+for t in trade_log:
+    _ctype = t["type"]
+    if _ctype == "final":
+        _ctype = "final_TP" if t["win"] else "final_SL"
+    _close_types[_ctype] += 1
+_n_total_closes = len(trade_log)
+print("  Desglose por tipo de cierre (comparar contra realidad: TP=2.8% SL=20.1% guardias=77.1%):")
+for _ct, _n in sorted(_close_types.items(), key=lambda kv: -kv[1]):
+    print(f"    {_ct:12s}: {_n:6d} ({_n/max(1,_n_total_closes)*100:5.1f}%)")
 
 # ── DIMENSIÓN 4: Por hora UTC ─────────────────────────────────────────
 print("\n" + "=" * 72)
