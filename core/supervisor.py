@@ -117,7 +117,12 @@ from core.supervisor_constants import (
 MT5_SCALP_THRESHOLD      = 105  # subido de 100→105
 MT5_SCORE_REDUCE_AFTER_H = 4
 MAX_SCALP_POSITIONS      = 2    # max 2 simultáneos (era 3)
-MIN_RR                   = 3.0  # subido de 2.5→3.0: con WR=32% necesitas RR>=3 para ser rentable
+MIN_RR                   = 4.5  # 2026-07-24: barrido completo contra backtest 2 anos (con
+# STAGNANT/TIME-CLOSE-36H/FRIDAY-CLOSE ya modelados, que antes faltaban):
+# RR=2.0->P(pass)=34%/Sharpe0.30, 2.5->41%/0.45, 3.0->44%/0.51, 3.5->46%/0.53,
+# 4.0->47%/0.54, 4.5->48%/0.58 (mejor de todos), 5.0->47%/0.56 (empieza a bajar).
+# 4.5 es el pico real, no una suposicion -- subido de 3.0 (con WR~28-32% real,
+# TP mas ambicioso compensa mas de lo que cuesta en trades que no llegan).
 
 # Recovery — simplificado: solo para emergencias
 RECOVERY_MAX_SCALPS      = 3
