@@ -682,15 +682,23 @@ class PositionGuardsMixin:
                 # slots that a fresh, better setup could use instead. Close
                 # it once it's been open a long time and never showed real
                 # movement in either direction.
-                # 2026-07-20 (pedido usuario): bajado de 12h a 4h -- no quiere
-                # posiciones ocupando un cupo todo el dia sin moverse. Y no
-                # debe forzar el cierre a la primera perdida que encuentre:
+                # 2026-07-20 (pedido usuario): bajado de 12h a 4h -- no queria
+                # posiciones ocupando un cupo todo el dia sin moverse.
+                # 2026-07-24: barrido contra el backtest corregido (con
+                # STAGNANT/TIME-CLOSE/FRIDAY-CLOSE ya modelados, PEAK_MIN=400,
+                # RR=4.5) muestra que 4h SI daba peor resultado que un margen
+                # mas largo: 2h->P(pass)=48%/Sharpe0.58 (igual a 4h), 4h->48%/
+                # 0.58, 6h->49%/Sharpe0.61, 8h->49%/Sharpe0.61 (practicamente
+                # empatado con 6h). Subido a 6h -- mejora real medida, no
+                # vuelve al 12h original porque 6h ya captura la mejora sin
+                # dejar el cupo ocupado tanto tiempo como antes.
+                # No debe forzar el cierre a la primera perdida que encuentre:
                 # una vez marcada estancada, prefiere cerrar en beneficio/
                 # breakeven; si esta perdiendo, da un margen corto
                 # (STAGNANT_GRACE_HOURS) esperando que suba a >=0 antes de
                 # forzar el cierre en la menor perdida disponible en ese
                 # momento -- nunca espera indefinidamente.
-                STAGNANT_HOURS       = 4.0
+                STAGNANT_HOURS       = 6.0
                 STAGNANT_PEAK_MAX    = 15.0   # never even reached this much peak profit
                 STAGNANT_GRACE_HOURS = 2.0    # margen extra esperando pnl >= 0 antes de forzar
                 if open_time > 0:
