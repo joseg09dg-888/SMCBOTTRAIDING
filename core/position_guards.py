@@ -619,17 +619,24 @@ class PositionGuardsMixin:
                 # had to be a genuinely large winner before ANY profit
                 # protection applied -- found live when a real EURUSD swing
                 # peaked at $108 and gave it all back with zero protection.
-                # Lowered to $50.
-                # BUG-PEAK-GUARD-STILL-TOO-HIGH (2026-07-23): $50 was STILL
-                # too high -- GBPCAD #(2nd of the day) peaked at only
-                # $25.34, never tripped this guard, and fully reversed to
-                # -$159.76 (closed by SWING-STOP). Two real incidents now
-                # (EURUSD $108->loss, GBPCAD $25->-$160) both show the same
-                # pattern: profit is given back to zero protection because
-                # the peak never cleared the floor. Lowered to $15 -- same
-                # floor as the stagnation guard's "no real movement"
-                # threshold, so any peak that isn't pure noise is protected.
-                PEAK_MIN_USD      = 15.0
+                # Lowered to $50, then to $15 after a second incident
+                # (GBPCAD peaked $25.34 -> -$159.76) -- both were real
+                # anecdotes, but neither was validated against the full
+                # 2-year backtest before deploying.
+                # BUG-PEAK-GUARD-15-BACKTESTED-WORSE (2026-07-24): ran all
+                # three values through scripts/backtest_multiyear.py (2 years
+                # H1, real data) instead of trusting the anecdotes: $15 ->
+                # P(pass Axi 5%)=28%, E[month]=$1,762, Sharpe=0.31. $200 ->
+                # P(pass)=44%, E[month]=$4,139, Sharpe=0.53 (best of the
+                # three; PEAK-GUARD disabled entirely scored almost
+                # identically to $200). Cutting winners as early as $15
+                # kills far more real winning trades across 2 years of data
+                # than the 2 anecdotes it was meant to protect. Reverted to
+                # $200 -- the two live incidents were real, but the fix for
+                # them needs to target *those specific conditions*, not a
+                # blanket floor lowered for the whole system without
+                # measuring the tradeoff first.
+                PEAK_MIN_USD      = 200.0
                 PEAK_RETRACE_PCT  = 0.30    # close if profit drops 30% from peak
                 if pnl > 0:
                     peak = self._position_peaks.get(ticket, 0.0)
