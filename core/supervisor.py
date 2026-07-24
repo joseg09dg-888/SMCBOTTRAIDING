@@ -3056,6 +3056,20 @@ class TradingSupervisor(PositionGuardsMixin):
 
     async def _market_scan_loop(self):
 
+        # BUG-SCAN-LOOP-LOOP-UNDEFINED (2026-07-24): `loop` was referenced by
+        # 3 separate `await loop.run_in_executor(...)` call sites inside this
+        # function (H4 momentum-check df fetch, EightDimensionAgent
+        # score_mult analysis, Silver Bullet confluence check) but never
+        # assigned anywhere in this function's scope -- every one of those 3
+        # features has been silently no-op'ing since it was written (each
+        # wrapped in a try/except that logs "error (no bloqueo): name 'loop'
+        # is not defined" and falls through as if the check passed). Found
+        # live tonight when Jose asked what logic opened 3 real trades and
+        # the log showed the EightDimensionAgent score_mult adjustment --
+        # the exact backtest-derived intelligence just wired in this same
+        # session -- had never actually run.
+        loop = asyncio.get_running_loop()
+
         _was_offline = False
 
         while self._running:
