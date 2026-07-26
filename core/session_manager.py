@@ -61,21 +61,40 @@ def session_score(dt: datetime = None) -> Tuple[int, str]:
 
 def session_multiplier(dt: datetime = None) -> float:
     """Hour-quality multiplier for threshold adjustment.
-    Based on 2-year backtest WR per hour UTC + ICT killzone data.
     Threshold = base_threshold / multiplier  (higher mult = lower bar = more trades)
+
+    BUG-KZ-HOUR14-STALE-GOLD (2026-07-26): the "hour 14 = gold, WR=61%" claim
+    below was from a 2-year backtest that (a) used yfinance data capped at
+    <730 days and (b) predated today's session's market-reading/exit-guard
+    fixes. Re-ran DIM4 against ~16.1 years of REAL MT5 history (3,915
+    trading days, 25,962 trades) with all of today's fixes applied:
+      14:00 UTC: 6,952 trades, WR=29%, avg=-$35   -- EVITAR (was called "gold")
+      15:00 UTC: 2,657 trades, WR=57%, avg=+$149  -- PREMIUM (was "continuation")
+      16:00 UTC: 2,880 trades, WR=46%, avg=+$80   -- BUENA
+      20:00 UTC: 6,833 trades, WR=50%, avg=+$89   -- PREMIUM (was "closing", 1.05)
+      21:00 UTC: 2,607 trades, WR=51%, avg=+$43   -- BUENA
+      22:00 UTC: 2,210 trades, WR=50%, avg=+$44   -- BUENA
+      23:00 UTC: 1,823 trades, WR=50%, avg=+$40   -- BUENA
+    Hour 14 was getting the single LOWEST bar of the whole table (1.30x,
+    easiest to qualify) while real data shows it's the only hour with
+    negative expectancy of the 7 actively-scanned hours -- backwards.
+    Rebuilt the table from these numbers directly (multiplier roughly
+    tracks avg P&L rank); 17/18/19 stay untouched (blocked entirely by
+    DEAD_HOURS_UTC in core/supervisor.py, so no trades exist there to
+    re-measure).
     """
     dt = dt or datetime.now(timezone.utc)
     h = dt.hour
     _HOUR_MULT = {
-        14: 1.30,  # NY open — WR=61% gold hour
-        15: 1.20,  # NY continuation
-        16: 1.10,  # London close / NY active
-        17: 0.85,  # NY mid — WR drops per backtest
-        18: 0.80,  # NY mid — worst hour in backtest
-        19: 1.00,  # NY late PM
-        20: 1.05,  # NY closing
-        21: 0.90,  # NY end
-        22: 0.95,  # After NY
-        23: 0.90,  # Late session
+        14: 0.70,  # 16y real data: WR=29%, avg=-$35 -- worst active hour, was 1.30 (backwards)
+        15: 1.30,  # 16y real data: WR=57%, avg=+$149 -- best active hour
+        16: 1.15,  # 16y real data: WR=46%, avg=+$80
+        17: 0.85,  # no active trades (DEAD_HOURS_UTC blocks it) -- unchanged
+        18: 0.80,  # no active trades (DEAD_HOURS_UTC blocks it) -- unchanged
+        19: 1.00,  # no active trades (DEAD_HOURS_UTC blocks it) -- unchanged
+        20: 1.20,  # 16y real data: WR=50%, avg=+$89
+        21: 1.00,  # 16y real data: WR=51%, avg=+$43
+        22: 1.00,  # 16y real data: WR=50%, avg=+$44
+        23: 0.95,  # 16y real data: WR=50%, avg=+$40
     }
     return _HOUR_MULT.get(h, 0.90)
