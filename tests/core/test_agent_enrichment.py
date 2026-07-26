@@ -51,7 +51,7 @@ class TestEnrichWithAgents:
         signal = _make_signal(score=70)
         df = _make_df()
         bonus = supervisor._enrich_with_agents(signal, df)
-        # With a trending DF: Elliott bonus >=0, Chaos >=0, Edge >=0
+        # With a trending DF: Edge bonus >=0
         assert isinstance(bonus, int)
 
     def test_bonus_capped_at_60(self, supervisor):
@@ -101,20 +101,13 @@ class TestEnrichWithAgents:
         assert isinstance(bonus, int)
 
     def test_five_agents_are_instantiated(self, supervisor):
-        assert hasattr(supervisor, "_lunar")
-        assert hasattr(supervisor, "_elliott")
-        assert hasattr(supervisor, "_chaos")
+        # Lunar/Elliott/Chaos removed from supervisor 2026-07-26 (zero live usage --
+        # see core/supervisor.py comment above the enrichment-agent instantiations).
         assert hasattr(supervisor, "_edge")
         assert hasattr(supervisor, "_footprint")
 
     def test_agent_class_names(self, supervisor):
-        from agents.lunar_agent import LunarCycleAgent
-        from agents.elliott_agent import ElliottFibonacciAgent
-        from agents.chaos_agent import ChaosTheoryAgent
         from agents.statistical_edge_agent import QuantEdgeAgent
         from agents.footprint_agent import FootprintAgent
-        assert isinstance(supervisor._lunar, LunarCycleAgent)
-        assert isinstance(supervisor._elliott, ElliottFibonacciAgent)
-        assert isinstance(supervisor._chaos, ChaosTheoryAgent)
         assert isinstance(supervisor._edge, QuantEdgeAgent)
         assert isinstance(supervisor._footprint, FootprintAgent)

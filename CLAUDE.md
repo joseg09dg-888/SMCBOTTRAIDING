@@ -125,18 +125,17 @@ trading_agent/
 │   ├── wakeup_recovery.py     ← Recuperación post-apagado
 │   └── mode_manager.py        ← AUTO/SEMI/PAUSED/HYBRID
 │
-├── agents/ (24 agentes)
+├── agents/ (22 agentes -- elliott_agent.py y chaos_agent.py ELIMINADOS 2026-07-26,
+│              cero uso en vivo, ver seccion 16)
 │   ├── signal_agent.py         ← Genera TradeSignal con entry/SL/TP
 │   ├── analysis_agent.py       ← SMCAnalysisAgent (usa Claude API)
-│   ├── lunar_agent.py          ← Ciclos lunares → sesgo trading
-│   ├── elliott_agent.py        ← Ondas de Elliott
+│   ├── lunar_agent.py          ← Ciclos lunares → sesgo trading (solo display /lunar, sin scoring)
 │   ├── institutional_flow_agent.py
 │   ├── alternative_data_agent.py
 │   ├── microstructure_agent.py
 │   ├── fed_sentiment_agent.py
 │   ├── onchain_agent.py
 │   ├── geopolitical_agent.py
-│   ├── chaos_agent.py
 │   ├── retail_psychology_agent.py
 │   ├── energy_frequency_agent.py ← Numerología, tarot, planetas
 │   ├── report_agent.py           ← Reportes semanal/mensual
@@ -252,7 +251,6 @@ MAX_RISK_PER_TRADE=0.005
 /analysis   → Análisis SMC completo
 /onchain    → Métricas on-chain
 /lunar      → Ciclos lunares
-/elliott    → Ondas de Elliott
 /edge       → Statistical edge del sistema
 /footprint  → Análisis footprint BTCUSDT
 /ftmo       → Estado FTMO challenge
@@ -407,14 +405,19 @@ Con $200K fondead al 90% profit split:
 - AutonomousLearner, ResearchAgent, GoalsManager, NightlyReporter (loops nuevos)
 
 **Activos en enrichment pipeline (_enrich_with_agents):**
-- LunarCycleAgent, ElliottFibonacciAgent, ChaosTheoryAgent, QuantEdgeAgent
-- FootprintAgent, InstitutionalFlowAgent, MarketMicrostructureAgent
+- QuantEdgeAgent, FootprintAgent, InstitutionalFlowAgent, MarketMicrostructureAgent
 - FEDSentimentAgent, OnChainAgent, GeopoliticalAgent
-- RetailPsychologyAgent, AlternativeDataAgent, EnergyFrequencyAgent
+- RetailPsychologyAgent, AlternativeDataAgent
 
 **Dormant (existen pero NO conectados):**
 - SMCAnalysisAgent (Claude API — pendiente conectar para confirmacion pre-orden real)
 - ReportAgent, ScreenVisionAgent, LearningEngine, AgentMemory
+
+**ACTUALIZACIÓN 2026-07-26 — eliminación de código muerto (instrucción explícita del usuario: "lo que se ha probado que es irrelevante [lunar y elliott] eso debería eliminarse del código porque eso se demostró que no funciona"):**
+- `agents/elliott_agent.py` y `agents/chaos_agent.py` **ELIMINADOS por completo** (archivos borrados junto con sus tests). Confirmado por grep exhaustivo: nunca tuvieron score real (siempre `return 0` hardcodeado en supervisor.py desde antes de esta sesión) NI un comando Telegram funcional (`/elliott` era un texto fijo que jamás llamaba al agente real — también eliminado).
+- `LunarCycleAgent`/`EnergyFrequencyAgent` se **mantienen** — a diferencia de Elliott/Chaos, estos SÍ se usan de verdad en vivo vía `/lunar` y `/energy` (Telegram instancia su propia copia para mostrar el dato). Solo su contribución al SCORE de trading fue desactivada antes (sin evidencia de edge estadístico), no su funcionalidad de display.
+- `core/supervisor.py`: removidas las instancias muertas `self._lunar`, `self._elliott`, `self._chaos`, `self._energy` (se creaban en `__init__` pero nunca se leían en ningún otro lado del archivo) y sus imports.
+- Agentes activos en enrichment pipeline: 9 (antes 13 — bajó de 13 a 9 al eliminar Lunar/Elliott/Chaos/Energy, que igual sumaban 0 puntos siempre).
 
 ---
 

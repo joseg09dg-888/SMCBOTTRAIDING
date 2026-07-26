@@ -75,10 +75,19 @@ COMMANDS = {
     "/analysis":         "Analisis SMC completo del mercado",
     "/onchain":          "Metricas on-chain actuales",
     "/lunar":            "Analisis de ciclos lunares",
-    "/elliott":          "Conteo de ondas de Elliott",
     "/edge":             "Statistical edge y winrate historico",
     "/footprint":        "Analisis footprint (delta, absorcion). Ej: /footprint BTC",
     "/axicheck":         "Verificacion 6 variables Axi Select (listo para live?)",
+    # BUG-COMMANDS-NOT-REGISTERED (2026-07-26, telegram/connectors expert
+    # audit): these 3 were fully implemented in handle_command()'s dispatch
+    # but missing from COMMANDS -- start_polling() only registers handlers
+    # for entries in this dict, so typing them in real Telegram got no
+    # response at all. /proteger toggles a real safety feature
+    # (auto-close on loss > $500, supervisor._vision_protect_mode) Jose
+    # could never actually activate from his phone.
+    "/axi":              "Estado Axi Select (alias corto de /axicheck)",
+    "/ver_mt5":          "Ver estado de conexion MT5 en tiempo real",
+    "/proteger":         "Activa/desactiva auto-cierre si una posicion pierde > $500",
     "/plan":             "Plan financiero 70-20-10 — donde va el capital del bot",
     "/demo":             "Posiciones demo Binance crypto con P&L en vivo",
     "/performance":      "Performance real: win rate, profit factor, P&L cuenta Axi",
@@ -154,7 +163,6 @@ class TelegramCommander:
             "/analysis":         self._cmd_analysis,
             "/onchain":          self._cmd_onchain,
             "/lunar":            self._cmd_lunar,
-            "/elliott":          self._cmd_elliott,
             "/edge":             self._cmd_edge,
             "/footprint":        self._cmd_footprint,
             "/axi":              self._cmd_axi,
@@ -556,14 +564,12 @@ class TelegramCommander:
             "Statistical Edge": "agents.statistical_edge_agent",
             "Prediction": "smc.ml_predictor",
             "Lunar": "agents.lunar_agent",
-            "Elliott": "agents.elliott_agent",
             "Institutional Flow": "agents.institutional_flow_agent",
             "Alternative Data": "agents.alternative_data_agent",
             "Microstructure": "agents.microstructure_agent",
             "FED Sentiment": "agents.fed_sentiment_agent",
             "OnChain": "agents.onchain_agent",
             "Geopolitical": "agents.geopolitical_agent",
-            "Chaos Theory": "agents.chaos_agent",
             "Retail Psychology": "agents.retail_psychology_agent",
             "Energy Frequency": "agents.energy_frequency_agent",
             "Binance": "connectors.binance_connector",
@@ -929,9 +935,6 @@ class TelegramCommander:
     def _cmd_lunar(self) -> CommandResult:
         from agents.lunar_agent import LunarCycleAgent
         return CommandResult(success=True, message=LunarCycleAgent().format_telegram(), action="lunar")
-
-    def _cmd_elliott(self) -> CommandResult:
-        return CommandResult(success=True, message="Elliott Wave: conecta con OHLCV en vivo para conteo de ondas.", action="elliott")
 
     def _cmd_edge(self) -> CommandResult:
         from core.score_db import get_stats

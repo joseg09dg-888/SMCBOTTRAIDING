@@ -74,29 +74,35 @@ class SentimentAnalyzer:
             and float(s.get("relevance_score", 0)) >= 7.0
         )
 
+        # BUG-GLINT-ALIGNMENT-ALWAYS-POSITIVE (2026-07-26, telegram/connectors
+        # expert audit): _calc_alignment's own docstring admits "we don't
+        # parse sentiment of text here" and every signal is added to
+        # positive_weight unconditionally -- so `alignment` is mathematically
+        # ALWAYS positive (>0) regardless of whether a given headline is
+        # actually bullish or bearish for the trade's real direction. The
+        # `alignment < 0` "contradictory signals" branch below was dead code
+        # by construction (alignment can never be negative). Effect: a
+        # bearish-for-gold headline arriving while about to open a SHORT on
+        # XAUUSD still scored as "aligned" and could award up to 20/20
+        # sentiment points based on a directional match that was never
+        # actually checked -- fabricated confluence, same class of bug as
+        # Elliott/Lunar/Chaos/Energy (all disabled earlier for the identical
+        # reason: a score contribution that can't discriminate winners from
+        # losers). Disabled the direction-dependent scoring the same way,
+        # pending a real bullish/bearish text classifier (would need an LLM
+        # call per headline -- not done now, Anthropic API credit is
+        # currently exhausted per earlier findings today). signal_count/
+        # reason are kept for diagnostic/Telegram display; component_score
+        # is 0 until real directional classification exists.
+        reason_parts = [f"{len(relevant)} señal(es) relevante(s), sin clasificar direccion (desactivado)"]
         score = 0
-        reason_parts = []
 
-        if actionable_count > 0 and alignment > 0:
-            score += 10
-            reason_parts.append(f"{actionable_count} señal(es) accionable(s) alineada(s)")
-
-        if alignment > 0.7:
-            score += 10
-            reason_parts.append(f"Alineación fuerte ({alignment:.0%})")
-        elif alignment > 0.4:
-            score += 5
-            reason_parts.append(f"Alineación moderada ({alignment:.0%})")
-        elif alignment < 0:
-            reason_parts.append(f"Señales contradictorias (alineación {alignment:.0%})")
-
-        score = min(score, 20)
         return SentimentResult(
             component_score=score,
             score=score,
             signal_count=len(relevant),
             alignment=round(alignment, 3),
-            reason="; ".join(reason_parts) if reason_parts else "Sentimiento neutral",
+            reason="; ".join(reason_parts),
         )
 
     def _detect_market_type(self, symbol: str) -> str:

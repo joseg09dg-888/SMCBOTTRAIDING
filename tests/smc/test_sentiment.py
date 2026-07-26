@@ -10,7 +10,13 @@ def test_sentiment_no_signals():
     assert result.component_score <= 20
 
 
-def test_sentiment_critical_signal_boosts_score():
+def test_sentiment_score_disabled_pending_real_direction_classification():
+    """BUG-GLINT-ALIGNMENT-ALWAYS-POSITIVE (2026-07-26): the score used to
+    award up to 20pts based on "alignment" that could never actually be
+    negative (no real bullish/bearish text classification exists), so a
+    bearish headline could score as "aligned" for a bullish trade. Disabled
+    until real direction classification exists -- component_score is 0
+    even for a highly relevant, critical-impact signal."""
     sa = SentimentAnalyzer()
     signals = [
         {
@@ -22,7 +28,8 @@ def test_sentiment_critical_signal_boosts_score():
         }
     ]
     result = sa.analyze(symbol="BTCUSDT", glint_signals=signals, bias="bullish")
-    assert result.component_score > 10
+    assert result.component_score == 0
+    assert result.signal_count == 1
 
 
 def test_sentiment_conflicting_signals_reduce_score():

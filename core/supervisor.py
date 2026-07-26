@@ -64,11 +64,8 @@ from core.market_hours import is_market_open, minutes_until_open
 
 from strategies.ftmo_agent import FTMOAgent, ChallengeType, ChallengeState, ChallengeStatus, FTMORules
 
-from agents.lunar_agent import LunarCycleAgent
-from agents.elliott_agent import ElliottFibonacciAgent
 from agents.footprint_agent import FootprintAgent
 from agents.statistical_edge_agent import QuantEdgeAgent
-from agents.chaos_agent import ChaosTheoryAgent
 from agents.institutional_flow_agent import InstitutionalFlowAgent
 from agents.microstructure_agent import MarketMicrostructureAgent
 from agents.fed_sentiment_agent import FEDSentimentAgent
@@ -76,7 +73,6 @@ from agents.onchain_agent import OnChainAgent
 from agents.geopolitical_agent import GeopoliticalAgent
 from agents.retail_psychology_agent import RetailPsychologyAgent
 from agents.alternative_data_agent import AlternativeDataAgent
-from agents.energy_frequency_agent import EnergyFrequencyAgent
 from agents.axi_vision_agent import AxiVisionAgent
 from agents.axi_select_guard import AxiSelectGuard
 from agents.axi_select_tracker import AxiSelectTracker
@@ -298,6 +294,8 @@ class TradingSupervisor(PositionGuardsMixin):
 
             on_history=self._on_history_command,
 
+            on_close_all=self._on_close_all,
+
         )
 
         self.commander._supervisor = self  # allow /proteger and /ver_mt5 to toggle supervisor state
@@ -423,12 +421,19 @@ class TradingSupervisor(PositionGuardsMixin):
             consecutive_losses=0,
         )
 
-        # Institutional agents -- enrichment layer (13 agents covering all dimensions)
-        self._lunar         = LunarCycleAgent()
-        self._elliott       = ElliottFibonacciAgent()
+        # Institutional agents -- enrichment layer
+        # NOTE (2026-07-26): LunarCycleAgent/ElliottFibonacciAgent/ChaosTheoryAgent/
+        # EnergyFrequencyAgent instances used to be created here but were never
+        # referenced anywhere in this file (see _enrich_with_agents below -- their
+        # score contribution was already hardcoded to 0 and disconnected from
+        # these instances). Lunar/Energy are still genuinely used live by the
+        # /lunar and /energy Telegram commands, which instantiate their own fresh
+        # copies in dashboard/telegram_commander.py -- only the dead copies here
+        # were removed. Elliott/Chaos have zero live usage anywhere (not even a
+        # working Telegram display command) and their modules were deleted
+        # entirely (agents/elliott_agent.py, agents/chaos_agent.py).
         self._footprint     = FootprintAgent()
         self._edge          = QuantEdgeAgent(capital=capital)
-        self._chaos         = ChaosTheoryAgent()
         self._inst_flow     = InstitutionalFlowAgent()
         self._microstructure = MarketMicrostructureAgent()
         self._fed           = FEDSentimentAgent()
@@ -436,7 +441,6 @@ class TradingSupervisor(PositionGuardsMixin):
         self._geopolitical  = GeopoliticalAgent()
         self._retail_psych  = RetailPsychologyAgent()
         self._alt_data      = AlternativeDataAgent()
-        self._energy        = EnergyFrequencyAgent()
         # AxiVisionAgent -- Claude Vision reads MT5 screen every 5 min
         try:
             self._vision = AxiVisionAgent()
@@ -523,6 +527,24 @@ class TradingSupervisor(PositionGuardsMixin):
         self.mode = mode
 
         print(f"[Mode] Cambiado a: {mode.upper()} vÃ­a Telegram")
+
+    def _on_close_all(self):
+        """BUG-CLOSE-ALL-NOOP (2026-07-26, telegram/connectors expert audit):
+        TelegramCommander was constructed without an on_close_all callback,
+        so /close_all -- the emergency Telegram command -- replied "Cerrando
+        todas las posiciones..." and did NOTHING: no MT5 call was ever made.
+        Confirmed via grep: the only real close_all_positions() callers were
+        the automated AXI-GUARD-DAILY/DD-GUARD-TOTAL emergency guards, never
+        the Telegram command a human would use to intervene manually. Wired
+        directly (sync, matching _on_mode_change's pattern) since this is a
+        rare, deliberate emergency action where immediate certainty matters
+        more than not blocking the event loop briefly.
+        """
+        try:
+            closed = self.mt5.close_all_positions("TELEGRAM-CLOSE-ALL")
+            print(f"[TELEGRAM-CLOSE-ALL] {closed} posiciones cerradas via /close_all", flush=True)
+        except Exception as exc:
+            print(f"[TELEGRAM-CLOSE-ALL] error: {exc}", flush=True)
 
 
 
@@ -1326,7 +1348,7 @@ class TradingSupervisor(PositionGuardsMixin):
             pass
 
     def _enrich_with_agents(self, signal: TradeSignal, df: pd.DataFrame) -> int:
-        """Run all 13 institutional agents IN PARALLEL and return total bonus pts.
+        """Run all live-scoring institutional agents IN PARALLEL and return total bonus pts.
 
         All agents fire simultaneously via ThreadPoolExecutor — total latency equals
         the slowest single agent, not the sum of all agents (~13x speedup).
@@ -1340,7 +1362,7 @@ class TradingSupervisor(PositionGuardsMixin):
         bias = "bullish" if signal.signal_type == SignalType.LONG else "bearish"
         prices = list(df["close"].astype(float).values) if not df.empty else []
 
-        _agent_names = ["lunar","elliott","chaos","edge","footprint","instflow","micro","fed","onchain","geo","retail","alt","energy","momentum","billwilliams"]
+        _agent_names = ["edge","footprint","instflow","micro","fed","onchain","geo","retail","alt","momentum","billwilliams"]
         _agent_results = {}
 
         def _make(name, fn):
@@ -1354,14 +1376,6 @@ class TradingSupervisor(PositionGuardsMixin):
                     return 0
             return _wrapped
 
-        def _lunar():   return 0  # ELIMINADO: sin evidencia estadistica de edge real
-        def _elliott(): return 0  # ELIMINADO 2026-07-06: validado contra 584 trades reales
-            # (scripts/validate_elliott_agent.py) -- con ventanas de 200 velas H1 (el
-            # tamaño real que usa el bot en vivo), _find_swings() casi siempre cuenta
-            # >=5 swings, asi que el bonus SIEMPRE es +10 sin excepcion en los 584
-            # trades -- cero poder discriminante, suma lo mismo a ganadores y
-            # perdedores por igual. Mismo criterio que elimino Lunar/Chaos/Energy.
-        def _chaos():   return 0  # ELIMINADO: sin evidencia estadistica de edge real
         def _edge():
             # Fix 2026-07-06: calculate_full_edge() was called with only symbol+prices,
             # so trades=None -> Kelly/Sharpe/Monte Carlo/walk-forward all ran on a fake
@@ -1398,7 +1412,6 @@ class TradingSupervisor(PositionGuardsMixin):
         def _geo():      return self._geopolitical.score_adjustment(signal.symbol, bias)
         def _retail():   return self._retail_psych.score_adjustment(signal.symbol, df, bias)
         def _alt():      return self._alt_data.score_adjustment(signal.symbol, bias)
-        def _energy():  return 0  # ELIMINADO: numerologia/tarot sin evidencia de edge
         def _momentum():  return 0  # DESACTIVADO 2026-07-09: backtest A/B contra 2
             # años de datos reales (scripts/backtest_multiyear.py) mostro que estas
             # penalizaciones (RSI/Bollinger/Estocastico/volumen) cortan el volumen de
@@ -1410,7 +1423,7 @@ class TradingSupervisor(PositionGuardsMixin):
             # _momentum -- ver backtest A/B arriba. Codigo y tests de
             # smc/bill_williams.py se mantienen, solo se desconecta la contribucion.
 
-        raw_tasks = [_lunar, _elliott, _chaos, _edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _energy, _momentum, _billwilliams]
+        raw_tasks = [_edge, _footprint, _instflow, _micro, _fed, _onchain, _geo, _retail, _alt, _momentum, _billwilliams]
         tasks = [_make(name, fn) for name, fn in zip(_agent_names, raw_tasks)]
 
         with ThreadPoolExecutor(max_workers=len(tasks)) as executor:

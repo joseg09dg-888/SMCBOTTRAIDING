@@ -1,6 +1,6 @@
 # core/agent_health_check.py
 """
-AgentHealthCheck — verifica que los 21 agentes del sistema puedan importarse y
+AgentHealthCheck — verifica que los 19 agentes del sistema puedan importarse y
 estén disponibles. Diseñado para TDD: primero los tests, luego esta implementación.
 """
 import importlib
@@ -37,11 +37,11 @@ class HealthReport:
     def format_telegram(self) -> str:
         """
         Returns message formatted for Telegram:
-        🏥 HEALTH CHECK — 21 AGENTES
+        🏥 HEALTH CHECK — 19 AGENTES
         ✅ Supervisor Agent — OK
         ...
         ─────────────────
-        21/21 agentes operativos
+        19/19 agentes operativos
         """
         lines = [f"🏥 HEALTH CHECK — {self.total_agents} AGENTES"]
         for status in self.statuses:
@@ -69,14 +69,12 @@ AGENT_REGISTRY = [
     {"name": "Glint Agent",            "module": "connectors.glint_connector",     "class": "GlintConnector"},
     {"name": "Prediction Agent",       "module": "smc.ml_predictor",               "class": "MLPredictor"},
     {"name": "Lunar Agent",            "module": "agents.lunar_agent",             "class": "LunarCycleAgent"},
-    {"name": "Elliott Agent",          "module": "agents.elliott_agent",           "class": "ElliottAgent"},
     {"name": "Institutional Flow",     "module": "agents.institutional_flow_agent","class": "InstitutionalFlowAgent"},
     {"name": "Alternative Data",       "module": "agents.alternative_data_agent",  "class": "AlternativeDataAgent"},
     {"name": "Microstructure",         "module": "agents.microstructure_agent",    "class": "MicrostructureAgent"},
     {"name": "FED Sentiment",          "module": "agents.fed_sentiment_agent",     "class": "FedSentimentAgent"},
     {"name": "OnChain Agent",          "module": "agents.onchain_agent",           "class": "OnChainAgent"},
     {"name": "Geopolitical",           "module": "agents.geopolitical_agent",      "class": "GeopoliticalAgent"},
-    {"name": "Chaos Theory",           "module": "agents.chaos_agent",             "class": "ChaosAgent"},
     {"name": "Retail Psychology",      "module": "agents.retail_psychology_agent", "class": "RetailPsychologyAgent"},
     {"name": "Mode Manager",           "module": "core.mode_manager",              "class": "ModeManager"},
     {"name": "Session Manager",        "module": "core.session_manager",           "class": "session_score"},

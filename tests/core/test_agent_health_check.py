@@ -198,9 +198,9 @@ def test_format_short_status_error():
 
 # ─── AGENT_REGISTRY tests ─────────────────────────────────────────────────────
 
-def test_agent_registry_has_21_entries():
-    """AGENT_REGISTRY has exactly 21 entries"""
-    assert len(AGENT_REGISTRY) == 21
+def test_agent_registry_has_19_entries():
+    """AGENT_REGISTRY has exactly 19 entries (Elliott/Chaos deleted 2026-07-26 -- zero live usage)"""
+    assert len(AGENT_REGISTRY) == 19
 
 
 def test_agent_registry_all_have_required_keys():
