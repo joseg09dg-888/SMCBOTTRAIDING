@@ -140,6 +140,15 @@ class MarketStructure:
                         })
                         break
 
+        # BUG-BOS-ORDER (2026-07-26, panel SMC/quant): los eventos se generaban
+        # en el orden en que se FORMO el swing que origino cada uno, no en el
+        # orden en que se CONFIRMARON (confirmed_at). Un HH formado en la vela 20
+        # que tarda hasta la vela 190 en romperse quedaba ANTES en la lista que
+        # un LL formado en la vela 150 y roto en la 155 -- bos_events[-1] podia
+        # devolver un evento viejo en vez del ultimo real, y core/supervisor.py
+        # usa exactamente ese [-1] para decidir LONG/SHORT cuando el bias es
+        # neutral. Ordenar por confirmed_at garantiza que [-1] es el mas reciente.
+        bos_events.sort(key=lambda e: e["confirmed_at"])
         return bos_events
 
     def detect_choch(self) -> List[dict]:
@@ -169,6 +178,9 @@ class MarketStructure:
                         })
                         break
 
+        # BUG-BOS-ORDER (2026-07-26): mismo problema que detect_bos() -- ordenar
+        # por confirmed_at para que choch_events[-1] sea realmente el mas reciente.
+        choch_events.sort(key=lambda e: e["confirmed_at"])
         return choch_events
 
     def summary(self) -> str:

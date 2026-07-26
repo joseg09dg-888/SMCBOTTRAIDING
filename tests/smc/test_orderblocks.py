@@ -110,6 +110,39 @@ def test_bullish_ob_detected_at_forex_scale():
     assert len(blocks) >= 1, "OB detector debe encontrar impulsos reales a escala forex, no solo cripto"
 
 
+# ── BUG-OB-NO-INVALIDATION regression: mitigated OBs must be flagged ──
+
+def test_bullish_ob_flagged_mitigated_when_price_closes_below_zone():
+    """A bullish OB is invalidated (ICT: mitigated) once a later candle closes
+    below its zone_low. Before this fix, an OB stayed 'valid' forever and
+    could anchor a new trade's entry/OTE on an already-broken zone."""
+    # find_bullish_obs() iterates i in range(1, n-1), so the OB candle must
+    # sit at index >= 1 (index 0 is just a leading filler candle).
+    df = pd.DataFrame({
+        "open":  [100, 100, 99],
+        "high":  [101, 100.5, 109],
+        "low":   [99,  95,   97],
+        "close": [100, 96,   108],
+    })
+    # Extend with a later candle that closes below the OB's zone_low (95)
+    df = pd.concat([df, pd.DataFrame({
+        "open": [90], "high": [91], "low": [80], "close": [82],
+    })], ignore_index=True)
+    ob = OrderBlockDetector(df, atr_mult=0.01)
+    blocks = ob.find_bullish_obs()
+    assert len(blocks) >= 1
+    assert blocks[0]["mitigated"] is True
+
+
+def test_bullish_ob_not_mitigated_when_price_stays_above_zone(sample_ohlc):
+    ob = OrderBlockDetector(sample_ohlc)
+    blocks = ob.find_bullish_obs()
+    assert len(blocks) >= 1
+    assert all("mitigated" in b for b in blocks)
+    for b in blocks:
+        assert b["mitigated"] is False
+
+
 def test_atr_fallback_to_percentage_with_insufficient_data():
     # Con muy pocas velas (sin ATR14 posible), debe usar el umbral porcentual
     # de siempre -- no debe crashear ni comportarse distinto silenciosamente.

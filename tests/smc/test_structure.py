@@ -56,3 +56,40 @@ def test_summary_returns_string(bullish_trend_data):
     s = ms.summary()
     assert isinstance(s, str)
     assert "Estructura" in s or "BULLISH" in s.upper()
+
+
+def test_bos_events_sorted_by_confirmation_not_swing_formation_order():
+    """BUG-BOS-ORDER (2026-07-26): an HH that forms early (idx2, level=110)
+    but doesn't get broken until idx15 used to be appended BEFORE an LL that
+    forms later (idx10, level=80) but breaks quickly at idx12 -- because
+    detect_bos() iterated swings in formation order, not confirmation order.
+    bos_list[-1] returned the stale bearish@12 event instead of the truly
+    most-recent bullish@15 event. core/supervisor.py uses exactly bos_list[-1]
+    to decide LONG/SHORT when structural bias is neutral."""
+    highs  = [100, 102, 110, 105, 104, 103, 101, 100, 98, 96, 94, 96, 90, 92, 100, 118, 116, 114, 112, 110]
+    lows   = [95,  97,  100, 98,  97,  95,  93,  90,  88, 85, 80, 83, 75, 80, 85,  110, 108, 106, 104, 102]
+    closes = [98,  100, 105, 100, 99,  97,  95,  92,  90, 87, 85, 84, 78, 88, 95,  115, 112, 110, 108, 106]
+    df = pd.DataFrame({"high": highs, "low": lows, "close": closes})
+
+    ms = MarketStructure(df, swing_lookback=1)
+    bos_list = ms.detect_bos()
+
+    confirmed_ats = [e["confirmed_at"] for e in bos_list]
+    assert confirmed_ats == sorted(confirmed_ats), (
+        f"bos_list not sorted by confirmed_at: {confirmed_ats}"
+    )
+    # The bearish break (idx10 LL, confirmed at candle 12) happened
+    # chronologically BEFORE the bullish break (idx2 HH, confirmed at candle
+    # 15) even though the HH swing formed first -- the truly most recent
+    # confirmed event must be the bullish one.
+    assert bos_list[-1]["direction"] == "bullish"
+    assert bos_list[-1]["confirmed_at"] == 15
+
+
+def test_choch_events_are_sorted_by_confirmed_at(bearish_trend_data):
+    extra = pd.DataFrame({"high": [115], "low": [108], "close": [113]})
+    data = pd.concat([bearish_trend_data, extra], ignore_index=True)
+    ms = MarketStructure(data, swing_lookback=1)
+    choch_list = ms.detect_choch()
+    confirmed_ats = [e["confirmed_at"] for e in choch_list]
+    assert confirmed_ats == sorted(confirmed_ats)

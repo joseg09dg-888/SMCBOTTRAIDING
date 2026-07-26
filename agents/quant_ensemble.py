@@ -1,4 +1,23 @@
-﻿"""ML ensemble for trade prediction."""
+﻿"""ML ensemble for trade prediction.
+
+BUG-ENSEMBLE-NEVER-TRAINED-LIVE (2026-07-26, panel SMC/quant): .fit() is only
+ever called in this module's own tests -- nowhere in core/supervisor.py or
+agents/statistical_edge_agent.py is a real MLEnsemble instance ever trained.
+In production predict() always takes the `not self._is_fitted` branch below,
+so the RandomForest/GradientBoosting/LogisticRegression/ExtraTrees code is
+100% dead in the live loop -- what actually runs is a 2-feature sigmoid
+heuristic (momentum_score + above_ma20). This is NOT score-corrupting (the
+heuristic uses real price-derived features and has real variance, unlike
+Elliott/Chaos/hash()-based modules), just mislabeled as "ML ensemble".
+NOT wired to training/run_training.py's saved .pkl models: that script
+trains on SYNTHETIC/fabricated labels ("Generate synthetic training data
+based on SMC features"), not real trade outcomes -- loading those models
+here would dress the heuristic up as validated ML without it actually being
+grounded in real results, which is worse than being honest about what this
+is today. A real fix requires an actual labeled dataset from real closed
+trades (episodes.db) and a proper train/validate/retrain cadence -- open
+task, not attempted here.
+"""
 from dataclasses import dataclass, field
 import numpy as np
 

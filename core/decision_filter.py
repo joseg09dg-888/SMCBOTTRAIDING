@@ -32,10 +32,12 @@ class DecisionResult:
 
 # ── Score weights ──────────────────────────────────────────────────────────
 # SMC technical quality:   0-30 pts
-# ML / LSTM prediction:    0-25 pts
-# Sentiment (Glint):       0-20 pts
+# ML / LSTM prediction:    0-10 pts (circular direction-match bonus disabled
+#                          2026-07-26, see smc/ml_predictor.py)
+# Sentiment (Glint):       0-20 pts (direction score disabled, see smc/sentiment.py)
 # Risk / session / DD:     0-25 pts
-# Total:                    100 pts
+# Total:                    100 pts (max reachable is now lower; total is
+#                          still clipped to [0,100] below)
 
 
 class DecisionFilter:

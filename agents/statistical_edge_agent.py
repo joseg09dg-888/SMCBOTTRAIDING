@@ -33,10 +33,19 @@ class EdgeResult:
 
 class QuantEdgeAgent:
     """
-    PhD-level quantitative edge analysis. Integrates:
+    Quantitative edge analysis. Integrates:
     SP2: QuantStats, SP3: RegimeDetector, SP4: FactorAnalyzer
-    SP5: AnomalyDetector, SP6: MLEnsemble, SP7: BayesianOptimizer
-    SP8: OrderFlowAnalyzer, SP9: StressTester, SP10: CollectiveIntelligence
+    SP5: AnomalyDetector, SP6: MLEnsemble
+    SP8: OrderFlowAnalyzer, SP9: StressTester
+
+    ELIMINADOS 2026-07-26 (panel SMC/quant, mismo criterio que Elliott/Chaos):
+    SP7 (BayesianOptimizer/agents/quant_optimizer.py) nunca se importaba aqui --
+    solo existia en este docstring, cero uso en produccion. SP10
+    (CollectiveIntelligence/agents/quant_intel.py) se instanciaba pero su unico
+    metodo de scoring (calculate_collective_score) nunca se llamaba desde
+    ningun lado (ci_pts ya estaba hardcodeado a 0 desde 2026-07-14) -- todo
+    hash(symbol)%100 disfrazado de "consenso de mercado". Ambos modulos y sus
+    tests fueron borrados por completo.
     """
 
     def __init__(self, capital: float = 1000.0):
@@ -81,12 +90,6 @@ class QuantEdgeAgent:
             print(f"[EDGE] StressTester no disponible: {e}", flush=True)
             self.stress_tester = None
         try:
-            from agents.quant_intel import CollectiveIntelligence
-            self.collective = CollectiveIntelligence()
-        except Exception as e:
-            print(f"[EDGE] CollectiveIntelligence no disponible: {e}", flush=True)
-            self.collective = None
-        try:
             from agents.quant_flow import OrderFlowAnalyzer
             self.flow_analyzer = OrderFlowAnalyzer()
         except Exception as e:
@@ -104,9 +107,21 @@ class QuantEdgeAgent:
         funding_rate: float = 0.0,
         days_since_halving: int = -1,
         as_of: Optional[datetime] = None,
+        open_positions: Optional[list] = None,
     ) -> EdgeResult:
 
         dt = as_of or datetime.now(timezone.utc)
+        # BUG-SYNTHETIC-PRICE-FALSE-SIGNAL (2026-07-26, panel SMC/quant): the
+        # synthetic fallback below is a perfectly linear price ramp (near-zero
+        # variance, constant positive drift) used only to avoid crashing when
+        # `df` came back empty (a real data-outage scenario). Regime detection
+        # classified that ramp as TRENDING_UP with high confidence and the ML
+        # ensemble heuristic saw pure positive momentum -- both fired their
+        # full score bonus (+10 regime, up to +15 ensemble) exactly when the
+        # score should be neutral (missing data), not positive. `_prices_are_real`
+        # gates those score contributions below; the raw diagnostic fields are
+        # still computed/returned for display, only the SCORE impact is zeroed.
+        _prices_are_real = bool(prices)
         prices = prices or [100.0 + i * 0.5 for i in range(200)]
         trades = trades or []
 
@@ -173,51 +188,51 @@ class QuantEdgeAgent:
             of_pts = sig.pts
 
         # SP9 — Stress test
+        # BUG-STRESS-ALWAYS-OK (2026-07-26, panel SMC/quant): open_positions
+        # nunca se pasaba, y quant_stress.py's run_scenario() sin
+        # open_positions calcula loss=equity*abs(move%)*0.1 -- el `equity` se
+        # cancela matematicamente al dividir loss/equity, dando
+        # loss_pct=abs(move%)*0.1 SIEMPRE, sin importar el capital ni las
+        # posiciones reales. Ni el peor escenario (Luna Crash -99%) supera el
+        # 80% de "supervivencia", asi que stress_passed era True el 100% de
+        # las veces, para siempre -- y format_telegram() mostraba "Stress
+        # Test: OK" como si fuera un chequeo real. Ahora se pasa el
+        # notional real de las posiciones abiertas (volume*contract_size*
+        # price_open, vía metatrader_connector.get_positions()) para que la
+        # perdida simulada refleje la exposicion real de la cuenta.
         stress_passed = True
         if self.stress_tester:
-            report = self.stress_tester.run_all_scenarios(self.capital)
+            report = self.stress_tester.run_all_scenarios(self.capital, open_positions=open_positions)
             stress_passed = report.survival_rate >= 0.6
 
-        # SP10 — Collective intelligence
-        # DESACTIVADO 2026-07-14: auditoria de los 9 agentes de enriquecimiento activos
-        # encontro que get_consensus_bias()/get_insider_activity() en quant_intel.py
-        # derivan "consenso de mercado" e "insider activity" de hash(symbol) % 100 --
-        # una constante por simbolo sin relacion con datos de mercado reales (el propio
-        # codigo la etiqueta "simulated"/"estimado"). Igual que Elliott (auditoria
-        # 2026-07-06), esto sumaba un sesgo fijo por simbolo al score real en cada
-        # trade, sin discriminar ganadoras de perdedoras. Se desconecta su
-        # contribucion.
-        # CORRECCION 2026-07-26 (auditoria agentes de enriquecimiento): el
-        # comentario de arriba decia que "el resto de calculate_collective_
-        # score() (papers academicos) no se toca porque no depende de
-        # hash()" -- eso es inexacto. calculate_collective_score() en si
-        # misma NUNCA se llama desde este archivo (grep confirma que solo
-        # aparece en su propia definicion y en tests) -- el modulo completo
-        # de matching de papers academicos esta muerto en produccion, no
-        # solo la parte con hash(). ci_pts=0 refleja correctamente que SP10
-        # no aporta nada hoy, pero por la razon completa, no la parcial que
-        # el comentario original afirmaba.
+        # SP10 — Collective intelligence: ELIMINADO 2026-07-26 (ver docstring
+        # de la clase). agents/quant_intel.py fue borrado por completo --
+        # ci_pts se mantiene en 0 solo por compatibilidad con el campo
+        # collective_intelligence_pts de EdgeResult.
         ci_pts = 0
 
         # Composite edge score 0-100
         score = 50  # base
 
-        # Regime adjustment
-        regime_bonus = {"trending_up": 10, "trending_down": 8, "ranging": -5, "high_vol": -10}
-        score += regime_bonus.get(regime, 0)
+        # Regime adjustment -- gated by _prices_are_real, see comment above
+        if _prices_are_real:
+            regime_bonus = {"trending_up": 10, "trending_down": 8, "ranging": -5, "high_vol": -10}
+            score += regime_bonus.get(regime, 0)
 
-        # Ensemble probability
-        if ensemble_prob >= 0.70: score += 15
-        elif ensemble_prob >= 0.65: score += 10
-        elif ensemble_prob >= 0.55: score += 5
-        elif ensemble_prob < 0.45: score -= 10
+        # Ensemble probability -- gated by _prices_are_real
+        if _prices_are_real:
+            if ensemble_prob >= 0.70: score += 15
+            elif ensemble_prob >= 0.65: score += 10
+            elif ensemble_prob >= 0.55: score += 5
+            elif ensemble_prob < 0.45: score -= 10
 
         # Anomaly score (-15 to +15) → scale to ±10
         score += int(anomaly_score * 0.67)
 
-        # Factor IR
-        if factor_ir > 0.5: score += 8
-        elif factor_ir > 0.3: score += 4
+        # Factor IR -- gated by _prices_are_real
+        if _prices_are_real:
+            if factor_ir > 0.5: score += 8
+            elif factor_ir > 0.3: score += 4
 
         # Collective intelligence
         score += ci_pts

@@ -395,13 +395,21 @@ class MT5Connector:
             positions = mt5.positions_get()
             if positions is None:
                 return []
-            return [{"ticket": p.ticket, "symbol": p.symbol,
-                     "type": "BUY" if p.type == 0 else "SELL",
-                     "volume": p.volume, "profit": p.profit,
-                     "price_open": p.price_open,
-                     "price_current": p.price_current,
-                     "sl": p.sl, "tp": p.tp,
-                     "time": p.time} for p in positions]
+            result = []
+            for p in positions:
+                sym_info = mt5.symbol_info(p.symbol)
+                contract_size = sym_info.trade_contract_size if sym_info else 100_000.0
+                result.append({
+                    "ticket": p.ticket, "symbol": p.symbol,
+                    "type": "BUY" if p.type == 0 else "SELL",
+                    "volume": p.volume, "profit": p.profit,
+                    "price_open": p.price_open,
+                    "price_current": p.price_current,
+                    "sl": p.sl, "tp": p.tp,
+                    "time": p.time,
+                    "contract_size": contract_size,
+                })
+            return result
         except Exception as e:
             logger.error(f"MT5 get_positions error: {e}")
             return []

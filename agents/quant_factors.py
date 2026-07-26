@@ -50,10 +50,31 @@ class FactorAnalyzer:
         if len(returns) < window: return 0.0
         return float(np.std(returns[-window:], ddof=1))
 
-    def analyze_factor(self, factor_name, factor_values, forward_returns):
+    @staticmethod
+    def _rolling_ic_series(factor_values, forward_returns, window=20):
+        n = min(len(factor_values), len(forward_returns))
+        if n < window + 1:
+            return []
+        return [
+            FactorAnalyzer.calculate_ic(factor_values[end - window:end], forward_returns[end - window:end])
+            for end in range(window, n + 1)
+        ]
+
+    def analyze_factor(self, factor_name, factor_values, forward_returns, ic_window=20):
         ic = self.calculate_ic(factor_values, forward_returns)
         n = len(factor_values)
-        ir = self.calculate_ir([ic])
+        # BUG-FACTOR-IR-ALWAYS-ZERO (2026-07-26, panel SMC/quant): IR needs a
+        # TIME SERIES of ICs (variance of the signal's predictive power over
+        # time) to be meaningful. Wrapping a single point-in-time IC in a
+        # 1-element list made calculate_ir() return 0.0 unconditionally (it
+        # requires len(ic_series)>=2) -- so the +8/+4 factor_ir bonus in
+        # statistical_edge_agent.py could never fire, no matter how strong
+        # the real momentum/reversal signal was. Compute a real rolling-
+        # window IC series instead (falls back to 0.0 when there isn't
+        # enough history for 2+ windows, same as before, but no longer
+        # unconditionally).
+        ic_series = self._rolling_ic_series(factor_values, forward_returns, ic_window)
+        ir = self.calculate_ir(ic_series)
         t = self.calculate_t_stat(ic, n)
         direction = "long" if ic > 0.05 else "short" if ic < -0.05 else "neutral"
         return FactorResult(factor_name, ic, ir, t, abs(t)>1.96, direction)

@@ -1021,7 +1021,12 @@ class TradingSupervisor(PositionGuardsMixin):
         current_close = float(df["close"].iloc[-1]) if len(df) > 0 else 0.0
         _max_poi_dist  = current_close * 0.01 if current_close > 0 else float("inf")
         poi_zones = []
-        _recent_obs = sorted(bull_obs + bear_obs, key=lambda o: o.get("index", 0), reverse=True)
+        # BUG-OB-NO-INVALIDATION (2026-07-26): excluir OBs ya mitigados (precio
+        # cerro mas alla de la zona despues de formarse) -- ver smc/orderblocks.py.
+        _recent_obs = sorted(
+            (o for o in (bull_obs + bear_obs) if not o.get("mitigated", False)),
+            key=lambda o: o.get("index", 0), reverse=True,
+        )
         for ob in _recent_obs[:5]:
             zone_mid = (ob.get("zone_high", 0) + ob.get("zone_low", 0)) / 2.0
             if zone_mid > 0 and abs(zone_mid - current_close) <= _max_poi_dist:
@@ -1391,8 +1396,22 @@ class TradingSupervisor(PositionGuardsMixin):
                 _real_trades = [{"pnl": r[0]} for r in _rows if r[0] is not None]
             except Exception:
                 pass
+            # BUG-STRESS-ALWAYS-OK (2026-07-26): sin open_positions, el stress
+            # test siempre "pasaba" (ver comentario en statistical_edge_agent.py).
+            # Pasar el notional real (volume*contract_size*price_open) de las
+            # posiciones MT5 abiertas para que la perdida simulada refleje la
+            # exposicion real de la cuenta.
+            _open_positions = []
+            try:
+                for _p in self.mt5.get_positions():
+                    _open_positions.append({
+                        "size": abs(_p.get("volume", 0)) * _p.get("contract_size", 100_000) * _p.get("price_open", 0)
+                    })
+            except Exception:
+                pass
             edge = self._edge.calculate_full_edge(
-                symbol=signal.symbol, prices=prices, trades=_real_trades
+                symbol=signal.symbol, prices=prices, trades=_real_trades,
+                open_positions=_open_positions,
             )
             return self._edge.get_decision_pts(edge)
         def _footprint():

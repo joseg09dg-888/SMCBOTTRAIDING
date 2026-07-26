@@ -49,32 +49,10 @@ def test_deterministic():
     e=MLEnsemble(); f={"momentum_score":0.5,"above_ma20":1.0}
     assert e.predict(f).probability==pytest.approx(e.predict(f).probability)
 
-from agents.quant_optimizer import BayesianOptimizer, OptimizationResult
-def obj(p): return -(p.get("score_threshold",60)-70)**2-(p.get("min_rr",2)-2.5)**2
-def test_optimize_returns(): assert isinstance(BayesianOptimizer(42).optimize(obj,n_trials=20),OptimizationResult)
-def test_optimize_better():
-    dv=obj(BayesianOptimizer.DEFAULT_PARAMS)
-    assert BayesianOptimizer(42).optimize(obj,n_trials=30).best_value>=dv
-def test_optimize_n_trials(): assert BayesianOptimizer(42).optimize(obj,n_trials=15).n_trials==15
-def test_params_in_bounds():
-    r=BayesianOptimizer(42).optimize(obj,n_trials=20)
-    for k,v in r.best_params.items():
-        if k in BayesianOptimizer.PARAM_BOUNDS:
-            lo,hi=BayesianOptimizer.PARAM_BOUNDS[k]; assert lo<=v<=hi
-def test_specific_params():
-    r=BayesianOptimizer(42).optimize(obj,param_names=["score_threshold","min_rr"],n_trials=20)
-    assert "score_threshold" in r.best_params
-def test_convergence_valid():
-    r=BayesianOptimizer(42).optimize(obj,n_trials=20)
-    assert 0<=r.convergence_trial<=20
-def test_reproducible():
-    r1=BayesianOptimizer(42).optimize(obj,n_trials=10)
-    r2=BayesianOptimizer(42).optimize(obj,n_trials=10)
-    assert abs(r1.best_value-r2.best_value)<1e-6
-def test_clip_params():
-    c=BayesianOptimizer.clip_params({"score_threshold":200.0,"min_rr":-5.0})
-    assert c["score_threshold"]<=BayesianOptimizer.PARAM_BOUNDS["score_threshold"][1]
-    assert c["min_rr"]>=BayesianOptimizer.PARAM_BOUNDS["min_rr"][0]
+# agents/quant_optimizer.py (BayesianOptimizer) ELIMINADO 2026-07-26 (panel
+# SMC/quant): nunca se importaba desde statistical_edge_agent.py, solo
+# aparecia en un comentario de docstring -- cero uso en produccion, mismo
+# criterio que Elliott/Chaos. Ver agents/statistical_edge_agent.py.
 
 from agents.quant_flow import OrderFlowAnalyzer, OrderFlowSignal
 def test_imbalance_all_bids(): assert OrderFlowAnalyzer.calculate_imbalance([100,200,150],[])==pytest.approx(1.0)
@@ -116,24 +94,12 @@ def test_not_found(): assert StressTester().get_scenario_by_name("doesnotexist")
 def test_max_loss(): assert StressTester.estimate_max_loss_pct(-20.0,1.0,0.1)==pytest.approx(0.02)
 def test_max_loss_clamped(): assert StressTester.estimate_max_loss_pct(-200.0,5.0,1.0)<=1.0
 
-from agents.quant_intel import CollectiveIntelligence, MarketConsensus
-def test_knowledge_not_empty(): assert len(CollectiveIntelligence.ACADEMIC_KNOWLEDGE)>=5
-def test_consensus_type(): assert isinstance(CollectiveIntelligence().get_consensus_bias("BTCUSDT"),MarketConsensus)
-def test_consensus_sum():
-    c=CollectiveIntelligence().get_consensus_bias("ETHUSDT")
-    assert abs(c.bullish_pct+c.bearish_pct+c.neutral_pct-1.0)<0.05
-def test_consensus_deterministic():
-    ci=CollectiveIntelligence()
-    assert ci.get_consensus_bias("BTC").bullish_pct==ci.get_consensus_bias("BTC").bullish_pct
-def test_papers_filter():
-    for p in CollectiveIntelligence().get_relevant_papers(min_relevance=0.8): assert p.relevance_score>=0.8
-def test_papers_all(): assert len(CollectiveIntelligence().get_relevant_papers(min_relevance=0.0))==len(CollectiveIntelligence.ACADEMIC_KNOWLEDGE)
-def test_edge_momentum(): assert CollectiveIntelligence().get_strategy_edge_from_papers(["momentum","BOS"])>0
-def test_edge_no_match(): assert CollectiveIntelligence().get_strategy_edge_from_papers(["xyz_unknown"])==0.0
-def test_insider_type(): ia=CollectiveIntelligence().get_insider_activity("BTC"); assert ia.action in ("buy","sell","neutral")
-def test_insider_pts(): assert -5<=CollectiveIntelligence().get_insider_activity("ETH").pts<=5
-def test_collective_range(): assert -10<=CollectiveIntelligence().calculate_collective_score("BTC",["OB","momentum"])<=10
-def test_collective_int(): assert isinstance(CollectiveIntelligence().calculate_collective_score("ETH"),int)
+# agents/quant_intel.py (CollectiveIntelligence) ELIMINADO 2026-07-26 (panel
+# SMC/quant): calculate_collective_score() nunca se llamaba desde ningun
+# lado (ci_pts ya estaba hardcodeado a 0), y get_consensus_bias()/
+# get_insider_activity() derivaban de hash(symbol)%100 -- una constante por
+# simbolo sin relacion con datos reales. Mismo criterio que Elliott/Chaos.
+# Ver agents/statistical_edge_agent.py.
 
 from agents.statistical_edge_agent import QuantEdgeAgent, EdgeResult
 def test_edge_returns_result(): assert isinstance(QuantEdgeAgent().calculate_full_edge("BTCUSDT"),EdgeResult)
@@ -144,6 +110,34 @@ def test_edge_with_trades():
     trades=[{"pnl":20}]*6+[{"pnl":-10}]*4
     r=QuantEdgeAgent(1000).calculate_full_edge(trades=trades)
     assert r.expectancy>0
+def test_edge_stress_test_can_fail_with_real_exposure():
+    """BUG-STRESS-ALWAYS-OK (2026-07-26): calculate_full_edge() used to never
+    pass open_positions to run_all_scenarios(), and without it quant_stress.py
+    cancels out `equity` in its loss_pct formula -- stress_test_passed was
+    True on every single call, forever, regardless of real exposure. With
+    real open_positions notional passed through, a tiny account heavily
+    exposed relative to its capital must be able to fail the stress test."""
+    tiny_capital = 100.0
+    huge_exposure = [{"size": 100_000.0}]  # far larger than capital
+    r = QuantEdgeAgent(tiny_capital).calculate_full_edge(open_positions=huge_exposure)
+    assert r.stress_test_passed is False
+
+
+def test_edge_score_not_inflated_by_synthetic_price_fallback():
+    """BUG-SYNTHETIC-PRICE-FALSE-SIGNAL (2026-07-26): when prices=None (real
+    data outage), calculate_full_edge() used to fall back to a perfectly
+    linear price ramp -- regime detection saw that as TRENDING_UP with high
+    confidence and the ML ensemble heuristic saw pure positive momentum, both
+    awarding their full score bonus exactly when the score should be neutral.
+    The same ramp passed explicitly as real data should score higher than
+    the no-data case, proving the fallback's bonus is now gated off."""
+    agent = QuantEdgeAgent()
+    r_no_data = agent.calculate_full_edge(prices=None)
+    ramp = [100.0 + i * 0.5 for i in range(200)]
+    r_explicit = agent.calculate_full_edge(prices=ramp)
+    assert r_explicit.edge_score > r_no_data.edge_score
+
+
 def test_decision_pts_high():
     from agents.statistical_edge_agent import EdgeResult
     e=EdgeResult(True,0.5,0.1,0.01,"trending_up","OB",2.5,0.75,True,0.6,5,"VERY_HIGH",0.005,90)

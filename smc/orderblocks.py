@@ -15,10 +15,21 @@ class OrderBlockDetector:
     ZERO order blocks, always, for the entire live forex pipeline since this
     bot's inception -- the toy test fixtures (8 rows, +-10% synthetic moves)
     never caught this because they don't reflect real forex price scale.
-    Fixed: impulse is now ATR-relative (matches smc/structure.py's own
-    displacement check, atr*1.5), asset-scale-agnostic -- works for both
+    Fixed: impulse is now ATR-relative, asset-scale-agnostic -- works for both
     crypto and forex. Falls back to the old percentage threshold only when
     there isn't enough data for a 14-period ATR (small/synthetic dataframes).
+
+    BUG-ATR-MULT-DOC-MISMATCH (2026-07-26, panel SMC/quant): this docstring
+    used to claim atr_mult "matches smc/structure.py's own displacement check,
+    atr*1.5" but the actual default below has always been 1.0 since this class
+    was introduced (verified via git blame -- both lines landed in the same
+    commit). Every live call site (core/supervisor.py, core/decision_filter.py,
+    agents/analysis_agent.py) uses the default, so live OBs have always
+    qualified at 1.0x ATR, not 1.5x. NOT changed here to 1.5x without a real
+    backtest sweep first (see backtest_before_anecdote_fixes memory rule --
+    this changes which OBs qualify and needs the same validation discipline as
+    PEAK_MIN_USD/MIN_RR/STAGNANT_HOURS). Open task: sweep atr_mult in
+    scripts/backtest_multiyear.py before touching this default.
     """
 
     def __init__(self, df: pd.DataFrame, impulse_threshold: float = 0.015, atr_mult: float = 1.0):
@@ -55,6 +66,13 @@ class OrderBlockDetector:
             is_impulse = (next_move >= atr * self.atr_mult if atr
                           else (next_move / closes[i]) > self.threshold)
             if is_bearish and is_impulse:
+                # BUG-OB-NO-INVALIDATION (2026-07-26, panel SMC/quant): un OB
+                # nunca se invalidaba/mitigaba aunque el precio ya hubiera
+                # cerrado por debajo de la zona despues de formarse -- podia
+                # anclar el entry/OTE de un trade nuevo sobre una zona ya
+                # rota. ICT considera un bullish OB invalidado si un cierre
+                # posterior cae por debajo de zone_low.
+                mitigated = bool((closes[i + 1:] < lows[i]).any())
                 obs.append({
                     "type": "bullish_ob",
                     "index": i,
@@ -63,6 +81,7 @@ class OrderBlockDetector:
                     "ob_close": closes[i],
                     "ob_open": opens[i],
                     "strength": round(next_move / closes[i] * 100, 3),
+                    "mitigated": mitigated,
                 })
         return obs
 
@@ -83,6 +102,10 @@ class OrderBlockDetector:
             is_impulse = (next_move >= atr * self.atr_mult if atr
                           else (next_move / closes[i]) > self.threshold)
             if is_bullish and is_impulse:
+                # BUG-OB-NO-INVALIDATION (2026-07-26): mismo criterio que
+                # find_bullish_obs -- un bearish OB se invalida si un cierre
+                # posterior sube por encima de zone_high.
+                mitigated = bool((closes[i + 1:] > highs[i]).any())
                 obs.append({
                     "type": "bearish_ob",
                     "index": i,
@@ -91,6 +114,7 @@ class OrderBlockDetector:
                     "ob_close": closes[i],
                     "ob_open": opens[i],
                     "strength": round(next_move / closes[i] * 100, 3),
+                    "mitigated": mitigated,
                 })
         return obs
 

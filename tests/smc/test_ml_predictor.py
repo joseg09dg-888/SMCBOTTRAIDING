@@ -35,17 +35,23 @@ def test_confidence_between_0_and_1(ohlcv_trend):
     assert 0.0 <= result.confidence <= 1.0
 
 
-def test_score_between_0_and_25(ohlcv_trend):
+def test_score_between_0_and_10(ohlcv_trend):
     pred = MLPredictor()
     result = pred.predict(ohlcv_trend, bias="bullish")
-    assert 0 <= result.score <= 25
+    assert 0 <= result.score <= 10
 
 
-def test_bullish_bias_scores_higher_on_uptrend(ohlcv_trend):
+def test_score_is_independent_of_bias_argument(ohlcv_trend):
+    """BUG-ML-CIRCULAR-CONFIRMATION (2026-07-26): score used to award +15 for
+    direction==bias, comparing this predictor's own direction (derived from
+    the same df) against a bias computed upstream on that same df -- fake
+    confluence, not independent confirmation. Score must now depend only on
+    internal feature agreement (confidence), not on what bias was passed."""
     pred = MLPredictor()
     r_bull = pred.predict(ohlcv_trend, bias="bullish")
     r_bear = pred.predict(ohlcv_trend, bias="bearish")
-    assert r_bull.score >= r_bear.score
+    r_neutral = pred.predict(ohlcv_trend, bias="neutral")
+    assert r_bull.score == r_bear.score == r_neutral.score
 
 
 def test_direction_is_valid_string(ohlcv_trend):

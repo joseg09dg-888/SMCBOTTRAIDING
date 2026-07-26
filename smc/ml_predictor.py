@@ -18,9 +18,23 @@ class MLPredictor:
     Architecture is designed to be replaced by a real LSTM: swap predict() with
     a model.predict() call and keep the same PredictionResult interface.
 
-    Score breakdown (max 25):
-      - Direction match:    15 pts
+    Score breakdown (max 10):
       - Confidence > 70%:   10 pts
+      - Confidence > 55%:    5 pts
+
+    BUG-ML-CIRCULAR-CONFIRMATION (2026-07-26, panel SMC/quant): this used to
+    also award +15 pts when `direction` (derived from this df's own
+    momentum/trend/htf_bias) matched the `bias` argument -- but `bias` is
+    itself the SMC structural bias computed on that SAME df upstream
+    (core/decision_filter.py calls _score_smc(df, bias) and
+    self._ml.predict(df, bias=bias) with the identical value). That wasn't an
+    independent "ML" confirmation, it was mostly the bot rewarding itself for
+    agreeing with its own conclusion using features derived from the same
+    price window -- same fake-confluence pattern as the disabled sentiment
+    alignment score (smc/sentiment.py). Disabled. The confidence bonus below
+    is kept: it measures internal agreement among this predictor's OWN
+    momentum/trend/htf features with each other, not agreement with the
+    externally-supplied bias, so it isn't circular the same way.
     """
 
     def predict(self, df: pd.DataFrame, bias: str = "neutral") -> PredictionResult:
@@ -29,8 +43,6 @@ class MLPredictor:
         confidence = self._calc_confidence(features)
 
         score = 0
-        if direction == bias and bias != "neutral":
-            score += 15
         if confidence > 0.70:
             score += 10
         elif confidence > 0.55:

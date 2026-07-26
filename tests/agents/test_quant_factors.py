@@ -92,6 +92,18 @@ def test_analyze_factor_returns_factor_result():
     assert result.significant is True or result.significant is False
 
 
+def test_analyze_factor_ir_is_nonzero_for_real_signal():
+    """BUG-FACTOR-IR-ALWAYS-ZERO (2026-07-26): ir used to be computed via
+    calculate_ir([ic]) -- a single value wrapped in a 1-element list always
+    returns 0.0 (requires len>=2). With a consistently correlated
+    factor/return series (100 points, corr=0.7), the rolling-window IC
+    series must now produce a real, nonzero IR."""
+    factors, returns = make_correlated(n=100, corr=0.7)
+    fa = FactorAnalyzer()
+    result = fa.analyze_factor("test", factors, returns)
+    assert result.ir != 0.0
+
+
 def test_analyze_all_factors_returns_list():
     np.random.seed(42)
     prices = list(np.cumprod(1 + np.random.normal(0.001, 0.02, 100)) * 100)

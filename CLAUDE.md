@@ -125,8 +125,8 @@ trading_agent/
 │   ├── wakeup_recovery.py     ← Recuperación post-apagado
 │   └── mode_manager.py        ← AUTO/SEMI/PAUSED/HYBRID
 │
-├── agents/ (22 agentes -- elliott_agent.py y chaos_agent.py ELIMINADOS 2026-07-26,
-│              cero uso en vivo, ver seccion 16)
+├── agents/ (20 agentes -- elliott_agent.py, chaos_agent.py, quant_optimizer.py
+│              y quant_intel.py ELIMINADOS 2026-07-26, cero uso en vivo, ver seccion 16)
 │   ├── signal_agent.py         ← Genera TradeSignal con entry/SL/TP
 │   ├── analysis_agent.py       ← SMCAnalysisAgent (usa Claude API)
 │   ├── lunar_agent.py          ← Ciclos lunares → sesgo trading (solo display /lunar, sin scoring)
@@ -141,16 +141,15 @@ trading_agent/
 │   ├── report_agent.py           ← Reportes semanal/mensual
 │   ├── screen_vision_agent.py    ← Claude Vision + mirror mode
 │   ├── footprint_agent.py        ← Delta, absorción, imbalances
-│   ├── statistical_edge_agent.py ← QuantEdgeAgent (10 módulos quant)
+│   ├── statistical_edge_agent.py ← QuantEdgeAgent (7 modulos -- quant_optimizer.py
+│   │                                y quant_intel.py ELIMINADOS 2026-07-26, cero uso real)
 │   ├── quant_stats.py            ← VaR/CVaR/Kelly/Monte Carlo
-│   ├── quant_regime.py           ← HMM régimen de mercado
+│   ├── quant_regime.py           ← regimen de mercado (reglas, no HMM real)
 │   ├── quant_factors.py          ← IC/IR factor analysis
-│   ├── quant_anomalies.py        ← Calendar effects, funding extremos
-│   ├── quant_ensemble.py         ← ML ensemble (sklearn)
-│   ├── quant_optimizer.py        ← Bayesian optimization (Optuna)
-│   ├── quant_flow.py             ← OFI, VPIN, Kyle impact
-│   ├── quant_stress.py           ← 10 crash scenarios históricos
-│   └── quant_intel.py            ← Papers académicos, insider activity
+│   ├── quant_anomalies.py        ← Calendar effects (funding rate nunca llega, siempre 0)
+│   ├── quant_ensemble.py         ← heuristico momentum+MA20 (sklearn nunca se entrena en vivo)
+│   ├── quant_flow.py             ← OFI, VPIN, Kyle impact (nunca recibe bid/ask reales, siempre +0)
+│   └── quant_stress.py           ← 10 crash scenarios históricos
 │
 ├── smc/
 │   ├── structure.py            ← BOS/CHoCH/HH/HL/LH/LL
@@ -418,6 +417,20 @@ Con $200K fondead al 90% profit split:
 - `LunarCycleAgent`/`EnergyFrequencyAgent` se **mantienen** — a diferencia de Elliott/Chaos, estos SÍ se usan de verdad en vivo vía `/lunar` y `/energy` (Telegram instancia su propia copia para mostrar el dato). Solo su contribución al SCORE de trading fue desactivada antes (sin evidencia de edge estadístico), no su funcionalidad de display.
 - `core/supervisor.py`: removidas las instancias muertas `self._lunar`, `self._elliott`, `self._chaos`, `self._energy` (se creaban en `__init__` pero nunca se leían en ningún otro lado del archivo) y sus imports.
 - Agentes activos en enrichment pipeline: 9 (antes 13 — bajó de 13 a 9 al eliminar Lunar/Elliott/Chaos/Energy, que igual sumaban 0 puntos siempre).
+
+**ACTUALIZACIÓN 2026-07-26 (2da ronda) — panel de 5 agentes expertos en paralelo auditando el motor SMC técnico (structure.py/orderblocks.py/volume_profile.py/ml_predictor.py) y el suite quant completo (9 módulos), instrucción del usuario "no pares ni preguntes hasta terminar de arreglar todo":**
+- **CRÍTICO — `smc/structure.py`**: `detect_bos()`/`detect_choch()` devolvían eventos ordenados por cuándo se FORMÓ el swing que los origina, no por cuándo se CONFIRMARON (`confirmed_at`). Un HH formado en la vela 20 que tarda hasta la 190 en romperse quedaba antes en la lista que un LL formado en la 150 y roto en la 155 — `bos_list[-1]` (usado en `core/supervisor.py` para decidir LONG/SHORT cuando el bias es neutral) podía devolver el evento viejo en vez del real más reciente. Arreglado: ambas listas se ordenan por `confirmed_at` antes de devolverse. Test de regresión con caso adversarial real en `tests/smc/test_structure.py`.
+- **`smc/orderblocks.py`**: los Order Blocks nunca se invalidaban aunque el precio ya hubiera cerrado más allá de la zona — podían anclar el entry/OTE de un trade nuevo sobre una zona ya rota. Se agregó el campo `mitigated` (bool) a cada OB, calculado real contra cierres posteriores; `core/supervisor.py` ahora filtra OBs mitigados antes de elegir el POI. También se corrigió un docstring falso que afirmaba `atr_mult=1.5` cuando el default real siempre fue `1.0` desde que se introdujo (verificado con git blame) — NO se cambió el valor real sin backtest primero (ver `backtest_before_anecdote_fixes`), solo se corrigió la documentación falsa y se dejó como tarea abierta.
+- **`smc/ml_predictor.py`**: el bonus de +15pts por "direction match" comparaba la dirección del propio predictor (derivada de momentum/trend/htf de la MISMA vela) contra el `bias` que YA viene del sesgo estructural SMC calculado sobre esa misma vela — el bot se premiaba a sí mismo por estar de acuerdo consigo mismo, no una confirmación independiente de "ML". Desactivado (score máximo bajó de 25 a 10); se mantiene el bonus de confianza (agreement interno de sus propias features), que sí varía con datos reales.
+- **`smc/volume_profile.py`**: código 100% muerto (POC/VAH/VAL/VWAP matemáticamente correctos, pero `SMCAnalysisAgent` que los usa nunca se llama en el loop de escaneo; `/analysis` en Telegram es un texto fijo). No se tocó (matemática correcta, solo dormant, igual que ReportAgent/ScreenVisionAgent en la lista de dormant de arriba).
+- **`agents/quant_stress.py` / `statistical_edge_agent.py`**: el stress test contra 10 crashes históricos SIEMPRE "pasaba" (`stress_passed=True` garantizado) porque `open_positions` nunca se pasaba, y sin eso la fórmula de pérdida cancela matemáticamente el `equity`. Telegram mostraba "Stress Test: ✅ OK" como si fuera un chequeo real en cada trade. Arreglado: `metatrader_connector.get_positions()` ahora incluye `contract_size` real (vía `mt5.symbol_info`), y `core/supervisor.py`/`statistical_edge_agent.py` calculan el notional real (`volume*contract_size*price_open`) de las posiciones abiertas y lo pasan al stress test.
+- **`agents/quant_factors.py`**: `factor_ir` era 0.0 garantizado siempre — `calculate_ir()` requiere una serie temporal de ≥2 ICs pero se le pasaba un solo IC envuelto en lista de 1 elemento. El bonus +8/+4 del score nunca podía activarse sin importar la fuerza real de la señal. Arreglado con una serie de IC por ventana rodante (20 velas) real.
+- **`agents/quant_optimizer.py`** (Bayesian/Optuna): **ELIMINADO por completo** — nunca se importaba en `statistical_edge_agent.py`, solo existía en un comentario de docstring ("SP7"). Cero uso real, mismo criterio que Elliott/Chaos.
+- **`agents/quant_intel.py`** (papers académicos/insider activity): **ELIMINADO por completo** — ya se sabía que `get_consensus_bias()`/`get_insider_activity()` eran `hash(symbol)%100` disfrazado (desactivado 2026-07-14), y esta auditoría confirmó que ni siquiera `calculate_collective_score()` se llama desde ningún lado. Mismo criterio que Elliott/Chaos.
+- **`agents/quant_flow.py`** (OFI/VPIN/Kyle impact): confirmado 100% inalcanzable en vivo — `bid_volumes`/`ask_volumes` nunca se pasan desde ningún conector (el bot solo tiene datos OHLCV, no tick/L2 real). No se tocó — inventar un bid/ask falso desde velas sería peor que no tener el dato. Contribuye 0 siempre, sin riesgo.
+- **`agents/quant_ensemble.py`**: el "ML ensemble (sklearn)" nunca se entrena en vivo (`.fit()` solo se llama en tests) — cae siempre al heurístico de respaldo (momentum + posición vs MA20). No corrompe el score (el heurístico sí varía con datos reales), pero está mal etiquetado como "ML". No se tocó (requiere decisión de diseño: cargar modelos ya entrenados por `training/run_training.py` que hoy se guardan en `.pkl` y nunca se leen de vuelta — tarea abierta).
+- **`agents/quant_regime.py`**: no usa HMM real pese a llamarse "RegimeDetector (HMM)" — es un clasificador de reglas simple sobre std/mean de precios reales. No corrompe el score (sí varía con datos reales), solo mal etiquetado. No se tocó.
+- Todos los fixes verificados con tests nuevos de regresión + suite completa pasando antes de deploy.
 
 ---
 
