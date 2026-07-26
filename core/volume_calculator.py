@@ -50,11 +50,19 @@ class VolumeCalculator:
     }
 
     # Hard caps per symbol — smart dynamic sizing with Axi daily-loss safety net.
-    # Cap at 2.0 lots: worst case 8 trades × 2.0L × 45pip SL = ~$4,500/day < 5% Axi limit.
+    # BUG-MAXVOL-CAP-MATH-WRONG (2026-07-25, risk-management expert audit):
+    # this comment claimed "8 trades x 2.0L x 45pip SL = ~$4,500/day < 5% Axi
+    # limit" -- the actual arithmetic is 8 x 2.0 x 45 x $10/pip/lot = $7,200,
+    # which is ~51% OVER the real Axi 5% daily limit (~$4,750-4,850 on a
+    # ~$95-97K account), not comfortably under it. The cap gave false
+    # confidence that a bad day of consecutive stop-outs stayed inside the
+    # drawdown limit when, by its own math, it did not. Lowered to 1.25 lots
+    # so the same worst-case formula actually lands under $4,500:
+    # 8 x 1.25 x 45 x $10 = $4,500.
     _MAX_VOL_BY_SYMBOL = {
-        "EURUSD": 2.0,  "GBPUSD": 2.0,  "USDCHF": 2.0,
-        "USDJPY": 2.0,  "GBPJPY": 2.0,  "EURJPY": 2.0,
-        "AUDUSD": 2.0,  "NZDUSD": 2.0,  "EURGBP": 2.0,
+        "EURUSD": 1.25, "GBPUSD": 1.25, "USDCHF": 1.25,
+        "USDJPY": 1.25, "GBPJPY": 1.25, "EURJPY": 1.25,
+        "AUDUSD": 1.25, "NZDUSD": 1.25, "EURGBP": 1.25,
         "XAUUSD": 0.05,
         "NAS100": 1.0,
         "US30":   1.0,

@@ -444,9 +444,15 @@ class PositionGuardsMixin:
                 sw_sym    = sw.get("symbol", "?")
                 sw_auto_close = sw_pnl <= SWING_MAX_LOSS  # solo emergencia — NO cerrar por tiempo
                 if sw_auto_close:
+                    # BUG-SWING-STOP-WRONG-ALERT-AMOUNT (2026-07-25,
+                    # risk-management expert audit): hardcoded "-$50" in the
+                    # alert text while SWING_MAX_LOSS is -$150 -- every real
+                    # SWING-STOP close told Jose the loss was 1/3 of what it
+                    # actually was, during exactly the kind of fast-loss event
+                    # where the real number matters most.
                     ok = await self._close_guarded(
                         loop, sw_ticket, "SWING-STOP",
-                        f"<b>SWING STOP -$50</b>\n{sw_sym} #{sw_ticket}\nCerrado en ${sw_pnl:.2f}"
+                        f"<b>SWING STOP ${SWING_MAX_LOSS:.0f}</b>\n{sw_sym} #{sw_ticket}\nCerrado en ${sw_pnl:.2f}"
                     )
                     if ok:
                         # Registrar cooldown: no reabrir este par/dirección por 4 horas

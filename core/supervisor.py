@@ -1114,9 +1114,21 @@ class TradingSupervisor(PositionGuardsMixin):
         # OTE Zone (Optimal Trade Entry) — Fibonacci 62-79% del swing que creo el OB
         # ICT Unicorn: solo entrar cuando precio retrocede al 62-79% del impulso bullish/bearish
         # Sin OTE = entrada prematura (precio no llego al punto institucional)
+        # BUG-OTE-WRONG-DIRECTION-OB (2026-07-25, trading-strategy expert audit):
+        # poi_zones mixes bullish_ob and bearish_ob (sorted by recency/proximity
+        # only, see BUG-POI-STALE-ORDER above), but this block always took
+        # poi_zones[0] regardless of type -- a bearish OB sitting closer/more
+        # recent than any bullish one would get run through the BULLISH swing
+        # math while is_bullish=True, producing a degenerate (near-zero-width
+        # or backwards) Fibonacci range and an effectively random _in_ote
+        # result. agents/signal_agent.py already filters by
+        # "bullish_ob"/"bearish_ob" type for the entry-price POI (line ~252);
+        # apply the same filter here for the quality-gate check.
         _in_ote = False
-        if poi_zones and len(df) >= 5:
-            _poi = poi_zones[0]
+        _ote_type = "bullish_ob" if is_bullish else "bearish_ob"
+        _ote_pois = [p for p in poi_zones if p.get("type") == _ote_type]
+        if _ote_pois and len(df) >= 5:
+            _poi = _ote_pois[0]
             _ob_idx = _poi.get("index", 0)
             if _ob_idx > 0 and _ob_idx + 1 < len(df):
                 # El impulso que creo el OB: desde el OB hasta el maximo del swing siguiente
@@ -2957,9 +2969,18 @@ class TradingSupervisor(PositionGuardsMixin):
 
             try:
 
+                # BUG-RISKGOV-MIN-TRADES-UNREACHABLE (2026-07-25, risk-management
+                # expert audit): RiskGovernor is configured with min_trades=30
+                # (line ~366) but this call never overrode fetch_recent_deals_
+                # by_symbol's own default max_per_symbol=20 -- stats["n"] could
+                # never reach 30, so the entire WR-based auto-suspend mechanism
+                # (RiskGovernor.update(), line ~129) has never fired for any
+                # symbol regardless of how badly it performed. Only the two
+                # hardcoded initial_suspended entries (USDJPY, GBPJPY) actually
+                # protect the account. Pass max_per_symbol=30 to match.
                 symbol_deals = await asyncio.get_event_loop().run_in_executor(
 
-                    None, fetch_recent_deals_by_symbol, MT5_SYMBOLS
+                    None, fetch_recent_deals_by_symbol, MT5_SYMBOLS, 45, 30
 
                 )
 

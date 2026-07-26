@@ -33,9 +33,12 @@ class TestVolumeCalculator:
 
     def test_volume_max_clamped(self):
         vc = VolumeCalculator()
-        # Very small SL -> huge calculated volume -> clamped to 2.0 for EURUSD
+        # Very small SL -> huge calculated volume -> clamped to 1.25 for EURUSD
+        # (BUG-MAXVOL-CAP-MATH-WRONG, 2026-07-25: cap lowered from 2.0 so the
+        # worst-case-daily-loss formula this cap is meant to bound actually
+        # stays under the real Axi 5% daily limit)
         vol = vc.calculate_volume(10_000_000, 1.1000, 1.0999, "EURUSD")
-        assert vol == 2.0
+        assert vol == 1.25
 
     def test_volume_rounds_to_2dp(self):
         vc = VolumeCalculator()

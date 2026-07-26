@@ -86,12 +86,24 @@ class SignalAgent:
 
     # Minimum SL distance per symbol — realistic minimums based on typical daily range
     # Forex pairs: ~20-30 pips minimum to avoid being stopped by normal noise
+    # BUG-SL-CAP-MISSING-PAIRS (2026-07-25, trading-strategy expert audit):
+    # USDCAD/EURAUD/GBPCAD had no entry here at all -- _sl_distance()'s
+    # `self._MIN_SL_DIST.get(symbol, entry * 0.008)` fallback then computed a
+    # floor of ~110-140 pips for these pairs (0.8% of a ~1.4-1.9 price level),
+    # which silently OVERRODE the intended 35-50 pip _forex_sl_cap_pips
+    # ceiling below via `max(atr_sl, min_dist)` -- the cap's entire documented
+    # purpose ("ATR puede dar 100+ pips -> TP inalcanzable") was defeated for
+    # exactly the pairs it was supposed to protect. Added entries consistent
+    # with the existing tiers (majors=20p, GBP-crosses=25p).
     _MIN_SL_DIST: Dict[str, float] = {
         "EURUSD": 0.0020,   # 20 pips min
         "GBPUSD": 0.0025,   # 25 pips min
         "AUDUSD": 0.0020,   # 20 pips min
         "USDCHF": 0.0020,   # 20 pips min
         "NZDUSD": 0.0020,   # 20 pips min
+        "USDCAD": 0.0020,   # 20 pips min
+        "EURAUD": 0.0020,   # 20 pips min
+        "GBPCAD": 0.0025,   # 25 pips min (GBP-cross, matches GBPUSD tier)
         "EURGBP": 0.0020,   # 20 pips min
         "USDJPY": 0.20,     # 20 pips min
         "GBPJPY": 0.30,     # 30 pips min
@@ -137,11 +149,20 @@ class SignalAgent:
                         atr_sl = min(atr_sl, _index_sl_cap[symbol])
                     # Cap SL forex H1: ATR puede dar 100+ pips → TP inalcanzable mismo día
                     # 40 pips max → TP=100pips (2.5 RR) alcanzable en sesión NY
+                    # BUG-SL-CAP-MISSING-PAIRS (2026-07-25): USDCHF/EURAUD/GBPCAD
+                    # had no cap entry -- see _MIN_SL_DIST comment above for the
+                    # full impact (fallback floor silently defeated the cap for
+                    # the pairs missing from BOTH dicts). EURAUD/GBPCAD are true
+                    # crosses (no USD leg) with naturally wider ranges than USD
+                    # majors, so given a slightly wider tier than USDCAD/EURUSD
+                    # rather than the tightest 35-40 -- still far below the
+                    # uncapped ~110-140 pip fallback this replaces.
                     _is_jpy = "JPY" in symbol
                     _pip = 0.01 if _is_jpy else 0.0001
                     _forex_sl_cap_pips = {"EURUSD": 40, "GBPUSD": 40, "USDCAD": 40,
-                                          "AUDUSD": 35, "NZDUSD": 35, "USDJPY": 40,
-                                          "GBPJPY": 60}
+                                          "AUDUSD": 35, "NZDUSD": 35, "USDCHF": 35,
+                                          "EURAUD": 45, "GBPCAD": 50,
+                                          "USDJPY": 40, "GBPJPY": 60}
                     if symbol in _forex_sl_cap_pips:
                         atr_sl = min(atr_sl, _forex_sl_cap_pips[symbol] * _pip)
                     min_dist = self._MIN_SL_DIST.get(symbol, entry * 0.008)

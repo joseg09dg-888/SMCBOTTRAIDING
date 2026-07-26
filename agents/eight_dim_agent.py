@@ -94,6 +94,19 @@ _CORR_GROUPS: List[List[str]] = [
     ["GBPCAD"],
     ["NAS100", "NAS100.fs", "US30", "US30.fs"],   # indices (uncorrelated with FX)
 ]
+# BUG-DIM8-STALE-INDICES-INDEX (2026-07-25, trading-strategy expert audit):
+# _dim8_correlation() hardcoded `== 2` as "the indices group" from a version
+# of _CORR_GROUPS where indices sat at position 2. The 2026-07-21 rebuild
+# moved indices to position 5 and left USDCHF at 2, but the two `== 2`
+# checks were never updated -- NAS100+US30 (same group, index 5) stopped
+# hitting the "indices always allowed" shortcut and could wrongly DIM8-BLOCK
+# each other, while USDCHF (now at index 2) fell into the "unclassified, no
+# restriction" branch instead of being treated as its own group. Derive the
+# indices group index from the list itself so a future _CORR_GROUPS edit
+# can't silently desync it again.
+_INDICES_GROUP_IDX = next(
+    (i for i, g in enumerate(_CORR_GROUPS) if "NAS100" in g), None
+)
 
 
 class EightDimensionAgent:
@@ -357,8 +370,17 @@ class EightDimensionAgent:
                         wr = sum(1 for o in outcomes if o == "WIN") / len(outcomes)
                         if wr < 0.40:
                             return 0.60
-        except Exception:
-            pass
+        except Exception as _dim6_exc:
+            # BUG-DIM6-SILENT-EXCEPT (2026-07-25, operational-reliability
+            # expert audit): `except Exception: pass` with zero logging meant
+            # a locked episodes.db (real risk under WAL-mode write contention
+            # from the same connection this scan loop writes through
+            # elsewhere) or a schema change would silently disable the
+            # 3-consecutive-loss circuit breaker AND the WR<40% reduction
+            # with no distinguishing trace -- unlike every other guard's
+            # "error (no bloqueo)" pattern, this one couldn't even be caught
+            # by a human reading raw logs. Print so it's at least visible.
+            print(f"[DIM6] error consultando episodes.db (no bloqueo): {_dim6_exc}", flush=True)
 
         # Monthly profit lock: once at 4%+ → protect Axi target
         try:
@@ -371,8 +393,8 @@ class EightDimensionAgent:
                 monthly = st.get("monthly_pnl", 0.0)
                 if capital > 0 and monthly / capital >= 0.04:
                     return 0.30   # already hit 4% — only tiny trades
-        except Exception:
-            pass
+        except Exception as _dim6_exc2:
+            print(f"[DIM6] error leyendo axi_select_state.json (no bloqueo): {_dim6_exc2}", flush=True)
 
         return 1.0
 
