@@ -3449,8 +3449,11 @@ class TradingSupervisor(PositionGuardsMixin):
                                         effective_threshold = max(MT5_SCORE_AUTO_REDUCE, mt5_threshold - 5)  # H1 siempre 5pts menos que H4, piso=90
                                 else:
                                     continue  # M15 y cualquier otro TF: skip
-                                # Killzone multiplier: threshold mas bajo en horas gold (14-16 UTC),
-                                # mas alto en horas debiles (17-18 UTC) — backtest WR 61% vs 24-28%
+                                # Killzone multiplier (tercera ocurrencia del mismo comentario stale,
+                                # corregida 2026-07-26 -- ver core/session_manager.py y
+                                # DEAD_HOURS_UTC arriba): 14 UTC ya NO es "gold", es la hora mas
+                                # penalizada (mult=0.70 -> threshold sube, no baja). session_multiplier()
+                                # ya devuelve los valores correctos desde el fix de hoy.
                                 from core.session_manager import session_multiplier as _kz_mult
                                 _kz = _kz_mult()
                                 _kz_threshold = max(MT5_SCORE_AUTO_REDUCE, int(effective_threshold / _kz))  # piso=90, coherente con fix 2026-06-30 (era 70)
