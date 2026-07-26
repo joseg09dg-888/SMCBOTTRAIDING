@@ -54,21 +54,38 @@ _REGIME_MULT: Dict[Tuple[str,str], float] = {
     ("LOW",    "CHOPPY"):        0.50,
 }
 
-# ── Session (UTC hour) multiplier (from backtested data) ───────────────
-# London/NY overlap 13-16 UTC = gold; late NY 16-20 = good; Asia = avoid
+# ── Session (UTC hour) multiplier ───────────────────────────────────────
+# BUG-DIM4-HOUR14-STALE-GOLD-DUPLICATE (2026-07-26): this table had the
+# EXACT same "hour 14 = gold" error just found and fixed in
+# core/session_manager.py::session_multiplier() -- a separate, duplicate
+# hour-quality table that nobody had re-checked when the first one was
+# fixed. Re-ran DIM4 against ~16.1 years of REAL MT5 history (3,915
+# trading days, 25,962 trades, all of today's session's fixes applied):
+#   14:00 UTC: 6,952 trades, WR=29%, avg=-$35   -- worst active hour (was "GOLD" 1.25)
+#   15:00 UTC: 2,657 trades, WR=57%, avg=+$149  -- best active hour (was 1.15)
+#   16:00 UTC: 2,880 trades, WR=46%, avg=+$80   -- good
+#   20:00 UTC: 6,833 trades, WR=50%, avg=+$89   -- 2nd best (was "OK" 0.80)
+#   21:00 UTC: 2,607 trades, WR=51%, avg=+$43   -- decent (was "POOR" 0.70)
+#   22:00 UTC: 2,210 trades, WR=50%, avg=+$44   -- decent (was "POOR" 0.65)
+#   23:00 UTC: 1,823 trades, WR=50%, avg=+$40   -- decent (was "POOR" 0.60)
+# 12/13/17/18/19 are unreachable in live use (DEAD_HOURS_UTC in
+# core/supervisor.py blocks them before a signal is ever generated, so
+# _dim4_session() is never called with those hours) -- left as-is,
+# documented as dead entries rather than deleted, to keep this file's
+# history of what was tried.
 _SESSION_MULT: Dict[int, Tuple[float, str]] = {
-    12: (0.85, "OK"),
-    13: (0.60, "POOR"),   # Bloqueado en DEAD_HOURS: WR real=29%, avg=-$97/trade (backtest 2y)
-    14: (1.25, "GOLD"),   # NY open — strongest momentum
-    15: (1.15, "GOLD"),   # London close / NY mid
-    16: (1.05, "GOOD"),   # London closed, NY still active
-    17: (1.00, "GOOD"),
-    18: (0.95, "GOOD"),
-    19: (0.90, "OK"),
-    20: (0.80, "OK"),
-    21: (0.70, "POOR"),   # quiet pre-Asia
-    22: (0.65, "POOR"),
-    23: (0.60, "POOR"),
+    12: (0.85, "OK"),     # unreachable -- DEAD_HOURS_UTC blocks it
+    13: (0.60, "POOR"),   # unreachable -- DEAD_HOURS_UTC blocks it
+    14: (0.70, "POOR"),   # 16y real data: WR=29%, avg=-$35 -- worst active hour
+    15: (1.30, "GOLD"),   # 16y real data: WR=57%, avg=+$149 -- best active hour
+    16: (1.15, "GOOD"),   # 16y real data: WR=46%, avg=+$80
+    17: (1.00, "GOOD"),   # unreachable -- DEAD_HOURS_UTC blocks it
+    18: (0.95, "GOOD"),   # unreachable -- DEAD_HOURS_UTC blocks it
+    19: (0.90, "OK"),     # unreachable -- DEAD_HOURS_UTC blocks it
+    20: (1.20, "GOLD"),   # 16y real data: WR=50%, avg=+$89
+    21: (1.00, "OK"),     # 16y real data: WR=51%, avg=+$43
+    22: (1.00, "OK"),     # 16y real data: WR=50%, avg=+$44
+    23: (0.95, "OK"),     # 16y real data: WR=50%, avg=+$40
 }
 
 # ── Correlation groups (no more than 1 trade per group) ───────────────
