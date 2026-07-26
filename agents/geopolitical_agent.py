@@ -61,15 +61,36 @@ class GeopoliticalSignal:
 
 class GeopoliticalAgent:
     GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+    # BUG-GEO-NO-CACHE (2026-07-26, enrichment-agents expert audit): unlike
+    # every other network-backed enrichment agent (institutional_flow_agent's
+    # 4h cooldown, alternative_data_agent's cooldown), this one had NO
+    # caching at all -- every _enrich_with_agents() call (every symbol x
+    # timeframe, every scan cycle) hit a live GDELT HTTP round-trip with a
+    # 5s timeout, and get_signal() even called fetch_events() twice in the
+    # same invocation (once directly, once via score_adjustment()). Real
+    # cost: repeated live-API hammering with no rate-limit protection, and
+    # up to 5s of added latency per call if GDELT is slow. Geopolitical
+    # events don't meaningfully change minute-to-minute, so a 15-minute
+    # cache is safe and removes both problems.
+    _CACHE_TTL_SEC = 15 * 60
+
+    def __init__(self):
+        self._events_cache: List["GeopoliticalEvent"] = []
+        self._cache_ts: float = 0.0
 
     def fetch_events(self, max_events: int = 5) -> List[GeopoliticalEvent]:
         """
         Try GDELT API; return [] if network unavailable.
         Parses response for high-severity events (severity >= 6 treated as high).
+        Cached for _CACHE_TTL_SEC so repeated calls in the same scan cycle
+        (or across scan cycles within the TTL) don't re-hit the network.
         """
+        import time as _time
+        if self._events_cache and (_time.time() - self._cache_ts) < self._CACHE_TTL_SEC:
+            return self._events_cache
         try:
             if httpx is None:
-                return []
+                return self._events_cache
             params = {
                 "query": "war OR sanctions OR conflict OR disaster",
                 "mode": "ArtList",
@@ -98,9 +119,11 @@ class GeopoliticalAgent:
                     source="GDELT",
                     timestamp=article.get("seendate", datetime.utcnow().isoformat()),
                 ))
+            self._events_cache = events
+            self._cache_ts = _time.time()
             return events
         except Exception:
-            return []
+            return self._events_cache
 
     def _classify_category(self, title: str) -> str:
         title_lower = title.lower()

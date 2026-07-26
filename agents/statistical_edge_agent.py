@@ -186,8 +186,17 @@ class QuantEdgeAgent:
         # codigo la etiqueta "simulated"/"estimado"). Igual que Elliott (auditoria
         # 2026-07-06), esto sumaba un sesgo fijo por simbolo al score real en cada
         # trade, sin discriminar ganadoras de perdedoras. Se desconecta su
-        # contribucion; el resto de calculate_collective_score() (papers academicos)
-        # no se toca porque no depende de hash().
+        # contribucion.
+        # CORRECCION 2026-07-26 (auditoria agentes de enriquecimiento): el
+        # comentario de arriba decia que "el resto de calculate_collective_
+        # score() (papers academicos) no se toca porque no depende de
+        # hash()" -- eso es inexacto. calculate_collective_score() en si
+        # misma NUNCA se llama desde este archivo (grep confirma que solo
+        # aparece en su propia definicion y en tests) -- el modulo completo
+        # de matching de papers academicos esta muerto en produccion, no
+        # solo la parte con hash(). ci_pts=0 refleja correctamente que SP10
+        # no aporta nada hoy, pero por la razon completa, no la parcial que
+        # el comentario original afirmaba.
         ci_pts = 0
 
         # Composite edge score 0-100

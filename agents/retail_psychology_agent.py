@@ -377,8 +377,20 @@ class RetailPsychologyAgent:
         # Only award full bonus when contrarian bias matches the requested bias
         if sig.contrarian_bias == bias or sig.contrarian_bias == "neutral":
             return sig.total_bonus
-        # Partial: still credit stop-hunt if direction matches bias
-        return sig.stop_hunt.score_bonus
+        # BUG-RETAIL-PSYCH-STOPHUNT-DIRECTION-UNCHECKED (2026-07-26,
+        # enrichment-agents expert audit): this used to credit the full
+        # stop-hunt bonus on ANY contrarian-bias mismatch, regardless of
+        # whether the detected hunt actually favored the requested bias --
+        # the comment claimed "still credit stop-hunt if direction matches
+        # bias" but never checked that. A bull_hunt (long-favoring) could
+        # get credited toward a bearish trade and vice versa, rewarding a
+        # signal that argues AGAINST the trade direction taken. Map
+        # bull_hunt->bullish / bear_hunt->bearish and only credit when it
+        # actually agrees.
+        _hunt_favors = {"bull_hunt": "bullish", "bear_hunt": "bearish"}.get(sig.stop_hunt.direction)
+        if _hunt_favors == bias:
+            return sig.stop_hunt.score_bonus
+        return 0
 
     # ------------------------------------------------------------------
     # Telegram formatting
