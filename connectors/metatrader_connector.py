@@ -666,14 +666,24 @@ class MT5Connector:
             logger.error(f"MT5 partial_close error: {e}")
             return False
 
-    def close_all_positions(self) -> int:
-        """Close all open positions. Returns number successfully closed."""
+    def close_all_positions(self, reason: str = "SMC Bot Close") -> int:
+        """Close all open positions. Returns number successfully closed.
+
+        BUG-CLOSE-REASON-OPAQUE-GAP (2026-07-25): close_position() got a
+        `comment` param on 2026-07-20 so per-ticket guards (STAGNANT,
+        PEAK-GUARD, etc.) tag WHICH guard closed a position, but this
+        account-wide close path (used by the AxiSelectGuard -4% daily
+        emergency and the total-drawdown DD-GUARD) never passed one through
+        -- every emergency close still fell back to the generic default,
+        leaving the same forensic gap this class of bug was already fixed
+        for everywhere else.
+        """
         if not HAS_MT5:
             return 0
         positions = self.get_positions()
         closed = 0
         for p in positions:
             ticket = p.get("ticket", 0)
-            if ticket and self.close_position(ticket):
+            if ticket and self.close_position(ticket, reason):
                 closed += 1
         return closed

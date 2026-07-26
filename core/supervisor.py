@@ -3215,7 +3215,7 @@ class TradingSupervisor(PositionGuardsMixin):
                                 print(f"[AXI-GUARD] EMERGENCY CLOSE: {_guard.reason}", flush=True)
                                 try:
                                     await asyncio.get_running_loop().run_in_executor(
-                                        None, self.mt5.close_all_positions
+                                        None, lambda: self.mt5.close_all_positions("AXI-GUARD-DAILY")
                                     )
                                     await self.telegram.send_glint_alert(
                                         f"<b>AXI GUARD — LIMITE DIARIO</b>\n{_guard.reason}\nBot pausado hasta manana."
@@ -3250,7 +3250,7 @@ class TradingSupervisor(PositionGuardsMixin):
                                     self._dd_force_closed = True
                                     try:
                                         await asyncio.get_running_loop().run_in_executor(
-                                            None, self.mt5.close_all_positions
+                                            None, lambda: self.mt5.close_all_positions("DD-GUARD-TOTAL")
                                         )
                                         await self.telegram.send_glint_alert(
                                             f"<b>DRAWDOWN TOTAL — CIERRE DE EMERGENCIA</b>\n{_dd_reason}"
