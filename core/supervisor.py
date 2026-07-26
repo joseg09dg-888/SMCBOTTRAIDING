@@ -125,13 +125,22 @@ RECOVERY_MAX_SCALPS      = 3
 RECOVERY_DRAWDOWN_FROM_PEAK = 3000.0  # Axi 5% daily = $4,850 — solo recovery en emergencia real
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
-# Horas bloqueadas — backtest 2 años (700 dias, 6 pares) demuestra:
-# 13:00 UTC = WR 29%, avg -$97/trade (1,223 trades) → SEÑALES RANCIAS overnight → BLOQUEAR
-# 14:00 UTC = WR 61%, avg +$102/trade (578 trades) → NY open GOLD window
-# 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading, reducir trades
-# Estrategia: iniciar a 14:00 UTC (9am Colombia) cuando NY open momentum confirma BOS real
+# BUG-STALE-HOUR14-COMMENT (2026-07-26): este comentario venia de un backtest
+# viejo de 2 anos (700 dias, 6 pares) que decia "14:00 UTC = WR 61% GOLD
+# window". Ese numero fue INVALIDADO por el analisis de 16 anos reales hecho
+# despues (commit ae6bdf7, "hour-14 UTC killzone multiplier was backwards"),
+# que encontro exactamente lo contrario: 14:00 UTC WR=29% avg=-$35 -- la MISMA
+# win rate mala que 13:00 UTC (que si esta bloqueada abajo). session_manager.py
+# ya refleja el numero correcto (_HOUR_MULT[14]=0.70, penalizacion, no bonus).
+# Real ranking 16y (hora UTC : WR): 15=57% (mejor) > 20=50% > 21=51% > 22=50%
+# > 23=50% > 16=46% > 14=29% (empatada con la hora 13 que si esta bloqueada).
+# NO se bloqueo la hora 14 aqui todavia -- requiere un backtest_multiyear.py
+# explicito comparando "bloquear 14" vs "solo penalizar 14" antes de decidir
+# (ver backtest_before_anecdote_fixes en memoria) -- tarea abierta.
+# 13:00 UTC = WR 29%, avg -$97/trade → SEÑALES RANCIAS overnight → BLOQUEAR
+# 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading → BLOQUEAR
 DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-                             17, 18, 19}  # 14-17 UTC ventana de oro. 17-19 WR=24-28% bloqueado
+                             17, 18, 19}  # 14-16,20-23 UTC abiertas (14 penalizada 0.70x, no bloqueada)
 
 
 
