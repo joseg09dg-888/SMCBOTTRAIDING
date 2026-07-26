@@ -56,12 +56,21 @@ class InstitutionalFlowAgent:
     # Base-currency futures contract name CFTC uses per traded pair. Only
     # currencies with a listed CME future are covered (indices/metals use a
     # different CFTC report and aren't mapped here).
+    # BUG-COT-MISSING-USDCHF (2026-07-26, "find the real gold" audit): CFTC
+    # does track a "SWISS FRANC" futures contract (CHF vs USD) -- it was
+    # simply never added here, so USDCHF (one of the 6 actively-traded
+    # pairs) got zero institutional-positioning signal despite the data
+    # being available. EURAUD/GBPCAD genuinely CANNOT be added -- CFTC only
+    # reports single-currency-vs-USD futures, and there is no "EUR/AUD" or
+    # "GBP/CAD" contract to map to; that's a real structural limit of the
+    # data source itself, not a bug.
     COT_CONTRACT_NAMES = {
         "EURUSD": "EURO FX",
         "GBPUSD": "BRITISH POUND",
         "AUDUSD": "AUSTRALIAN DOLLAR",
         "NZDUSD": "NZ DOLLAR",
         "USDCAD": "CANADIAN DOLLAR",
+        "USDCHF": "SWISS FRANC",
         "USDJPY": "JAPANESE YEN",
     }
     OPTIONS_URL = "https://phx.unusualwhales.com/api/etf/{symbol}/flow"

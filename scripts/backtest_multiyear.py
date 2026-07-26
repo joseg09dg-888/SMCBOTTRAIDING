@@ -1,5 +1,5 @@
 """
-BACKTEST MULTI-ANUAL — 8 DIMENSIONES | 2 años H1 + 10 años D1
+BACKTEST MULTI-ANUAL — 8 DIMENSIONES | ~16 años H1 (MT5 real) + 10 años D1
 ===============================================================
 Las 8 dimensiones del mercado:
   DIM 1 — Temporal: borde varía por año/trimestre/mes/hora
@@ -12,6 +12,13 @@ Las 8 dimensiones del mercado:
   DIM 8 — Correlación: efecto portafolio real entre pares
 
 Monte Carlo: 100,000 simulaciones con distribución empírica real.
+
+2026-07-25: H1 pasó de yfinance (limitado a <730 dias por su propia API,
+independiente de cuanta historia real exista) a MT5 directo (mismo broker
+Axi que opera en vivo) -- confirmado por consulta real: EURUSD/USDCAD/
+NZDUSD/USDCHF/EURAUD/GBPCAD tienen H1 real desde 2010-06 (~16.1 años), no
+solo 2. NAS100 se queda en yfinance (no es de los 6 pares activos, y los
+indices en MT5 tienen convenciones de sesion distintas).
 """
 import sys, os, warnings, json
 warnings.filterwarnings("ignore")
@@ -19,9 +26,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import yfinance as yf
+import MetaTrader5 as mt5
 
 from smc.momentum import MomentumIndicators
 from smc.bill_williams import BillWilliamsIndicators
@@ -29,7 +37,7 @@ from smc.liquidity_sweep import check_setup as silver_bullet_check
 
 print("=" * 72)
 print("  BACKTEST MULTI-ANUAL — 8 DIMENSIONES")
-print("  H1: 2 años | D1: 10 años | Monte Carlo: 100,000 sims")
+print("  H1: ~16 años (MT5 real) | D1: 10 años | Monte Carlo: 100,000 sims")
 print("=" * 72)
 
 MAX_OPEN_TEST = int(os.environ.get("MAX_OPEN_TEST", "2"))  # 2026-07-16: parametrizado para comparar 2 vs 3 (pedido por Jose)
@@ -85,37 +93,103 @@ ENABLE_REGIME_FILTER = False  # probado 2026-07-09: empeoro TODO (P(pasar Axi) 4
 
 # ── Data download ──────────────────────────────────────────────────────
 print("\n[DATA] Descargando datos historicos...")
-print("       H1: hasta 2 años | D1: hasta 10 años")
+print("       H1: MT5 real (hasta ~16 años) para forex | D1: hasta 10 años")
 
-all_tickers = {**PAIRS_FOREX, **PAIR_NAS}
+MT5_H1_MAX_BARS = int(os.environ.get("MT5_H1_MAX_BARS", "99999"))  # terminal maxbars cap
+_mt5_ok = mt5.initialize()
+
 d1_data = {}
 h1_data = {}
 
-END = datetime.now()
-START_H1 = END - timedelta(days=700)   # yfinance limit: <730 days for 1h
-START_D1 = END - timedelta(days=3650)
 
-for pair, tk in all_tickers.items():
+def _strip_tz(df):
+    # BUG-TZ-MIX-CRASH (2026-07-26): NAS100/yfinance-fallback data comes back
+    # tz-aware while the new MT5-sourced pairs are tz-naive (see
+    # _mt5_rates_to_df comment) -- mixing the two in pd.DataFrame(dict_of_
+    # series) (DIM8 correlation matrix build) raises
+    # "Cannot join tz-naive with tz-aware DatetimeIndex". Normalize every
+    # yfinance-sourced index to tz-naive so all pairs share one convention.
+    if getattr(df.index, "tz", None) is not None:
+        df.index = df.index.tz_localize(None)
+    return df
+
+
+def _mt5_rates_to_df(rates):
+    # Match connectors/metatrader_connector.py::get_ohlcv() exactly: naive
+    # pd.to_datetime(unit="s"), NO utc=True. The live bot's own DEAD_HOURS_UTC/
+    # kill-zone logic already operates on whatever raw timestamp MT5 returns
+    # (broker server time, not necessarily true UTC) -- matching that exactly
+    # here means the backtest's hour-based analysis (DIM4, kill zones) uses
+    # the identical convention live actually runs on, not a "corrected" one
+    # that would silently diverge from real behavior.
+    df = pd.DataFrame(rates)
+    df["time"] = pd.to_datetime(df["time"], unit="s")
+    df.set_index("time", inplace=True)
+    df.rename(columns={"tick_volume": "volume"}, inplace=True)
+    return df[["open", "high", "low", "close"]].dropna()
+
+
+for pair in PAIRS_FOREX:
     try:
-        # ~2 years H1 (700 days = max reliable for yfinance 1h)
-        dh1 = yf.download(tk, start=START_H1, end=END, interval="1h", progress=False, auto_adjust=True)
+        if not _mt5_ok:
+            raise RuntimeError(f"mt5.initialize() failed: {mt5.last_error()}")
+        mt5.symbol_select(pair, True)
+        rates_h1 = mt5.copy_rates_from(pair, mt5.TIMEFRAME_H1, datetime.now(timezone.utc), MT5_H1_MAX_BARS)
+        if rates_h1 is None or len(rates_h1) == 0:
+            raise RuntimeError(f"copy_rates_from H1 returned nothing: {mt5.last_error()}")
+        dh1 = _mt5_rates_to_df(rates_h1)
+        h1_data[pair] = dh1
+
+        rates_d1 = mt5.copy_rates_from(pair, mt5.TIMEFRAME_D1, datetime.now(timezone.utc), 4500)
+        dd1 = _mt5_rates_to_df(rates_d1) if rates_d1 is not None and len(rates_d1) > 0 else pd.DataFrame()
+        d1_data[pair] = dd1
+
+        h1_years = (dh1.index[-1] - dh1.index[0]).days / 365.25 if len(dh1) else 0.0
+        d1_years = (dd1.index[-1] - dd1.index[0]).days / 365.25 if len(dd1) else 0.0
+        print(f"  {pair}: H1={len(dh1)} bars ({h1_years:.1f} años reales, desde {dh1.index[0].date() if len(dh1) else '?'}) | D1={len(dd1)} bars ({d1_years:.1f} años)")
+    except Exception as e:
+        print(f"  {pair}: ERROR MT5 ({e}) -- fallback yfinance")
+        tk = PAIRS_FOREX[pair]
+        _end = datetime.now()
+        dh1 = yf.download(tk, start=_end - timedelta(days=700), end=_end, interval="1h", progress=False, auto_adjust=True)
         if isinstance(dh1.columns, pd.MultiIndex):
             dh1.columns = dh1.columns.get_level_values(0)
         dh1.columns = [c.lower() for c in dh1.columns]
         dh1.dropna(inplace=True)
+        dh1 = _strip_tz(dh1)
         h1_data[pair] = dh1
-
-        # 10 years D1
-        dd1 = yf.download(tk, start=START_D1, end=END, interval="1d", progress=False, auto_adjust=True)
+        dd1 = yf.download(tk, start=_end - timedelta(days=3650), end=_end, interval="1d", progress=False, auto_adjust=True)
         if isinstance(dd1.columns, pd.MultiIndex):
             dd1.columns = dd1.columns.get_level_values(0)
         dd1.columns = [c.lower() for c in dd1.columns]
         dd1.dropna(inplace=True)
+        dd1 = _strip_tz(dd1)
         d1_data[pair] = dd1
+        print(f"  {pair} (yfinance fallback): H1={len(dh1)} bars | D1={len(dd1)} bars")
 
-        print(f"  {pair}: H1={len(dh1)} bars ({len(dh1)//504:.1f} años efectivos) | D1={len(dd1)} bars ({len(dd1)/252:.1f} años)")
+for pair, tk in PAIR_NAS.items():
+    try:
+        _end = datetime.now()
+        dh1 = yf.download(tk, start=_end - timedelta(days=700), end=_end, interval="1h", progress=False, auto_adjust=True)
+        if isinstance(dh1.columns, pd.MultiIndex):
+            dh1.columns = dh1.columns.get_level_values(0)
+        dh1.columns = [c.lower() for c in dh1.columns]
+        dh1.dropna(inplace=True)
+        dh1 = _strip_tz(dh1)
+        h1_data[pair] = dh1
+        dd1 = yf.download(tk, start=_end - timedelta(days=3650), end=_end, interval="1d", progress=False, auto_adjust=True)
+        if isinstance(dd1.columns, pd.MultiIndex):
+            dd1.columns = dd1.columns.get_level_values(0)
+        dd1.columns = [c.lower() for c in dd1.columns]
+        dd1.dropna(inplace=True)
+        dd1 = _strip_tz(dd1)
+        d1_data[pair] = dd1
+        print(f"  {pair} (yfinance, indice): H1={len(dh1)} bars ({len(dh1)//504:.1f} años efectivos) | D1={len(dd1)} bars ({len(dd1)/252:.1f} años)")
     except Exception as e:
         print(f"  {pair}: ERROR {e}")
+
+if _mt5_ok:
+    mt5.shutdown()
 
 # ── Utils ──────────────────────────────────────────────────────────────
 def ema(s, n):
@@ -234,7 +308,7 @@ def risk_for_score(score):
 # ── DIMENSIÓN 1+2+3: Run full historical simulation ───────────────────
 print("\n" + "=" * 72)
 print("  DIMENSIONES 1-3: Backtest temporal + régimen vol + régimen trend")
-print("  Simulando 2 años H1 con todos los pares...")
+print("  Simulando ~16 años H1 (MT5 real) con todos los pares...")
 print("=" * 72)
 
 trade_log = []       # all trades with metadata
@@ -494,7 +568,7 @@ for pair, df1 in h1_data.items():
 
         open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, entry, pip_v, pair, 0.0, None))
 
-print(f"\n  Total trades en 2 años: {len(trade_log)}")
+print(f"\n  Total trades (periodo completo H1): {len(trade_log)}")
 n_final = sum(1 for t in trade_log if t["type"] == "final")
 n_partial = sum(1 for t in trade_log if t["type"] == "partial")
 n_wins = sum(1 for t in trade_log if t["win"] and t["type"] in ("final",))
