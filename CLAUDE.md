@@ -487,14 +487,28 @@ Ranking real 16 años (hora UTC : WR : avg$):
 22:00 UTC: WR=50%, avg=+$44
 23:00 UTC: WR=50%, avg=+$40
 16:00 UTC: WR=46%, avg=+$80
-14:00 UTC: WR=29%, avg=-$35  ← PEOR hora activa (NO bloqueada, solo
-                                penalizada 0.70x -- misma WR que la hora 13
-                                que SÍ está bloqueada; ver nota en
-                                core/supervisor.py DEAD_HOURS_UTC, tarea
-                                abierta: backtestear si también debería
-                                bloquearse por completo)
+14:00 UTC: WR=29-36%, avg=-$35  ← BLOQUEADA 2026-07-26 (ver abajo)
 13:00 UTC: WR=29%, avg=-$97  ← BLOQUEADO (señales rancias post-overnight)
 17-19 UTC: WR=24-28%         ← BLOQUEADO
+```
+
+**Hora 14 UTC bloqueada por completo (2026-07-26)**: se corrió el backtest
+explícito que quedaba pendiente (`scripts/backtest_multiyear.py`,
+`EXTRA_DEAD_HOURS=14`, 16 años reales, 100K sims Monte Carlo) comparando
+"14 abierta" vs "14 bloqueada":
+```
+                  14 abierta          14 bloqueada
+P(día>=$250):     41%                 40%
+E[mes]:           $6,624 (6.8%)       $7,006 (7.2%)
+P(pasar Axi 5%):  57%                 58%
+Sharpe mensual:   0.86                0.88
+```
+Mejora real en las 3 métricas que importan, con solo -1pp en P(día>=$250)
+(ruido). Además la hora 14 generaba 7,877 trades — más del doble que
+cualquier otra hora activa — con WR=36% y avg=-$35/trade: la peor
+combinación posible (mucho volumen, mal resultado). `core/supervisor.py`
+`DEAD_HOURS_UTC` ahora incluye 14. Horas activas reales: **15, 16, 20, 21,
+22, 23 UTC** únicamente.
 ```
 
 ### DIM 8 — Correlaciones (2 años reales):
@@ -527,4 +541,4 @@ NAS100: r≈0.00 → siempre independiente, no cuenta para DIM8
 .venv\Scripts\python scripts/backtest_quantum.py
 ```
 
-*Última actualización: 2026-07-26 (panel SMC/quant + fix hora-14 stale) | Tests: 1446 | Bot: ONLINE (pm2) | Active pairs (MT5): USDCAD/EURUSD/NZDUSD/USDCHF/EURAUD/GBPCAD (USDJPY/GBPJPY/XAUUSD/US30 suspendidos por RiskGovernor) | Dead hours forex: 0-13, 17-19 UTC (14-16,20-23 abiertas; 14 penalizada 0.70x, NO es la hora buena -- ver DIM4 arriba) | EightDimensionAgent: ACTIVO*
+*Última actualización: 2026-07-26 (panel SMC/quant + hora-14 bloqueada por backtest real) | Tests: 1446 | Bot: ONLINE (pm2) | Active pairs (MT5): USDCAD/EURUSD/NZDUSD/USDCHF/EURAUD/GBPCAD (USDJPY/GBPJPY/XAUUSD/US30 suspendidos por RiskGovernor) | Dead hours forex: 0-14, 17-19 UTC (15,16,20-23 abiertas -- unicas horas con edge real medido) | EightDimensionAgent: ACTIVO*

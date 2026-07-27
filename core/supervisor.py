@@ -127,20 +127,27 @@ SCALP_MAX_DOLLAR_RISK    = 50.0
 
 # BUG-STALE-HOUR14-COMMENT (2026-07-26): este comentario venia de un backtest
 # viejo de 2 anos (700 dias, 6 pares) que decia "14:00 UTC = WR 61% GOLD
-# window". Ese numero fue INVALIDADO por el analisis de 16 anos reales hecho
-# despues (commit ae6bdf7, "hour-14 UTC killzone multiplier was backwards"),
-# que encontro exactamente lo contrario: 14:00 UTC WR=29% avg=-$35 -- la MISMA
-# win rate mala que 13:00 UTC (que si esta bloqueada abajo). session_manager.py
-# ya refleja el numero correcto (_HOUR_MULT[14]=0.70, penalizacion, no bonus).
-# Real ranking 16y (hora UTC : WR): 15=57% (mejor) > 20=50% > 21=51% > 22=50%
-# > 23=50% > 16=46% > 14=29% (empatada con la hora 13 que si esta bloqueada).
-# NO se bloqueo la hora 14 aqui todavia -- requiere un backtest_multiyear.py
-# explicito comparando "bloquear 14" vs "solo penalizar 14" antes de decidir
-# (ver backtest_before_anecdote_fixes en memoria) -- tarea abierta.
+# window". Ese numero fue INVALIDADO por el analisis de 16 anos reales
+# (commit ae6bdf7, "hour-14 UTC killzone multiplier was backwards"), que
+# encontro exactamente lo contrario: WR=29-36%, avg negativo -- la MISMA win
+# rate mala que 13:00 UTC (bloqueada abajo), y ademas la hora con MAS volumen
+# de trades (7877, mas del doble que cualquier otra hora activa) -- la peor
+# combinacion posible: mucho volumen + mal resultado.
+#
+# BLOQUEADA 2026-07-26: se corrio el backtest explicito exigido arriba
+# (scripts/backtest_multiyear.py, EXTRA_DEAD_HOURS=14, 16 anos reales, 100K
+# sims Monte Carlo) comparando "14 abierta" vs "14 bloqueada":
+#   14 abierta:   P(dia>=$250)=41% | E[mes]=$6,624 | P(pasar Axi 5%)=57% | Sharpe=0.86
+#   14 bloqueada: P(dia>=$250)=40% | E[mes]=$7,006 | P(pasar Axi 5%)=58% | Sharpe=0.88
+# Mejora real (aunque modesta) en las 3 metricas que importan (E[mes], P(pasar
+# Axi), Sharpe) con una caida de solo 1pp en P(dia>=$250) -- ruido, no señal.
+# Bloquear quita volumen malo, no oportunidad real. Ver tambien
+# session_manager.py._HOUR_MULT (ya no se usa para la hora 14 en la practica,
+# dado que ahora esta bloqueada por completo aqui, pero se deja documentado).
 # 13:00 UTC = WR 29%, avg -$97/trade → SEÑALES RANCIAS overnight → BLOQUEAR
 # 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading → BLOQUEAR
-DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
-                             17, 18, 19}  # 14-16,20-23 UTC abiertas (14 penalizada 0.70x, no bloqueada)
+DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+                             17, 18, 19}  # 15,16,20-23 UTC abiertas (unicas horas con edge real)
 
 
 

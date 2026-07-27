@@ -335,6 +335,9 @@ for pair, df1 in h1_data.items():
         # the live bot actually trades. Every cached backtest_results.json
         # number produced by this script was simulating the wrong hours.
         DEAD_HOURS_UTC = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19}
+        _extra_dead = os.environ.get("EXTRA_DEAD_HOURS", "")
+        if _extra_dead:
+            DEAD_HOURS_UTC = DEAD_HOURS_UTC | {int(h) for h in _extra_dead.split(",") if h.strip()}
         if hour_utc in DEAD_HOURS_UTC: continue  # kill zone
         day_str = str(pd.Timestamp(dt).date())
         year_str = str(pd.Timestamp(dt).year)
