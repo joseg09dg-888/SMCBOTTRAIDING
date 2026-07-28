@@ -78,7 +78,19 @@ def test_detect_bearish_sweep():
 def test_in_kill_zone_true_during_ny_am():
     dt = datetime(2026, 7, 9, 14, 30, tzinfo=timezone.utc)
     assert in_kill_zone(dt) is True
+
+
+def test_active_kill_zone_true_during_real_active_hour():
+    # BUG-SB-DEAD-KILLZONE (2026-07-28): 14 UTC is DEAD_HOURS_UTC now (worst
+    # real hour, WR=29%) -- the active window moved to the bot's real
+    # active hours (15,16,20-23 UTC, see ACTIVE_HOURS_UTC).
+    dt = datetime(2026, 7, 9, 15, 30, tzinfo=timezone.utc)
     assert in_active_kill_zone(dt) is True
+
+
+def test_active_kill_zone_false_during_now_dead_ny_am_hour():
+    dt = datetime(2026, 7, 9, 14, 30, tzinfo=timezone.utc)
+    assert in_active_kill_zone(dt) is False
 
 
 def test_in_kill_zone_false_outside_windows():
@@ -101,7 +113,7 @@ def test_check_setup_none_without_sweep():
 
 def test_check_setup_full_confluence_in_kill_zone():
     df = _df_with_bullish_sweep()
-    as_of = datetime(2026, 7, 9, 14, 30, tzinfo=timezone.utc)
+    as_of = datetime(2026, 7, 9, 15, 30, tzinfo=timezone.utc)  # real active hour (see BUG-SB-DEAD-KILLZONE)
     result = check_setup(df, as_of=as_of)
     assert result is not None
     assert result.direction == "bullish"

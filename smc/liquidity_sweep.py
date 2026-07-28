@@ -7,10 +7,17 @@ a smaller score. This module implements that all-or-nothing gate.
 
 Kill zones (ET, converted to UTC assuming EDT/UTC-4, the northern-hemisphere
 summer offset used most of the trading year): 3-4am ET (07-08 UTC), 10-11am
-ET (14-15 UTC), 2-3pm ET (18-19 UTC). Only the 10-11am window overlaps this
-bot's actual active hours (14-16, 20-23 UTC) -- the other two fall inside
-DEAD_HOURS_UTC, already empirically confirmed as bad trading hours for this
-strategy (see bug_tracker.md DIM4 analysis).
+ET (14-15 UTC), 2-3pm ET (18-19 UTC).
+
+BUG-SB-DEAD-KILLZONE (2026-07-28): in_active_kill_zone() only recognized
+hour 14 UTC as valid (14 <= hour < 15). Hour 14 UTC was hard-blocked in
+DEAD_HOURS_UTC on 2026-07-26 (16-year real data: WR=29%, avg=-$35, the
+worst active hour) -- since that deploy, this entire module could never
+fire again in live trading or in the backtest (scripts/backtest_multiyear.py
+literally gated the call behind `hour_utc == 14`). Updated to match the
+bot's real active hours (15, 16, 20, 21, 22, 23 UTC -- see
+core/session_manager.py _HOUR_MULT), so the sweep+FVG+killzone confluence
+this module checks can actually be evaluated during hours real orders fire.
 """
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -21,10 +28,15 @@ import pandas as pd
 from smc.orderblocks import FVGDetector
 
 KILL_ZONES_UTC = {
-    "london_ny_overlap": (7, 8),     # 3-4am ET
-    "ny_am": (14, 15),               # 10-11am ET -- the only one active for this bot
+    "london_ny_overlap": (7, 8),     # 3-4am ET -- falls in DEAD_HOURS_UTC
+    "ny_am": (14, 15),               # 10-11am ET -- 14 is DEAD_HOURS_UTC now, kept for reference
     "ny_pm": (18, 19),                # 2-3pm ET -- falls in DEAD_HOURS_UTC
 }
+
+# Real active hours for MT5 real orders (core/session_manager.py _HOUR_MULT,
+# 16-year real data). Used by in_active_kill_zone() instead of the classic
+# ICT NY-AM window, which is now entirely inside DEAD_HOURS_UTC.
+ACTIVE_HOURS_UTC = {15, 16, 20, 21, 22, 23}
 
 
 @dataclass
@@ -55,11 +67,12 @@ def in_kill_zone(dt_utc: Optional[datetime] = None) -> bool:
 
 
 def in_active_kill_zone(dt_utc: Optional[datetime] = None) -> bool:
-    """Only the NY AM window (14-15 UTC) that overlaps this bot's live hours."""
+    """True during this bot's real active hours (15,16,20-23 UTC) -- see
+    BUG-SB-DEAD-KILLZONE above for why this no longer uses the classic
+    14-15 UTC NY-AM window."""
     if dt_utc is None:
         dt_utc = datetime.now(timezone.utc)
-    start, end = KILL_ZONES_UTC["ny_am"]
-    return start <= dt_utc.hour < end
+    return dt_utc.hour in ACTIVE_HOURS_UTC
 
 
 def detect_sweep(df: pd.DataFrame, lookback: int = 20, recent_window: int = 5) -> Optional[SweepEvent]:
@@ -119,7 +132,7 @@ def check_setup(df: pd.DataFrame, lookback: int = 20, as_of: Optional[datetime] 
 
     valid = kz
     reason = ("setup completo dentro de kill zone" if valid
-              else "sweep+FVG validos pero fuera de la kill zone activa (14-15 UTC)")
+              else "sweep+FVG validos pero fuera de la kill zone activa (15,16,20-23 UTC)")
 
     return SilverBulletSignal(
         direction=sweep.direction,

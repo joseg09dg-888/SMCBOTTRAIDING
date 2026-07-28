@@ -39,7 +39,7 @@ from strategies.event_driven import EventDrivenStrategy
 
 from connectors.economic_calendar import currencies_for_symbol, get_high_impact_window
 
-from smc.liquidity_sweep import check_setup as _silver_bullet_check
+from smc.liquidity_sweep import check_setup as _silver_bullet_check, in_active_kill_zone as _sb_in_active_kz
 
 
 
@@ -3541,14 +3541,20 @@ class TradingSupervisor(PositionGuardsMixin):
                                     self._scan_stats["blocked_score"] += 1
                                     print(f" -- sin setup (threshold={effective_threshold})")
                                 else:
-                                    # ICT Silver Bullet gate (2026-07-09): dentro de la kill zone
-                                    # activa (14 UTC = 10-11am ET, la unica que solapa con las
-                                    # horas activas reales del bot), un trader ICT real exige la
-                                    # confluencia COMPLETA (sweep+FVG+kill zone) en vez de un score
-                                    # ponderado -- si falta cualquier pieza, no opera, sin importar
-                                    # que tan alto sume el resto. Fuera de esa hora, sigue el
-                                    # criterio de score de siempre (sin este gate adicional).
-                                    if tf == "H1" and datetime.now(timezone.utc).hour == 14:
+                                    # ICT Silver Bullet (2026-07-09, kill zone corregida 2026-07-28
+                                    # -- ver BUG-SB-DEAD-KILLZONE en smc/liquidity_sweep.py) YA NO
+                                    # bloquea. BUG-SB-EMPTY-INTERSECTION (2026-07-28): con la ventana
+                                    # horaria corregida (15,16,20-23 UTC en vez de la hora 14 muerta),
+                                    # se probo por primera vez como gate real contra 16 anios de datos
+                                    # -- exigir sweep+FVG fresco (liquidity_sweep.py) EN EL MISMO bar
+                                    # donde smc_signal() ya genero señal produjo CERO trades en el
+                                    # periodo completo. Son dos lecturas de estructura independientes
+                                    # con ventanas distintas -- casi nunca coinciden en el mismo bar,
+                                    # exigir ambas a la vez es una interseccion vacia, no un filtro de
+                                    # calidad. Se deja como informativo (no bloquea) hasta que exista
+                                    # una version de esta confluencia que de verdad co-ocurra con
+                                    # smc_signal() con suficiente frecuencia para medirse.
+                                    if tf == "H1" and _sb_in_active_kz():
                                         try:
                                             _sb_df = await loop.run_in_executor(
                                                 None, lambda s=symbol: self.mt5.get_ohlcv(s, "H1", 30)
@@ -3556,11 +3562,11 @@ class TradingSupervisor(PositionGuardsMixin):
                                             _sb = _silver_bullet_check(_sb_df) if _sb_df is not None else None
                                             _sb_dir = "bullish" if bias == "LONG" else "bearish"
                                             if _sb is None or not _sb.valid or _sb.direction != _sb_dir:
-                                                print(f" -- [SILVER-BULLET] confluencia incompleta (sweep+FVG+killzone) -- skip", flush=True)
-                                                continue
-                                            print(f" -- [SILVER-BULLET] confluencia completa confirmada", flush=True)
+                                                print(f" -- [SILVER-BULLET-INFO] confluencia incompleta (ya no bloquea)", flush=True)
+                                            else:
+                                                print(f" -- [SILVER-BULLET-INFO] confluencia completa", flush=True)
                                         except Exception as _sb_exc:
-                                            print(f" -- [SILVER-BULLET] error verificando (no bloqueo): {_sb_exc}", flush=True)
+                                            print(f" -- [SILVER-BULLET-INFO] error verificando (no bloqueo): {_sb_exc}", flush=True)
                                     # BUG-EXEC-LOG-MISLEADING (2026-07-20): este print decia
                                     # "ejecutando SWING" pero _send_mt5_real_order todavia tiene
                                     # ~10 filtros propios (hora muerta, cooldown, RR, spread,

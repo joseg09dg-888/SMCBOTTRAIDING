@@ -91,9 +91,25 @@ rng = np.random.default_rng(42)
 # Toggles para aislar el efecto de cada filtro nuevo 2026-07-09 (diagnostico
 # temporal -- ver cual filtro realmente ayuda antes de decidir la config final)
 ENABLE_MOMENTUM_FILTERS = False  # desactivado en vivo 2026-07-09 -- ver core/supervisor.py
-ENABLE_SILVER_BULLET_GATE = True  # activo en vivo pero nunca dispara en 2 anios de datos (inerte)
+ENABLE_SILVER_BULLET_GATE = os.environ.get("ENABLE_SILVER_BULLET_GATE", "0") == "1"
+# ERA inerte hasta 2026-07-28 -- su kill zone (hora 14 UTC exacta) quedo
+# muerta desde que 14 se bloqueo el 2026-07-26 (ver BUG-SB-DEAD-KILLZONE en
+# smc/liquidity_sweep.py). Se corrigio la ventana horaria (15,16,20-23 UTC,
+# bug real, ese fix se queda) y se probo por primera vez como gate real:
+# =1 sobre 16 anios completos -> 0 TRADES, ninguno en ninguna hora, ningun
+# año -- el sweep+FVG fresco de liquidity_sweep.py nunca coincide con el
+# mismo bar donde smc_signal() genera señal (son dos lecturas de estructura
+# independientes con ventanas distintas). Exigir ambas a la vez como AND
+# no es "mas selectivo", es una interseccion vacia. Default vuelto a 0
+# (informational-only en vivo, ver core/supervisor.py) -- NO usar como gate
+# duro sin antes verificar que el trade log no quede vacio.
 ENABLE_REGIME_FILTER = False  # probado 2026-07-09: empeoro TODO (P(pasar Axi) 40.3%->31.5%,
 # E[mensual] $3395->$1559, Sharpe 0.476->0.20, P(mes<-5%) 6%->21%) -- rechazado
+# (ese filtro solo dejaba pasar HIGH+STRONG_TREND, 1 de 9 combos -- demasiado
+# restrictivo). EXCLUDE_CHOPPY es mas quirurgico: excluye solo CHOPPY (WR=12%,
+# avg -$205/-$213 en los 3 niveles de vol, ~5676 de 25195 trades = 22.5% del
+# total) y deja pasar los otros 6 de 9 combos, todos con WR 47-68%.
+EXCLUDE_CHOPPY = os.environ.get("EXCLUDE_CHOPPY", "0") == "1"
 
 # ── Data download ──────────────────────────────────────────────────────
 print("\n[DATA] Descargando datos historicos...")
@@ -509,6 +525,9 @@ for pair, df1 in h1_data.items():
         if ENABLE_REGIME_FILTER:
             if vol_regime(df1, idx) != "HIGH" or trend_regime(df1, idx) != "STRONG_TREND":
                 continue
+        if EXCLUDE_CHOPPY:
+            if trend_regime(df1, idx) == "CHOPPY":
+                continue
 
         # Filtros nuevos 2026-07-09: RSI/Bollinger/Estocastico/volumen (smc/momentum.py)
         # + Alligator/Awesome Oscillator (smc/bill_williams.py), mismo criterio que el
@@ -522,10 +541,12 @@ for pair, df1 in h1_data.items():
             except Exception:
                 pass
 
-        # Silver Bullet ICT (2026-07-09): gate todo-o-nada SOLO en la kill zone
-        # activa (14 UTC) -- si falta sweep+FVG+killzone en la direccion de la
-        # senal, no se opera esa hora especifica, igual que en vivo.
-        if ENABLE_SILVER_BULLET_GATE and hour_utc == 14:
+        # Silver Bullet ICT (2026-07-09, kill zone corregida 2026-07-28): gate
+        # todo-o-nada SOLO en las horas activas reales (15,16,20-23 UTC, ya NO
+        # 14 UTC -- bloqueada desde 2026-07-26) -- si falta sweep+FVG+killzone
+        # en la direccion de la senal, no se opera esa hora especifica, igual
+        # que en vivo (ver BUG-SB-DEAD-KILLZONE en smc/liquidity_sweep.py).
+        if ENABLE_SILVER_BULLET_GATE and hour_utc in (15, 16, 20, 21, 22, 23):
             try:
                 _sb = silver_bullet_check(_mw)
                 _sb_dir = "bullish" if sig == "LONG" else "bearish"
@@ -657,6 +678,10 @@ for p in sorted(pair_stats.keys(), key=lambda x: pair_stats[x]["pnl"], reverse=T
 print("\n" + "=" * 72)
 print("  DIMENSIÓN 6: KELLY — Tamaño óptimo de posición")
 print("=" * 72)
+final_trades = []  # BUG-EMPTY-TRADELOG-CRASH (2026-07-28): referenced unconditionally
+wr_f, b = 0.0, 0.0  # at DIM7 below -- a 0-trade run (e.g. an over-restrictive gate
+                     # like ENABLE_SILVER_BULLET_GATE=1) crashed with NameError
+                     # instead of printing "no trades" like every other section.
 if n_final > 10:
     final_trades = [t for t in trade_log if t["type"] == "final" and t["pnl"] != 0]
     wins_f = [t["pnl"] for t in final_trades if t["win"]]
