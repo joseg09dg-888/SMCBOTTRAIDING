@@ -55,9 +55,13 @@ STAGNANT_PEAK_MAX    = float(os.environ.get("STAGNANT_PEAK_MAX", "15.0"))
 STAGNANT_GRACE_HOURS = float(os.environ.get("STAGNANT_GRACE_HOURS", "2.0"))
 MAX_HOLD_HOURS       = float(os.environ.get("MAX_HOLD_HOURS_TEST", "36.0"))
 SWING_MAX_LOSS_ABS   = float(os.environ.get("SWING_MAX_LOSS_TEST", "150.0"))
-FRIDAY_CLOSE_HOUR    = 19  # UTC -- matches live; DEAD_HOURS_UTC below already
-                           # skips hour 19, so the sim's earliest reachable
-                           # Friday close check is hour 20, same as live effect
+FRIDAY_CLOSE_HOUR    = float(os.environ.get("FRIDAY_CLOSE_HOUR_TEST", "19"))  # UTC -- matches live;
+                           # DEAD_HOURS_UTC below already skips hour 19, so the sim's
+                           # earliest reachable Friday close check is hour 20, same as
+                           # live effect. Parametrized 2026-07-27: friday_close is 27.6%
+                           # of ALL real closes (2nd most common after final_SL) -- testing
+                           # whether a later cutoff lets more Thu/Fri trades reach TP
+                           # instead of being force-closed regardless of P&L.
 CAPITAL = 96_184.0
 RISK_PCT = 0.005
 MAX_RISK = 275.0  # probado doblar a 550 (2026-07-09): P(pasar Axi)+2.5pp pero

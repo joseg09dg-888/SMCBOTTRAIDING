@@ -3390,25 +3390,24 @@ class TradingSupervisor(PositionGuardsMixin):
                                     elif bias in ("LONG", "SHORT"):
                                         self._mt5_h4_just_confirmed.pop(symbol, None)  # confirmado 2+ ciclos
 
-                                # H4 + H1 deben coincidir. D1-FILTER (antes exigia D1 tambien)
-                                # REMOVIDO 2026-07-21 -- panel de expertos de trading-strategy
-                                # encontro que el D1 "macro" aqui es solo EMA50 en el cierre
-                                # diario (no una lectura SMC real de estructura D1), usado como
-                                # veto absoluto. Validado con el backtest real (no una opinion):
-                                # desacoplando smc_signal() del sesgo D1 en scripts/backtest_
-                                # multiyear.py y comparando D1+H4 vs solo-H4 sobre 2 anios de
-                                # datos reales -- quitar D1-FILTER sube P(pasar Axi 5%) 49%->59%,
-                                # E[mensual] $5266->$8168, Sharpe 0.51->0.64, y el riesgo de mes
-                                # malo NO empeora (16%->15%). No es un trade-off, mejora todo.
-                                # H4-FILTER se queda -- su remocion solo sumaba +1pp adicional.
+                                # D1-FILTER REMOVIDO 2026-07-21 (ver historia abajo).
+                                # H4-FILTER REMOVIDO 2026-07-28: la conclusion de 07-21 ("su
+                                # remocion solo sumaba +1pp") se midio contra un backtest que
+                                # TODAVIA NO modelaba STAGNANT/FRIDAY-CLOSE/PEAK_GUARD=400 (esos
+                                # 3 guardias, agregados recien el 07-24, son los que de verdad
+                                # cierran el 77% de los trades reales) -- esa conclusion vieja
+                                # quedo obsoleta al corregir el modelo. Re-medido hoy con la
+                                # configuracion completa real en vivo (hora-14 bloqueada +
+                                # STAGNANT 6h + PEAK_GUARD 400 + RR 4.5, EXTRA_DEAD_HOURS=14
+                                # REQUIRE_H4=0) sobre 16 anios reales: +8.7% mas trades
+                                # (25195->27390), mas dias con trade (3902->3974), Sharpe
+                                # 0.89->0.93, E[mensual] $7663->$8290, P(pasar Axi 5%) 61%->63%.
+                                # Mejora las 3 metricas Y la frecuencia a la vez, no es trade-off.
                                 if signal.signal_type != SignalType.WAIT:
                                     h4_dir = self._mt5_h4_direction.get(symbol)
-                                    d1_dir = self._mt5_d1_trend.get(symbol)  # solo informativo en el log ahora, ya no bloquea
-
-                                    # H4 solo bloquea si explicitamente en contra (LONG vs SHORT)
+                                    d1_dir = self._mt5_d1_trend.get(symbol)  # solo informativo en el log, ya no bloquea
                                     if tf in ("H1", "M15") and h4_dir in ("LONG", "SHORT") and h4_dir != bias:
-                                        print(f" -- [H4-FILTER] {tf}={bias} vs H4={h4_dir} — no confluencia, skip", flush=True)
-                                        continue
+                                        print(f" -- [H4-INFO] {tf}={bias} vs H4={h4_dir} — no confluencia (ya no bloquea)", flush=True)
 
                                     # APRENDIZAJE 24-Jun: H4 recién confirmado (WAIT→DIR) = esperar 1 ciclo
                                     # Evita swing chase cuando H4 acaba de girar (AUDUSD -$12.54)
