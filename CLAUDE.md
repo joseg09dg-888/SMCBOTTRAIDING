@@ -73,9 +73,7 @@ pm2 status
 ## 4. CREDENCIALES MT5 XM (obtenidas de Gmail MCP 2026-05-20)
 
 ```
-MT5_LOGIN=345308080
-MT5_PASSWORD=IMSMCbot*2
-MT5_SERVER=XMGlobal-MT5 10
+MT5_LOGIN, MT5_PASSWORD, MT5_SERVER ← ver .env local (NUNCA pegar valores reales aqui)
 Cuenta: Demo XM Global
 Email: site@xm.com (email de bienvenida)
 ```
@@ -84,7 +82,7 @@ Email: site@xm.com (email de bienvenida)
 
 **Fix pendiente (una sola vez):**
 1. MT5 está abierto y configurado para XMGlobal-MT5 10
-2. En la ventana de MT5 → ingresar Password: IMSMCbot*2 → OK
+2. En la ventana de MT5 → ingresar el Password de `.env` → OK
 3. Esperar que aparezcan cotizaciones (EURUSD etc.)
 4. Correr: `.venv\Scripts\python scripts/test_xm_mt5.py`
 
@@ -209,9 +207,9 @@ ANTHROPIC_API_KEY      ← Claude API
 BINANCE_API_KEY        ← Testnet key
 BINANCE_API_SECRET     ← Testnet secret
 BINANCE_TESTNET=true
-MT5_LOGIN=8889         ← BrokerGroup-Live24 (NO CONECTA)
-MT5_PASSWORD=IMSMCbot  ← Pendiente actualizar a ICMarkets
-MT5_SERVER=MetaQuotes-Demo ← Pendiente → ICMarketsSC-Demo
+MT5_LOGIN              ← BrokerGroup-Live24, demo sin fondos (NO CONECTA), ver .env
+MT5_PASSWORD           ← Pendiente actualizar a ICMarkets, ver .env
+MT5_SERVER             ← Pendiente → ICMarketsSC-Demo, ver .env
 TELEGRAM_BOT_TOKEN     ← @smc_trading_bot
 TELEGRAM_CHAT_ID=5371315570
 GLINT_EMAIL=joseg09.dg@gmail.com
