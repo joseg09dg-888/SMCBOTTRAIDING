@@ -133,6 +133,108 @@ esta lista, pendiente.
 - Dimensión 7 (salida óptima), 8 (correlación) y el Monte Carlo de 100k sims
   (P(pasar Axi 5%), Sharpe mensual) -- **aún NO confirmados**, en el 3er intento.
 
+### 7. Auditoría con 4 subagentes de Claude Code (2026-08-28, pedido explícito del
+usuario) -- hallazgos reales, ninguno implica agregar agentes al bot
+
+**A. Drift adicional backtest-vs-live (más allá de D1/H4 ya corregido) -- CORREGIDO:**
+- `DEAD_HOURS_UTC` hardcodeado en `backtest_multiyear.py` no incluía hora 14
+  (el bot en vivo la bloquea desde 2026-07-26, commit ef54cf6). El run con esto sin
+  corregir metió 8,190 trades de la hora 14 (WR=40%, avg=-$6) que en vivo nunca pasan.
+- `PEAK_GUARD_MIN` default 200 en el script vs **400 real** en
+  `core/position_guards.py` (desde 2026-07-24). El propio comentario del código
+  documenta el sweep: 400 gana en las 3 métricas (44% pass/$4,213/mes/Sharpe 0.51
+  vs 40%/$3,360/0.44 con 200).
+- `STAGNANT_HOURS` default 4.0 en el script vs **6.0 real** (mismo sweep 2026-07-24).
+- `MAX_OPEN_POSITIONS`: AMBIGUO, no corregido -- el commit `1e9f8ae` dice "3->4"
+  pero `core/config.py:37` sigue con default `"3"` hardcodeado y sin override en
+  `.env`. No está confirmado si el cambio a 4 realmente quedó aplicado en
+  producción. Pendiente de verificación manual antes de tocar.
+- Los 3 primeros ya se corrigieron en `scripts/backtest_multiyear.py` (comentarios
+  con fecha 2026-08-28 marcan cada fix). 5to intento de backtest relanzado con todo
+  corregido.
+
+**B. Bug de Kelly -- CORREGIDO:** la fórmula de Kelly en Dimensión 6 filtraba
+`type=="final"` (solo TP/SL puro, 22.9% de los cierres reales), ignorando el 77.1%
+que cierra por guardias con P&L variable real. Por eso daba Kelly negativo (-10.4%)
+pese a P&L diario/anual positivo consistente -- eran dos poblaciones de trades
+distintas comparadas como una sola. Corregido para usar TODOS los cierres
+(`trade_log` completo, no solo `final`).
+
+**C. Metodología anti-overfitting recomendada (NO implementada aún, solo
+documentada)** para futuras rondas de optimización de parámetros:
+- Walk-forward anclado: train 2010-2021, validación OOS 2022-2024 (una sola pasada,
+  no se itera contra ella), holdout ciego final 2025+ (se toca una sola vez antes
+  de ir a real, nunca se re-optimiza contra él aunque decepcione).
+- Embargo de 1-2 semanas entre ventanas (posiciones pueden durar 36h+, pares
+  correlacionados como AUDUSD/NZDUSD r=0.90 filtran señal a través del borde).
+- Sweeps de parámetros solo sobre la ventana train (recorta runtime); la corrida
+  completa de 16 años + validación + holdout solo para 1-2 finalistas por ronda.
+- Exigir que la mejora se sostenga en OOS con significancia (bootstrap CI o
+  Deflated Sharpe Ratio), no solo "se ve mejor en el mismo histórico de siempre".
+
+**D. Auditoría de los 7 agentes macro/institucionales** (institutional_flow,
+microstructure, fed_sentiment, onchain, geopolitical, retail_psychology,
+alternative_data) -- todos están conectados de verdad (ninguno es
+`hash()%100` puro como los ya eliminados), pero:
+- `fed_sentiment_agent`: el más cercano a placeholder -- su único componente con
+  dato real (`analyze_sentiment`) nunca se invoca en ningún lado del código.
+- Los otros 6: mezclan dato real (COT vía CFTC, GDELT, Fear&Greed) con piezas
+  heurísticas sin calibrar o mal etiquetadas (ej. "retail_long_pct" en
+  `retail_psychology_agent` es momentum de 20 velas disfrazado, no posicionamiento
+  real; `microstructure_agent` duplica/contradice la lógica de sesión ya validada
+  en `session_manager.py`). Ninguno se tocó -- veredicto por agente: REVISAR
+  (necesitan backtest A/B antes de confiar en su bonus), salvo fed_sentiment que
+  se recomienda reducir a solo el bloqueo FOMC (lo único real que hace).
+
+**E. HALLAZGO CRÍTICO DE RIESGO (no corregido, requiere decisión del usuario):**
+- `MAX_RISK_PER_TRADE=0.5%` del `.env` es **decorativo** -- las órdenes MT5 reales
+  usan `VolumeCalculator.calculate_volume()` (`core/supervisor.py:2204-2238`) con
+  riesgo dinámico por score: 0.25% (score<75) / 0.5% (≥75) / **1% (≥90)**,
+  independiente del `.env`.
+- `AxiCapitalAdjuster.SIZING_TABLE` (riesgo correcto por tramo de capital) también
+  desconectado -- solo se reporta por Telegram, nunca se aplica al sizing real.
+- **Dato de trading real (no backtest)** encontrado en comentario de código
+  (`supervisor.py:2208`): episodio de 213 trades reales mostró **WR=29.1%,
+  Profit Factor=0.35** -- muy por debajo del WR 46-60% que muestra el backtest
+  limpio de 16 años. El R:R realmente logrado en vivo es ~1.36:1 (no el 3.0
+  diseñado). Con esos números reales, Kelly da NEGATIVO salvo restringido a las
+  horas 15/16/20-23 UTC (donde da positivo pero modesto, 5-12% full Kelly).
+- El Kelly/VaR real que sí calcula `quant_stats.py` nunca llega al sizing --
+  solo alimenta el score, está desconectado del tamaño de posición real.
+- **Decisión del usuario (2026-08-28): bajar riesgo SÍ cumple el objetivo** ("a
+  mayor riesgo mayor ganancia, pero mayor ganancia al menor riesgo es lo ideal").
+  Aplicado: cap de score≥90 bajado de 1% a 0.5% en `core/supervisor.py`
+  (verificado: sintaxis OK, sin test unitario que dependa del valor viejo, no
+  se rompió nada conocido). Las horas 15/16/20-23 UTC YA estaban restringidas
+  en vivo (DEAD_HOURS_UTC ya bloquea 0-14,17-19) -- no hacía falta cambio ahí.
+  **PENDIENTE, NO aplicado todavía**: conectar el Kelly fraccional (1/4) real
+  (`quant_stats.py`) al sizing en `VolumeCalculator`, reemplazando el score de
+  confianza como criterio -- es un cambio más grande a la lógica de órdenes
+  reales; requiere correr la suite de 1288+ tests para validar antes de
+  aplicar, y con la RAM copada por el backtest no fue posible esta sesión.
+
+### 8. Investigación web (2026-08-28, pedido del usuario) -- estrategias de
+traders/fondos reales en el rango $5K-$1M, con fuentes citadas
+
+- **Ningún caso público verificado combina WR bajo con R:R bajo** (como nuestro
+  episodio real de 213 trades: WR=29.1%, RR=1.36). Ejemplos reales publicados por
+  FTMO siempre tienen O WR alto (>60%) O R:R alto (>3), nunca ambos bajos.
+  Expectancy calculado con nuestros números reales: 0.291×1.36-0.709 ≈ **-0.31R
+  por trade** -- coincide matemáticamente con el PF=0.35 real. No es mala suerte,
+  es la combinación matemáticamente perdedora, confirmado por comparación externa.
+- **Hallazgo con respaldo académico real** (paper MDPI revisado por pares +
+  paper arXiv 2026 con >900 trades reales, `arXiv:2604.27150`): sistemas que
+  abandonan el R:R teórico fijo y usan salida dinámica (TP parcial temprano +
+  trailing + SL adaptativo por volatilidad) capturan MEJOR rendimiento ajustado
+  a riesgo que los que esperan al TP completo diseñado. Esto valida la dirección
+  de las guardias que ya tiene el bot (peak_guard/stagnant/trailing) -- el
+  objetivo no debería ser "que más trades lleguen al TP de RR=3.0", sino afinar
+  esas salidas tempranas (relacionado con la Dimensión 7 del backtest, salida
+  óptima, aún pendiente de confirmar en el 5to intento).
+- **Regla de consistencia (30% del mes): sin evidencia sólida independiente** --
+  todo lo encontrado es marketing de prop firms repetido entre sitios, reportado
+  honestamente como tal en vez de rellenar con generalidades.
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

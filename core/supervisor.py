@@ -2206,10 +2206,15 @@ class TradingSupervisor(PositionGuardsMixin):
         # Use real MT5 balance (not startup capital=1000) for correct lot sizing
         live_capital = self._risk_gate_state.current_balance if self._risk_gate_state.current_balance > 1000 else self.capital
         # Dynamic risk (halved 2026-06-14, WR=29.1%/PF=0.35 over 213 trades):
-        # 1% for very high confidence (score>=90), 0.5% for high (>=75), 0.25% normal
+        # 2026-08-28: tier score>=90 bajado de 1% a 0.5% (cap unico 0.5%) --
+        # auditoria de riesgo (subagente) encontro que con el WR/RR REALES
+        # (episodio real de 213 trades, no backtest) Kelly da negativo salvo
+        # en las horas ya filtradas (15,16,20-23 UTC); 4 perdidas seguidas al
+        # 1% ya agotan el limite diario de -4% de Axi Select (deja solo 4
+        # trades de margen), al 0.5% el margen sube a 8 perdidas seguidas.
         if signal.decision_score >= 90:
-            risk_pct = 0.01
-            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 1% (alta confianza)", flush=True)
+            risk_pct = 0.005
+            print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 0.5% (alta confianza, cap bajado 2026-08-28)", flush=True)
         elif signal.decision_score >= 75:
             risk_pct = 0.005
             print(f"[RISK] {signal.symbol}: score={signal.decision_score} → riesgo 0.5%", flush=True)

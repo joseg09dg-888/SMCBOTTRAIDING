@@ -43,14 +43,19 @@ print("=" * 72)
 MAX_OPEN_TEST = int(os.environ.get("MAX_OPEN_TEST", "2"))  # 2026-07-16: parametrizado para comparar 2 vs 3 (pedido por Jose)
 REQUIRE_D1 = os.environ.get("REQUIRE_D1", "1") == "1"  # 2026-07-21: medir impacto real de D1-FILTER (ver smc_signal())
 REQUIRE_H4 = os.environ.get("REQUIRE_H4", "1") == "1"  # 2026-07-21: medir impacto real de H4-FILTER
-PEAK_GUARD_MIN = float(os.environ.get("PEAK_GUARD_MIN", "200"))    # 2026-07-16: recalibracion pedida por Jose
+PEAK_GUARD_MIN = float(os.environ.get("PEAK_GUARD_MIN", "400"))    # 2026-07-16: recalibracion pedida por Jose
+# 2026-08-28: default subido 200->400 -- core/position_guards.py:656 fijo
+# PEAK_MIN_USD=400.0 desde 2026-07-24 tras el sweep documentado abajo (400
+# gano en las 3 metricas: 44% pass/$4213/mes/Sharpe 0.51 vs 40%/$3360/0.44
+# con 200). El default de este script nunca se actualizo, encontrado por
+# audit subagent.
 PEAK_GUARD_RETRACE = float(os.environ.get("PEAK_GUARD_RETRACE", "0.30"))
 # 2026-07-24: STAGNANT/TIME-CLOSE-36H/FRIDAY-CLOSE were NEVER simulated here --
 # live data shows they (not TP/SL/PEAK-GUARD) drive 77% of real closes, so every
 # conclusion drawn from this backtest before today was measured against a model
 # missing the dominant real exit mechanism. Added to match core/position_guards.py
 # exactly (values there as of 2026-07-24), parametrized for sweeping.
-STAGNANT_HOURS       = float(os.environ.get("STAGNANT_HOURS", "4.0"))
+STAGNANT_HOURS       = float(os.environ.get("STAGNANT_HOURS", "6.0"))  # 2026-08-28: 4.0->6.0, matches core/position_guards.py:707 (commit b950662/dd3157e, 2026-07-24 sweep)
 STAGNANT_PEAK_MAX    = float(os.environ.get("STAGNANT_PEAK_MAX", "15.0"))
 STAGNANT_GRACE_HOURS = float(os.environ.get("STAGNANT_GRACE_HOURS", "2.0"))
 MAX_HOLD_HOURS       = float(os.environ.get("MAX_HOLD_HOURS_TEST", "36.0"))
@@ -354,7 +359,12 @@ for pair, df1 in h1_data.items():
         # (WR=24-28%, see DEAD_HOURS_UTC comment) while EXCLUDING 20-23, which
         # the live bot actually trades. Every cached backtest_results.json
         # number produced by this script was simulating the wrong hours.
-        DEAD_HOURS_UTC = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 18, 19}
+        # 2026-08-28: hour 14 hard-blocked in supervisor.py:149 since commit
+        # ef54cf6 (2026-07-26, "backtest confirms real improvement") but this
+        # script's set was never updated -- found by audit subagent after the
+        # live run showed 8190 trades at hour 14 (WR=40%, avg=-$6) that the
+        # real bot never takes anymore.
+        DEAD_HOURS_UTC = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19}
         _extra_dead = os.environ.get("EXTRA_DEAD_HOURS", "")
         if _extra_dead:
             DEAD_HOURS_UTC = DEAD_HOURS_UTC | {int(h) for h in _extra_dead.split(",") if h.strip()}
@@ -683,7 +693,13 @@ wr_f, b = 0.0, 0.0  # at DIM7 below -- a 0-trade run (e.g. an over-restrictive g
                      # like ENABLE_SILVER_BULLET_GATE=1) crashed with NameError
                      # instead of printing "no trades" like every other section.
 if n_final > 10:
-    final_trades = [t for t in trade_log if t["type"] == "final" and t["pnl"] != 0]
+    # 2026-08-28: bug encontrado por auditoria (subagente) -- filtrar solo
+    # type=="final" mide Kelly sobre el 22.9% de los cierres (TP/SL puro),
+    # ignorando el 77.1% que cierra por guardias (peak_guard/friday_close/
+    # stagnant/time_close) con P&L real variable. Esa mezcla sesgada daba
+    # Kelly negativo pese a P&L diario/anual positivo consistente. Usar
+    # TODOS los cierres reales, no solo el subconjunto TP/SL.
+    final_trades = [t for t in trade_log if t["pnl"] != 0]
     wins_f = [t["pnl"] for t in final_trades if t["win"]]
     losses_f = [abs(t["pnl"]) for t in final_trades if not t["win"]]
     wr_f = len(wins_f) / len(final_trades)
@@ -692,7 +708,7 @@ if n_final > 10:
     if avg_loss > 0 and avg_win > 0:
         b = avg_win / avg_loss  # ratio win/loss
         kelly_f = (wr_f * (b + 1) - 1) / b
-        print(f"  WR final: {wr_f*100:.1f}% | avg win: ${avg_win:.0f} | avg loss: ${avg_loss:.0f}")
+        print(f"  WR real (todos los cierres): {wr_f*100:.1f}% | avg win: ${avg_win:.0f} | avg loss: ${avg_loss:.0f}")
         print(f"  B (win/loss ratio): {b:.2f}x")
         print(f"  Full Kelly fraction: {kelly_f*100:.1f}% del capital")
         print(f"  Half Kelly (safer):  {kelly_f*50:.1f}% del capital")

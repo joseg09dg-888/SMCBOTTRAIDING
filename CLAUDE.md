@@ -542,4 +542,93 @@ NAS100: r≈0.00 → siempre independiente, no cuenta para DIM8
 .venv\Scripts\python scripts/backtest_quantum.py
 ```
 
-*Última actualización: 2026-07-26 (panel SMC/quant + hora-14 bloqueada por backtest real) | Tests: 1446 | Bot: ONLINE (pm2) | Active pairs (MT5): USDCAD/EURUSD/NZDUSD/USDCHF/EURAUD/GBPCAD (USDJPY/GBPJPY/XAUUSD/US30 suspendidos por RiskGovernor) | Dead hours forex: 0-14, 17-19 UTC (15,16,20-23 abiertas -- unicas horas con edge real medido) | EightDimensionAgent: ACTIVO*
+## 20. FLUJO OPERATIVO — cómo iterar sin pisarse (2026-08-28)
+
+> Pedido explícito del usuario tras una sesión con fricción real: 5 intentos de
+> backtest por desalineaciones de config entre `scripts/backtest_multiyear.py`
+> y el bot en vivo, y RAM crítica (3.83GB) por correr cosas pesadas en paralelo
+> sin coordinarlas. Esto es el procedimiento fijo para no repetirlo.
+
+### Regla de oro: nunca 2 procesos pesados a la vez en esta PC (3.83GB RAM)
+Antes de arrancar CUALQUIER cosa pesada (backtest completo, `pytest` completo,
+el bot en vivo con PM2), verificar RAM libre (`Get-CimInstance
+Win32_OperatingSystem`). Si hay <1GB libre, esperar a que termine lo que esté
+corriendo antes de arrancar otra cosa. Nunca backtest + bot en vivo simultáneo.
+
+### Flujo para cualquier cambio de parámetro/estrategia
+```
+1. VERIFICAR PARIDAD antes de tocar nada
+   -> ¿El script de backtest (scripts/backtest_multiyear.py) tiene los mismos
+      defaults que el bot en vivo (core/supervisor.py, core/config.py,
+      core/position_guards.py)? Si no se verificó recientemente, grep ambos
+      lados para las constantes relevantes (DEAD_HOURS_UTC, PEAK_GUARD_MIN,
+      STAGNANT_HOURS, MIN_RR, MAX_OPEN_POSITIONS, REQUIRE_D1/H4) ANTES de
+      correr un backtest de 16 años que puede tardar horas con la config
+      equivocada.
+
+2. HACER el cambio de código (pequeño, uno a la vez, no varios sin probar)
+
+3. VERIFICAR SINTAXIS barato (ast.parse, no requiere RAM) antes de gastar
+   horas en un backtest sobre código roto.
+
+4. SI el cambio toca lógica de sizing/órdenes reales (dinero real en juego):
+   correr `pytest tests/ -q` completo ANTES de dar el cambio por bueno --
+   solo si hay RAM libre para eso (no en paralelo con un backtest).
+
+5. BACKTEST de validación:
+   - Lanzar SIEMPRE con PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 -u, en
+     background, redirigiendo a un log real (no confiar en buffer -- los
+     runs bufferizados se quedan en blanco horas aunque estén trabajando).
+   - Capturar el exit code real (`; echo "EXIT_CODE=$?" >> log`) -- un pipe a
+     `tee` sin `pipefail` puede reportar exit 0 aunque el script haya
+     crasheado.
+   - Monitorear por CPU time (`Get-Process`), no solo por si el archivo de
+     log tiene contenido nuevo -- fases pesadas (Dimensiones 1-3, ~16 años ×
+     6 pares) no imprimen nada hasta terminar.
+
+6. SI CRASHEA: leer el traceback completo, arreglar la causa raíz (no
+   silenciar), y SOLO ENTONCES relanzar -- no reintentar a ciegas.
+
+7. GUARDAR resultado en memory/backtest_results.json (ya trackeado en git,
+   se respalda solo via la tarea AutoCommit-Proyectos cada 30 min) Y en
+   SESION_ACTUAL.md (hallazgos + qué falta), en el mismo turno en que se
+   obtienen los números -- no dejarlo para "después".
+
+8. SOLO CON el resultado del backtest confirmando mejora (o al menos no
+   empeoramiento) real: decidir si el cambio se queda o se revierte.
+```
+
+### Uso de subagentes de Claude Code (investigación/auditoría, NO trading agents)
+Correrlos EN PARALELO al backtest (no consumen la RAM de MT5/Python de forma
+significativa, son llamadas a la API de Claude) para no perder tiempo de
+reloj. Cada uno con un scope acotado y un entregable concreto (auditoría de
+un archivo, investigación de un tema puntual con fuentes citadas) -- nunca
+"optimiza todo" sin límite. Sus hallazgos van a `SESION_ACTUAL.md` en cuanto
+llegan, no se pierden en el chat.
+
+**Paso explícito, no solo genérico**: en cada ronda de optimización, ANTES de
+decidir qué parámetro tocar, lanzar un subagente de investigación web sobre
+traders/fondos/papers reales con datos verificables (no marketing) en la
+etapa de capital relevante (Axi Select: $5K-$1M) o sobre la técnica puntual
+en cuestión (ej. gestión de salidas, sizing, reglas de consistencia) --
+igual que el hecho en esta sesión (2026-08-28, ver SESION_ACTUAL.md sección
+8: hallazgo real con 2 papers académicos citados sobre salida dinámica vs
+R:R teórico fijo). Ese hallazgo alimenta qué hipótesis probar en el
+siguiente backtest -- no se cambia código a ciegas, se cambia con evidencia
+externa + evidencia propia (backtest) combinadas.
+
+### Regla dura, no negociable
+Nunca agregar un agente nuevo al pipeline del bot (`agents/*.py` conectado en
+`core/supervisor.py`) sin evidencia de backtest real que lo respalde -- ver
+sección 16, ya hay historial de agentes agregados sin evidencia que resultaron
+en cero señal real (Elliott, Chaos, quant_optimizer, quant_intel).
+
+---
+
+*Última actualización: 2026-08-28 (sesión de recuperación post-daño de PC:
+backup crítico corregido, 4 subagentes de auditoría, 2 bugs de backtest
+corregidos -- encoding y filtros desalineados con vivo --, fix de Kelly,
+cambio de riesgo 1%->0.5% aplicado, flujo operativo fijado) | Bot: OFFLINE
+(pendiente arrancar en PM2 tras liberar RAM) | Dead hours forex: 0-14, 17-19
+UTC (15,16,20-23 abiertas) | Backtest 5to intento con config corregida en
+curso al cierre de esta sesión, ver SESION_ACTUAL.md para el resultado real*
