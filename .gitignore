@@ -34,6 +34,12 @@ logs/
 *.log
 *.db
 *.sqlite3
+# EXCEPCION: estas 3 SI se respaldan -- son el historial real de trades/scores/
+# precios, perderlas en un cambio de PC = perder meses de datos (ver incidente
+# 2026-08-28: episodes.db/scores.db nunca se respaldaron y se perdieron)
+!memory/episodes.db
+!memory/scores.db
+!memory/historical_data.db
 
 # Test artifacts
 .pytest_cache/

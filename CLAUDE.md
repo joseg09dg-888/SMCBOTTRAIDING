@@ -367,6 +367,9 @@ Con $200K fondead al 90% profit split:
 
 ## 14. REGLAS PARA CLAUDE CODE EN ESTE PROYECTO
 
+0. **NUNCA añadir más agentes sin evidencia de backtest real** que respalde que aportan edge (instrucción explícita del usuario 2026-08-28, ver sección 16 sobre agentes ya eliminados por no tener evidencia)
+0b. **SIEMPRE actualizar `SESION_ACTUAL.md` al terminar** cada respuesta, con el resultado real (no una promesa de lo que se iba a hacer)
+0c. **Si algo no funciona, decirlo explícitamente** — nunca reportar como completo/funcionando algo que no se verificó de verdad
 1. **LEER ESTE ARCHIVO** al inicio de cada sesión
 2. **NUNCA romper** los 1288 tests existentes — verificar con `pytest tests/ -q`
 3. **SIEMPRE verificar** antes de marcar completo (skill: verification-before-completion)

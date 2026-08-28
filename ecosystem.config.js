@@ -2,9 +2,9 @@
   apps: [{
     name: 'smc-bot',
     script: 'startup.py',
-    interpreter: 'C:\\\\Users\\\\jose-\\\\projects\\\\trading_agent\\\\.venv\\\\Scripts\\\\python.exe',
+    interpreter: 'C:\\\\Users\\\\JOSÉ\\\\SMCBOTTRAIDING\\\\.venv\\\\Scripts\\\\python.exe',
     args: '--auto',
-    cwd: 'C:\\Users\\jose-\\projects\\trading_agent',
+    cwd: 'C:\\Users\\JOSÉ\\SMCBOTTRAIDING',
     restart_delay: 10000,
     max_restarts: 99,
     watch: ['core', 'agents', 'connectors', 'strategies', 'smc', 'dashboard', 'execution', 'startup.py'],

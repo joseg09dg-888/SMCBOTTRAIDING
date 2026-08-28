@@ -1,6 +1,8 @@
 import sys, os
-sys.path.insert(0, r'C:\Users\jose-\projects\trading_agent')
-os.chdir(r'C:\Users\jose-\projects\trading_agent')
+from pathlib import Path
+_root = str(Path(__file__).parent.parent)
+sys.path.insert(0, _root)
+os.chdir(_root)
 from dotenv import load_dotenv
 load_dotenv()
 

@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-set BOT_DIR=C:\Users\jose-\projects\trading_agent
+set BOT_DIR=C:\Users\JOSÉ\SMCBOTTRAIDING
 set PYTHON=%BOT_DIR%\.venv\Scripts\python.exe
 set LOGFILE=%BOT_DIR%\logs\bot.log
 set CAPITAL=1000
