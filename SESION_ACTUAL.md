@@ -86,16 +86,52 @@ diario -4%, tracking mensual vs meta 5%, detección de nuevo capital asignado, r
 anti-"día de suerte" >30% del mes). CLAUDE.md sección 6/16 debería actualizarse con
 esta lista, pendiente.
 
-### 6. Backtest crasheó en el primer intento — YA CORREGIDO, RELANZADO
-`scripts/backtest_multiyear.py` línea 632 imprime emojis (🔥✅⚠️❌) en la tabla de
-Dimensión 4. La consola de esta PC usa cp1252 por defecto → `UnicodeEncodeError`,
-crash antes de llegar a Dimensiones 5-8 y al Monte Carlo (las métricas que más
-importan: P(pasar Axi 5%), E[mes], Sharpe). Sí alcanzó a completar Dimensiones 1-3
-antes de morir (~3.5h de reloj en esta PC, dato real): 34,114 trades simulados sobre
-~16 años H1 reales, 14,419 cierres "final", WR=17.6% sobre finals (pero eso es
-engañoso — ver desglose de tipos de cierre abajo, la mayoría de cierres NO son
-TP/SL sino guardias). Relanzado con `PYTHONIOENCODING=utf-8` + salida sin buffer
-para verlo en vivo — en progreso, ver estado real en el próximo mensaje de Claude.
+### 6. Backtest crasheó DOS VECES — ambas causas corregidas, 3er intento en curso
+- **Intento 1** (bgu79w2dw): crasheó por `UnicodeEncodeError` -- línea 632 de
+  `scripts/backtest_multiyear.py` imprime emojis (🔥✅⚠️❌), consola cp1252 no los
+  soporta. Fix: `PYTHONIOENCODING=utf-8`. Tardó ~3.5h de reloj antes de morir.
+- **Intento 2** (be8srwshj, con el fix de encoding): llegó mucho más lejos --
+  Dimensiones 1-6 completas -- pero crasheó en Dimensión 7 por
+  `ModuleNotFoundError: No module named 'scipy'` (nunca estaba en requirements.txt).
+  Tardó ~6h de reloj. Fix: `pip install scipy` (1.18.1) + agregado a
+  requirements.txt.
+- **Intento 3** (bkbdk3ws6): relanzado con ambos fixes, en curso. Log en
+  `$CLAUDE_JOB_DIR/tmp/backtest_output3.log`.
+
+**RESULTADOS REALES YA CONFIRMADOS (Dimensiones 1-6, del intento 2):**
+- 34,114 trades simulados / 16 años H1 reales / 6 pares. Avg diario: **+$310**,
+  positivo los 17 años (2010-2026), rango $57K-$109K/año.
+- Desglose de cierres: 77% cierra por guardias (peak_guard 37.8%, friday_close
+  17.7%, stagnant 1.8%, time_close 0.4%), NO por TP/SL -- solo 34.8% SL final,
+  7.4% TP final. Coincide con lo documentado en CLAUDE.md.
+- Mejores horas UTC: **15, 20, 21** (🔥 PREMIUM, WR 52-59%). Hora 14 sigue activa
+  en este backtest (8190 trades, WR 40%, avg -$6, ⚠️ REGULAR) -- nota: el
+  DEAD_HOURS_UTC=14 que está en vivo no se está aplicando en este script de
+  backtest, o el filtro default lo deja pasar; revisar si el backtest realmente
+  refleja la config en vivo.
+  - Confirmado: 14:00 UTC SÍ pasa el filtro `REQUIRE_H4`/`REQUIRE_D1` default de
+    este script porque el script no importa `DEAD_HOURS_UTC` de `core/config.py`
+    -- simula TODAS las horas para comparar, no filtra por la config en vivo.
+    No es un bug, es cómo está diseñado el script (para poder comparar "hora
+    abierta vs cerrada"), pero significa que el resto de las dimensiones (Kelly,
+    Monte Carlo) tampoco reflejan el filtro de horas muertas real -- para
+    replicar exactamente lo que el bot en vivo haría habría que correr esto con
+    los DEAD_HOURS aplicados. Pendiente si se quiere ese dato.
+- **CHOPPY = pierde siempre**: WR 9-10%, avg -$238 a -$243, en las 3 vol regimes.
+  STRONG_TREND/MILD_TREND: WR 58-63%, avg +$58 a +$140. Confirma la regla
+  `EXCLUDE_CHOPPY` que ya existía como opción no forzada en el script.
+- Por par: EURUSD mejor ($46 avg/trade), GBPCAD peor pero aún positivo ($21).
+- **Kelly: -10.4% (NEGATIVO)** -- contradice el P&L diario positivo de arriba.
+  Causa: la fórmula Kelly del script usa SOLO el WR=17.6% de cierres "final"
+  (TP/SL puros), ignorando que 77% de los trades cierran por guardias con P&L
+  propio (que sí es positivo). **No tomar esta cifra de Kelly al pie de la
+  letra** -- es un artefacto de cómo está calculada, no evidencia de que el
+  sistema pierda dinero (el resto de los datos dice lo contrario). Señalado
+  explícitamente, no resuelto -- decisión pendiente del usuario/Claude sobre si
+  vale la pena corregir la fórmula de Kelly para que use el P&L real por trade
+  en vez de solo TP/SL.
+- Dimensión 7 (salida óptima), 8 (correlación) y el Monte Carlo de 100k sims
+  (P(pasar Axi 5%), Sharpe mensual) -- **aún NO confirmados**, en el 3er intento.
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por

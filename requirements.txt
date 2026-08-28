@@ -22,3 +22,4 @@ backtrader>=1.9.78
 MetaTrader5==5.0.6147
 Pillow==12.3.0
 mss==10.2.0
+scipy==1.18.1
