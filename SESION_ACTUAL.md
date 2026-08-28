@@ -235,6 +235,82 @@ traders/fondos reales en el rango $5K-$1M, con fuentes citadas
   todo lo encontrado es marketing de prop firms repetido entre sitios, reportado
   honestamente como tal en vez de rellenar con generalidades.
 
+### 9. Auditoría de módulos SMC/quant restantes (subagente, 2026-08-28)
+- `smc/structure.py`, `smc/orderblocks.py`, `smc/ml_predictor.py`: CONFIRMADO OK,
+  fixes previos (confirmed_at, mitigated, direction-match desactivado) siguen
+  vigentes, sin bugs nuevos.
+- Suite quant (quant_stats/regime/ensemble/factors/anomalies/flow): conectados
+  de verdad vía `statistical_edge_agent.py::QuantEdgeAgent`, con datos reales
+  (OHLCV + últimos 50 trades de episodes.db). `quant_ensemble` sigue sin
+  `.fit()` en vivo (heurístico, mal etiquetado como ML). `quant_flow` sigue sin
+  recibir bid/ask reales -- `of_pts` siempre 0, confirmado sin cambios.
+- `eight_dim_agent.py`, `axi_select_tracker.py`: CONFIRMADO OK.
+- **BUG NUEVO -- `axi_capital_adjuster.py`**: cuando Axi escala el capital, el
+  bot recalcula `new_risk_pct`/`new_max_risk_swing`/`new_max_risk_scalp` y los
+  reporta por Telegram, pero **nunca se aplican al riesgo real** --
+  `supervisor.py:2250-2255` calcula `MAX_DOLLAR_RISK` con una fórmula adaptativa
+  totalmente independiente que no referencia esta clase. Es aviso decorativo.
+- **BUG NUEVO -- `/proteger` (axi_vision_agent protect mode)**: el comando
+  Telegram cambia `supervisor._vision_protect_mode` (booleano) y confirma
+  "revisión cada 2 min, cierre automático si pérdida >$500" -- pero **ese flag
+  nunca se lee en ningún loop de escaneo/monitoreo**. No existe revisión
+  periódica ni auto-cierre real detrás del mensaje. Si se activó pensando que
+  protegía la cuenta, no hacía nada.
+- Ninguno de estos 2 bugs se corrigió aún -- reportados, pendientes de decisión
+  del usuario sobre si vale la pena conectarlos de verdad.
+
+### 10. BACKTEST FINAL COMPLETO (5to intento, bkschro3s, EXIT_CODE=0, terminó
+sin crashear) -- config totalmente corregida: REQUIRE_D1=0 REQUIRE_H4=0, hora 14
+bloqueada, PEAK_GUARD_MIN=400, STAGNANT_HOURS=6.0, fix de Kelly aplicado.
+43,604 trades / 4,156 días / 6 pares reales.
+
+**RESULTADO FINAL:**
+| Métrica | Baseline 1 (43.9%) | Baseline 2 maxopen3 (60.3%) | HOY (corregido) |
+|---|---|---|---|
+| P(pasar Axi 5%) | 43.9% | 60.3% | **59.4%** |
+| WR real (todos los cierres) | ~no medido así | ~no medido así | **42.9%** (vs 19.7% del cálculo viejo sesgado) |
+| E[mensual] | $4,108 | $8,766 | **$7,721** |
+| Sharpe mensual | 0.526 | 0.665 | **0.743** |
+| P(día>=$250) | 37.3% | 45.3% | 42.7% |
+
+Interpretación honesta: el usuario esperaba >=60%, salió 59.4% -- técnicamente
+0.6pp por debajo, DENTRO del margen de simulación Monte Carlo. Pero el WR real
+subió de una métrica sesgada (18-19%) a una real y consistente (42.9%), y
+Sharpe mejoró en las 3 comparaciones. Este es el primer resultado con la config
+100% alineada al bot en vivo (los 2 baselines anteriores NO tenían D1/H4=0,
+hora-14 bloqueada, ni PEAK_GUARD=400 -- no son comparables 1:1, son de
+referencia histórica nada más).
+
+**HALLAZGO MÁS IMPORTANTE DE ESTA CORRIDA -- Dimensión 7 (salida óptima)
+contradice la propia conclusión final del script:**
+```
+partial@0.75R : E[trade]=$88 | E[día]=$925 | P(>=$250)=80%   <- MEJOR EN TODO
+partial@1.0R  : E[trade]=$69 | E[día]=$726 | P(>=$250)=70%   <- el script lo marca "OPTIMO" (no lo es)
+ALL-IN (sin partial): E[trade]=$33 | E[día]=$351 | P(>=$250)=54%  <- el PEOR de la tabla
+```
+La sección final "CONFIGURACION OPTIMA" del script recomienda "sin
+partial-close" citando que está desactivado en vivo (commit 5e3ffd5) -- pero
+sus propios datos de Dimensión 7 muestran que partial@0.75R **casi triplica**
+el E[día] (2.6x, $925 vs $351) frente a no usar partial. El script acepta la
+restricción del código en vivo en vez de cuestionarla con sus propios números.
+Esto además **coincide con la investigación académica** de la sección 8
+(papers MDPI/arXiv): salida dinámica con TP parcial temprano supera al R:R
+teórico fijo. Dos fuentes independientes (backtest propio + literatura
+externa) apuntan en la misma dirección.
+
+**PRÓXIMO PASO CONCRETO PARA LA SIGUIENTE ITERACIÓN:** investigar por qué se
+desactivó partial-close en vivo (commit 5e3ffd5 -- revisar el motivo real,
+puede ser slippage/ejecución que el backtest no modela), y si el motivo ya no
+aplica o es superable, backtestear re-habilitarlo con partial@0.75R
+específicamente antes de tocar el código en vivo.
+
+DIM8 correlación real: EURUSD+USDCHF r=-0.84 (cobertura natural),
+EURUSD+NZDUSD r=+0.71 (no abrir ambos en la misma dirección).
+
+Guardado en `memory/backtest_results.json` (con `wr_pct_final_only` y
+`wr_pct_real` separados ahora, arreglado el bug de que el JSON solo exportaba
+el WR sesgado mientras la consola sí mostraba el real).
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

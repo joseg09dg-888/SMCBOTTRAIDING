@@ -894,7 +894,11 @@ if len(daily_vals) >= 20:
         "stats": {
             "total_trades": len(trade_log),
             "total_days": n_days,
-            "wr_pct": round(n_wins / max(1, n_final) * 100, 1),
+            # 2026-08-28: wr_pct_final_only = solo cierres TP/SL puro (22.9% de
+            # los cierres reales) -- sesgado, ver DIMENSION 6 (Kelly) mas abajo
+            # para el WR real sobre TODOS los cierres (incluye guardias).
+            "wr_pct_final_only": round(n_wins / max(1, n_final) * 100, 1),
+            "wr_pct_real": round(float(wr_f) * 100, 1) if "wr_f" in dir() else None,
             "avg_daily": round(float(avg_d), 2),
             "p_day_250": round(float(np.mean(sims_day >= 250)*100), 1),
             "p_pass_axi": round(float(p_pass_axi), 1),
