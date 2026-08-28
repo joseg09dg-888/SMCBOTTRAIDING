@@ -311,6 +311,15 @@ Guardado en `memory/backtest_results.json` (con `wr_pct_final_only` y
 `wr_pct_real` separados ahora, arreglado el bug de que el JSON solo exportaba
 el WR sesgado mientras la consola sí mostraba el real).
 
+### 11. 6to intento (bfoibejzq, MAX_OPEN_TEST=3, para replicar exacto el
+baseline de 60.3%) -- **DETENIDO/MATADO externamente, NO terminó, sin
+resultado.** No crasheó por error de código -- el proceso fue matado desde
+afuera (status "killed" en la notificación del harness, no "completed").
+Estaba todavía en Dimensiones 1-3 al momento de matarlo, sin haber producido
+ningún número. **Pendiente**: confirmar con el usuario si relanzar este
+intento (MAX_OPEN=3) o quedarse con el resultado ya confirmado de MAX_OPEN=2
+(sección 10: P(pass)=59.4%, WR real=42.9%, E[mensual]=$7721, Sharpe=0.743).
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores
