@@ -311,14 +311,70 @@ Guardado en `memory/backtest_results.json` (con `wr_pct_final_only` y
 `wr_pct_real` separados ahora, arreglado el bug de que el JSON solo exportaba
 el WR sesgado mientras la consola sí mostraba el real).
 
-### 11. 6to intento (bfoibejzq, MAX_OPEN_TEST=3, para replicar exacto el
-baseline de 60.3%) -- **DETENIDO/MATADO externamente, NO terminó, sin
-resultado.** No crasheó por error de código -- el proceso fue matado desde
-afuera (status "killed" en la notificación del harness, no "completed").
-Estaba todavía en Dimensiones 1-3 al momento de matarlo, sin haber producido
-ningún número. **Pendiente**: confirmar con el usuario si relanzar este
-intento (MAX_OPEN=3) o quedarse con el resultado ya confirmado de MAX_OPEN=2
-(sección 10: P(pass)=59.4%, WR real=42.9%, E[mensual]=$7721, Sharpe=0.743).
+### 11. 6to intento (bfoibejzq, MAX_OPEN_TEST=3) -- DETENIDO/MATADO
+externamente, sin resultado (ver historial). **7mo intento (bfvvkwuwq,
+MAX_OPEN_TEST=3, mismo config) -- COMPLETADO OK, EXIT_CODE=0.**
+
+**RESULTADO FINAL MAX_OPEN=3** (guardado en `memory/backtest_results_maxopen3.json`,
+fecha 2026-08-28T18:16:27):
+- P(pass Axi Select 5%): **65.2%** (vs baseline histórico 60.3%, vs MAX_OPEN=2 actual 59.4%)
+- WR real (todos los cierres): 42.9% (igual que MAX_OPEN=2)
+- E[mensual]: **$10,629.92** (vs MAX_OPEN=2 $7,721.42)
+- Sharpe mensual: **0.78** (vs MAX_OPEN=2 0.743)
+- P(día >= $250): 42.7% (idéntico a MAX_OPEN=2)
+- avg_daily: $481.25 (vs MAX_OPEN=2 $350.93)
+- total_trades: 53,405 | total_days: 4,159
+
+**Conclusión: MAX_OPEN=3 supera a MAX_OPEN=2 en las 4 métricas clave y supera
+el baseline histórico de 60.3%.** Sigue sin llegar al 95% exigido por el
+usuario. DIM7 (partial TP) sigue mostrando la misma oportunidad no explotada:
+partial@0.75R triplicaría E[día] (de $481 a $1154) vs. el ALL-IN sin partial
+actualmente en vivo -- este sigue siendo el lever más prometedor sin probar
+en vivo. DIM6 Kelly: sistema sigue subutilizando capital masivamente (Kelly
+recomienda 8.5% full / 4.3% half vs 0.5% actual real).
+
+**HALLAZGO CRÍTICO DE PARIDAD (2026-08-28, post-intento-7)**: `core/supervisor_constants.py`
+tiene `MAX_OPEN_POSITIONS = 4` (subido 2->3 el 2026-07-17, luego 3->4 el
+2026-07-28 "re-swept against full corrected config"). **Ninguno de los
+backtests de esta sesión (MAX_OPEN=2 ni MAX_OPEN=3) coincide con el bot en
+vivo real, que ya corre con 4.** Es el mismo tipo de bug de paridad
+config-vivo-vs-backtest ya encontrado antes (DEAD_HOURS_UTC, PEAK_GUARD_MIN,
+STAGNANT_HOURS, REQUIRE_D1/H4) — todos los números de P(pass)/E[mensual] de
+esta sesión responden a una config que YA NO es la real. Corrigiendo:
+lanzando intento 8 con `MAX_OPEN_TEST=4` para obtener el número que
+realmente corresponde al bot en vivo actual.
+
+**DIM7 (partial TP) — CAVEAT METODOLÓGICO IMPORTANTE**: el bloque de DIM7
+(`scripts/backtest_multiyear.py` líneas ~726-761) NO es una re-simulación
+real barra-por-barra de qué pasa con el remanente tras un cierre parcial —
+es una fórmula analítica aproximada con constantes ad-hoc (`(2.5/partial_r)**0.45`,
+`1 - 0.1*(2.5-partial_r)`). El motivo real por el que se desactivó
+partial-close en vivo (commit 5e3ffd5, auditoría de 584 trades reales) fue
+que el remanente del 50% casi siempre retrocedía a breakeven antes de
+alcanzar el TP real — un efecto de path-dependence que esta fórmula NO
+modela en absoluto. **Conclusión: los números de DIM7 (ej. "partial@0.75R
+casi triplica E[día]") NO son evidencia real de backtest y NO deben usarse
+para justificar re-habilitar partial-close en vivo**, según la propia regla
+del usuario (nunca cambiar sin evidencia real). Para probar esto
+correctamente haría falta construir una simulación real de la trayectoria de
+precio post-parcial (tarea de desarrollo, no solo lectura de un número ya
+calculado) — pendiente, no iniciada.
+
+**Intento 8 (bi4ay4aw2, MAX_OPEN_TEST=4) -- DETENIDO/MATADO externamente,
+sin resultado.** Igual que el intento 6: sin traceback, sin error de código,
+parado justo al iniciar Dimensiones 1-3. RAM libre confirmada en el momento
+de la caída: **260,600 KB de 4,012,860 KB total (~6.5% libre, ~254MB)** --
+consistente con el límite de hardware documentado (3.83GB total). Van 2
+detenciones externas en el mismo punto exacto (intentos 6 y 8), ambas sin
+traceback. Patrón fuerte de agotamiento de RAM del sistema, no bug de
+código. **Pendiente**: preguntar al usuario antes de relanzar un 3er intento
+en este patrón (regla ya acordada: 2 detenciones = preguntar antes de
+reintentar).
+
+**Pendiente real para elevar hacia 95%**: (1) resolver el problema de RAM
+antes de poder correr MAX_OPEN=4 (el que sí coincide con el bot en vivo);
+(2) si se quiere explorar partial-close en serio, construir primero una
+simulación barra-por-barra del remanente (no usar DIM7 tal cual).
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
