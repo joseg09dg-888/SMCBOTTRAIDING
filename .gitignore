@@ -54,3 +54,7 @@ desktop.ini
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Runtime artifacts
+*.lock
+*.bak
