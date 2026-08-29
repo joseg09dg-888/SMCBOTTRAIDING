@@ -1077,6 +1077,31 @@ legítimo, antes no significaba nada real):
 
 Sigue mejorando con margen claro. Probando MAX_OPEN=10 a continuación.
 
+**Actualización**: MAX_OPEN=10 falló repetidamente (7 caídas externas
+seguidas, RAM crítica -- se identificó causa raíz: `dwm.exe` creció de
+~130MB a ~590MB durante la sesión, fuga de memoria conocida de Windows
+tras muchas horas encendido, confirma la hipótesis del usuario). No se
+pudo confirmar ese valor. **MAX_OPEN=8 (72.7%, Sharpe 1.080) queda como
+el mejor confirmado con el motor corregido.**
+
+Se intentó también: RR=5.0 sobre MAX_OPEN=8 (6 caídas, sin confirmar),
+D1/H4 reactivado (4 caídas, sin confirmar), y remover el filtro de horas
+15/16 para re-verificar si sigue aplicando con el motor global (4 caídas,
+sin confirmar). El sistema está bajo presión de RAM sostenida en este
+tramo de la sesión -- se sigue reintentando cuando hay margen.
+
+**Estado confirmado con evidencia real (motor global corregido)**:
+
+| Config | P(pass) | E[mensual] | Sharpe |
+|---|---|---|---|
+| Baseline original (sin mejoras) | 41.9% | $3,739 | 0.607 |
+| + mejoras de hoy, MAX_OPEN=4 | 57.8% | $6,388 | 0.997 |
+| + MAX_OPEN=6 | 67.6% | $9,152 | 1.057 |
+| **+ MAX_OPEN=8 (mejor confirmado)** | **72.7%** | **$11,797** | **1.080** |
+
+Sigue sin llegar al 90-95% pedido. Pendiente confirmar: MAX_OPEN=10+,
+RR>4 sobre esta base, filtro de horas re-verificado, D1/H4 reactivado.
+
 ---
 
 ## Próximo candidato adaptativo (a pedido del usuario): filtro de
