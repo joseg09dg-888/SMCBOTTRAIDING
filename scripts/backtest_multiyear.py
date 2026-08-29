@@ -674,11 +674,37 @@ for pair, df1 in h1_data.items():
         # Risk scaling by score
         max_r, r_pct = risk_for_score(score)
 
+        if os.environ.get("REALISTIC_RISK_CAP", "0") == "1":
+            # 2026-08-29: HALLAZGO DE PARIDAD -- core/supervisor.py:2246-2255 usa
+            # un tope de riesgo ADAPTATIVO por progreso diario real (MAX_DOLLAR_RISK
+            # entre $100 si ya se cumplio la meta del dia y $400 si se va muy
+            # atrasado), completamente distinto del modelo estatico por-score de
+            # este backtest (risk_for_score, nunca mira cuanto se lleva ganado en
+            # el dia). El sweep RISK_MULT_TEST de esta sesion probo multiplicadores
+            # que en la practica EXCEDEN el techo real de $400 en vivo (ej. tier
+            # score>=90 a RISK_MULT=1.5 ya da $412, a 2.0 da $550-825 segun tier --
+            # muy por encima de lo que el bot real permitiria). Esto replica la
+            # formula real completa para dar el numero HONESTO y deployable.
+            _shortfall = DAILY_TARGET - daily_pnl.get(day_str, 0.0)
+            if _shortfall > 200 and hour_utc >= 13:
+                max_r = min(400.0, 200.0 + _shortfall * 0.3)
+            elif _shortfall <= 0:
+                max_r = 100.0
+            else:
+                max_r = 200.0
+
         # DIAGNOSTICO 2026-07-09: escalar riesgo SOLO donde hay edge real
         # comprobado (episodes.db real: EURUSD PF=1.11, unico con neto positivo
         # entre los pares activos), en vez de subir el riesgo parejo a todos
         # (eso disparaba P(mes<-5%) de 6% a 16% -- ver commit e92f121).
         _PAIR_RISK_MULT = {"EURUSD": 1.8}
+        _extra_boost = {p.strip().upper() for p in os.environ.get("EXTRA_BOOST_PAIRS", "").split(",") if p.strip()}
+        if _extra_boost:  # 2026-08-29: DIM5 de esta sesion (config ganadora, horas
+            # limpias) muestra EURAUD casi empatado con EURUSD ($151 vs $156 avg,
+            # vs una brecha mucho mas ancha en la config vieja que justifico el
+            # boost original solo para EURUSD -- probar extender el mismo boost.
+            for _p in _extra_boost:
+                _PAIR_RISK_MULT[_p] = 1.8
         _mult = _PAIR_RISK_MULT.get(pair, 1.0)
         max_r *= _mult
 
