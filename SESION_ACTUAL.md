@@ -548,6 +548,32 @@ originalmente. Lanzando intento 18: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15
 REMOVE_DEAD_HOURS=17` (hora 17, adyacente a la ventana activa 16h, la
 candidata más cercana a reabrir).
 
+**Intento 18 (b3pbwfymw) -- COMPLETADO SIN ERRORES** (código nuevo
+`REMOVE_DEAD_HOURS` verificado sin traceback). **RESULTADO NEGATIVO** vs
+el mejor: P(pass)=68.6% (peor que 70.3%), E[mensual]=$13,213 (peor que
+$13,359), Sharpe=0.816 (peor que 0.890). Guardado en
+`memory/backtest_results_maxopen4_nohour15_hora17.json`.
+
+**HALLAZGO ESTRUCTURAL IMPORTANTE (no aplicado, solo observado)**: en
+esta corrida, la hora 16 UTC (ahora la "primera hora activa" tras el
+bloqueo, porque 15 está bloqueada) desarrolló el **MISMO patrón exacto**
+que tenía la hora 15 antes de bloquearla: WR=32%, avg P&L=**$0**,
+24,488 trades (enorme volumen). Esto sugiere que el problema real NO es
+"la hora 15 específicamente" sino **la primera hora activa tras un bloqueo
+largo de horas muertas** (posible efecto de señales SMC "atrasadas" --
+tras 9+ horas sin evaluar el mercado, el primer bar activo puede disparar
+falsos BOS/CHoCH acumulados). Si esto es cierto, bloquear 15 SOLO
+desplazó el problema a 16 en vez de eliminarlo -- y el resultado (68.6%,
+peor que el baseline con hora16 "sucia" pero sin hora17 abierta) es
+consistente: sigue habiendo una hora-basura en el mix, solo que ahora es
+la 16 en vez de la 15.
+
+**Hipótesis a probar, intento 19**: si el problema es "primera hora tras
+bloqueo", bloquear TAMBIÉN la 16 (la nueva "primera hora sucia") y dejar
+que 17 (ya confirmada PREMIUM: WR=51%, avg $99) sea la nueva entrada real
+debería limpiar el efecto por completo. Lanzando:
+`MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,16 REMOVE_DEAD_HOURS=17`.
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

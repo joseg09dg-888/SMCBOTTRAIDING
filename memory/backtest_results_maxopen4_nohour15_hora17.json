@@ -1,0 +1,31 @@
+{
+  "date": "2026-08-29T01:42:33.363923",
+  "note": "MAX_OPEN=4 + EXTRA_DEAD_HOURS=15 + REMOVE_DEAD_HOURS=17 -- guardado aparte, el script sobreescribe backtest_results_maxopen4.json. Hallazgo clave: hora 16 (ahora la 'primera hora activa' tras el bloqueo) desarrollo el MISMO patron EV~0 que tenia la hora 15 antes (32% WR, avg $0, 24488 trades) -- sugiere que el problema no es la hora 15 en si, sino la PRIMERA hora activa tras un bloqueo largo (posible efecto de señales SMC 'atrasadas'/stale tras muchas horas sin evaluar el mercado).",
+  "config": {
+    "years_h1": 2,
+    "years_d1": 10,
+    "threshold_h4_confirmed": 80,
+    "threshold_h4_wait": 90,
+    "rr": 3.0,
+    "partial_tp": null,
+    "kill_zone_utc": "14-16,20-23",
+    "extra_dead_hours": [15],
+    "remove_dead_hours": [17],
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 59396,
+    "total_days": 4149,
+    "wr_pct_final_only": 20.2,
+    "wr_pct_real": 43.5,
+    "avg_daily": 599.29,
+    "p_day_250": 42.7,
+    "p_pass_axi": 68.6,
+    "e_monthly": 13213.21,
+    "sharpe": 0.816,
+    "best_hours": [17, 20, 21, 22, 23],
+    "hour_16_utc_now_bad": {"trades": 24488, "wr_pct": 32, "avg_pnl": 0, "rating": "REGULAR"},
+    "hour_17_utc_now_good": {"trades": 8268, "wr_pct": 51, "avg_pnl": 99, "rating": "PREMIUM"}
+  }
+}
