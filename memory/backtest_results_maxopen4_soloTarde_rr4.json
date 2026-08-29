@@ -1,5 +1,6 @@
 {
   "date": "2026-08-29T03:47:30.208672",
+  "note": "MAX_OPEN=4 + EXTRA_DEAD_HOURS=15,16 (solo tarde) + RR_TEST=4.0. NUEVO MEJOR RESULTADO DE LA SESION.",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -7,15 +8,10 @@
     "threshold_h4_wait": 90,
     "rr": 4.0,
     "partial_tp": null,
-    "kill_zone_utc": "14-16,20-23",
-    "pairs": [
-      "EURUSD",
-      "USDCAD",
-      "NZDUSD",
-      "USDCHF",
-      "EURAUD",
-      "GBPCAD"
-    ]
+    "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16],
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
   },
   "stats": {
     "total_trades": 37902,
@@ -27,11 +23,6 @@
     "p_pass_axi": 77.9,
     "e_monthly": 17066.21,
     "sharpe": 1.103,
-    "best_hours": [
-      21,
-      20,
-      23,
-      22
-    ]
+    "best_hours": [21, 20, 23, 22]
   }
 }

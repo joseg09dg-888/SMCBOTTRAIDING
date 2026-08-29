@@ -648,6 +648,27 @@ config completa (-8.5pp) -- probando si esa dirección se sostiene hacia
 arriba: RR más alto podría seguir ayudando. Lanzando intento 22, sobre la
 config ganadora: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,16 RR_TEST=4.0`.
 
+**Intento 22 (bm6x31tnz) -- COMPLETADO. NUEVO MEJOR RESULTADO.** Guardado
+en `memory/backtest_results_maxopen4_soloTarde_rr4.json`:
+- P(pass Axi): **77.9%** (+2.2pp sobre 75.7%)
+- E[mensual]: **$17,066** (+$2,043)
+- Sharpe: **1.103** (+0.041)
+
+**Confirma la tendencia: RR más alto sigue ayudando** (consistente con
+RR=2.0 siendo mucho peor que RR=3.0 en la config completa -- la relación
+es monótona creciente en el rango probado). Siguiente paso obvio del
+sweep: probar RR=5.0 para ver si el óptimo sigue subiendo o ya empieza a
+revertir (los R:R muy altos típicamente sufren porque el TP se alcanza
+cada vez con menor frecuencia -- debe haber un punto de reversión en
+algún lugar, aunque con solo sesión de tarde y setups más limpios podría
+estar más lejos de lo esperado). Lanzando intento 23:
+`MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,16 RR_TEST=5.0`.
+
+Intento 23 (byac2paei) fue detenido externamente sin traceback (RAM libre
+en el momento: 458MB, más que en caídas previas -- patrón intermitente,
+no bloqueo duro). 3ra caída externa de la sesión (tras intentos 6 y 8).
+Relanzado de inmediato como intento 23b (bn6yfkto1).
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores
