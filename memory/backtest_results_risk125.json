@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-29T12:01:28.003668",
+  "note": "RISK_MULT_TEST=1.25 (sube risk_pct/MAX_RISK 25%) sobre config ganadora. Mejora real y el riesgo de mes catastrofico (P(mes<-5%)) casi no se mueve (6%->7%), muy distinto al intento previo de 2026-07-09 que doblo el riesgo y disparo P(mes<-5%) de 6% a 16% -- el perfil riesgo/retorno cambio con las mejoras de esta sesion (RR=4.0, trailing, horas limpias).",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "risk_mult_test": 1.25,
+    "active_hours_utc": "20-23 unicamente", "extra_dead_hours": [15, 16], "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 35967, "total_days": 3960, "wr_pct_final_only": 17.3, "wr_pct_real": 44.7,
+    "avg_daily": 920.66, "p_day_250": 41.6, "p_pass_axi": 80.2, "e_monthly": 20108.36,
+    "sharpe": 1.133, "p_mes_menos_5pct": 7, "best_hours": [21, 20, 23, 22]
+  }
+}
