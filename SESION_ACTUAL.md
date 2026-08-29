@@ -406,16 +406,30 @@ margen claro).
 **Progresión completa MAX_OPEN 2->3->4->5**: P(pass) 59.4/65.2/67.1/67.9% |
 E[mensual] $7721/$10630/$12423/$13433 | Sharpe 0.743/0.78/0.781/0.776.
 
-**Siguiente lever real, no probado aún**: `EXCLUDE_CHOPPY` (línea 117 del
-script) -- excluye trades en régimen CHOPPY, que el propio DIM3 de esta
-sesión y comentarios previos del script ya identificaron con WR=12% y
-avg -$205/-$213 (~22.5% de todos los trades, evidencia real ya en el
-propio backtest, no una hipótesis nueva). Es mecánicamente distinto de
-MAX_OPEN (filtra CALIDAD de entrada, no CANTIDAD de posiciones
-simultáneas) así que no debería tener el mismo techo de rendimientos
-decrecientes. Lanzando intento 11: `MAX_OPEN_TEST=4 EXCLUDE_CHOPPY=1`
-(sobre la config real en vivo, MAX_OPEN=4, aislando el efecto de este
-filtro nuevo).
+**Intento 11 (bdy7j0lns, MAX_OPEN_TEST=4 EXCLUDE_CHOPPY=1) -- COMPLETADO,
+RESULTADO NEGATIVO.** Guardado en
+`memory/backtest_results_maxopen4_excludechoppy.json` (el script sobreescribió
+`backtest_results_maxopen4.json` con este resultado peor -- el baseline real
+MAX_OPEN=4 sin filtro sigue siendo el de arriba: P(pass)=67.1%,
+E[mensual]=$12,422.77, Sharpe=0.781, NO perder esa referencia):
+- P(pass Axi): 65.4% (**-1.7pp** vs 67.1% sin filtro)
+- E[mensual]: $11,534 (**-$889**)
+- Sharpe: 0.755 (**-0.026**)
+- total_trades: 54,784 (vs 60,073 sin filtro -- 8.8% menos trades)
+
+**Conclusión con evidencia real: EXCLUDE_CHOPPY empeora todo.** Aunque
+CHOPPY individualmente tiene WR=12% (mal), filtrarlo también recorta
+volumen total de trades más de lo que mejora la calidad neta -- el efecto
+volumen pesa más que el efecto selección en este sistema. **No usar este
+filtro en vivo.** Descartado con evidencia, no por intuición.
+
+**Siguiente lever real, no probado aún**: `RR_TEST` (línea 75) -- RR
+actual=3.0 pero datos reales en vivo muestran que solo 2.8% de los cierres
+reales alcanzan el TP diseñado (77% cierran por guards: peak_guard,
+stagnant, friday_close, time_close). Un RR más alcanzable podría convertir
+algunos cierres de guard en cierres de TP real. Lanzando intento 12:
+`MAX_OPEN_TEST=4 RR_TEST=2.0` (sobre la config real en vivo, sin
+EXCLUDE_CHOPPY que ya se descartó).
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
