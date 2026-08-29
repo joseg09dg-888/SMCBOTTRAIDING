@@ -371,10 +371,32 @@ código. **Pendiente**: preguntar al usuario antes de relanzar un 3er intento
 en este patrón (regla ya acordada: 2 detenciones = preguntar antes de
 reintentar).
 
-**Pendiente real para elevar hacia 95%**: (1) resolver el problema de RAM
-antes de poder correr MAX_OPEN=4 (el que sí coincide con el bot en vivo);
-(2) si se quiere explorar partial-close en serio, construir primero una
-simulación barra-por-barra del remanente (no usar DIM7 tal cual).
+**Intento 9 (bjr80qnij, MAX_OPEN_TEST=4) -- COMPLETADO OK, EXIT_CODE=0.**
+No se pudo liberar RAM extra (Stop-Process bloqueado por el classifier de
+Claude Code sobre procesos no esenciales) -- se relanzó igual bajo la misma
+presión de RAM y esta vez completó.
+
+**RESULTADO FINAL MAX_OPEN=4 (paridad real con el bot en vivo)**, guardado
+en `memory/backtest_results_maxopen4.json` (fecha 2026-08-28T19:39:47):
+- P(pass Axi Select 5%): **67.1%**
+- WR real: 42.9% (constante en las 3 corridas)
+- E[mensual]: **$12,422.77**
+- Sharpe mensual: **0.781**
+- P(día >= $250): 42.2%
+- avg_daily: $561.36 | total_trades: 60,073 | total_days: 4,159
+
+**Progresión real MAX_OPEN 2->3->4**: P(pass) 59.4% -> 65.2% -> 67.1% |
+E[mensual] $7,721 -> $10,630 -> $12,423 | Sharpe 0.743 -> 0.78 -> 0.781.
+Rendimientos decrecientes por escalón (+5.8pp luego +1.9pp) -- MAX_OPEN=4
+es el confirmado en vivo actualmente, no hay evidencia real de MAX_OPEN=5+
+todavía (no probado, y llega ruido: correlación real muestra riesgo
+triplicado si 3+ posiciones correlacionadas abren igual, DIM8).
+
+**Pendiente real para elevar hacia 95%**: (1) probar MAX_OPEN=5 con
+evidencia real (siguiente escalón natural, aunque con retornos decrecientes
+esperables y mayor riesgo de correlación por DIM8); (2) si se quiere
+explorar partial-close en serio, construir primero una simulación
+barra-por-barra del remanente (no usar DIM7 tal cual, ver caveat arriba).
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
