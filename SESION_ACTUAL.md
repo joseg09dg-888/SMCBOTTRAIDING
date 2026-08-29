@@ -423,13 +423,30 @@ volumen total de trades más de lo que mejora la calidad neta -- el efecto
 volumen pesa más que el efecto selección en este sistema. **No usar este
 filtro en vivo.** Descartado con evidencia, no por intuición.
 
-**Siguiente lever real, no probado aún**: `RR_TEST` (línea 75) -- RR
-actual=3.0 pero datos reales en vivo muestran que solo 2.8% de los cierres
-reales alcanzan el TP diseñado (77% cierran por guards: peak_guard,
-stagnant, friday_close, time_close). Un RR más alcanzable podría convertir
-algunos cierres de guard en cierres de TP real. Lanzando intento 12:
-`MAX_OPEN_TEST=4 RR_TEST=2.0` (sobre la config real en vivo, sin
-EXCLUDE_CHOPPY que ya se descartó).
+**Intento 12 (b0jvfvgfz, MAX_OPEN_TEST=4 RR_TEST=2.0) -- COMPLETADO,
+RESULTADO NEGATIVO.** Guardado en
+`memory/backtest_results_maxopen4_rr2.json` (el script volvió a
+sobreescribir `backtest_results_maxopen4.json`, ya migrado):
+- P(pass Axi): 58.6% (**-8.5pp** vs 67.1% con RR=3.0)
+- E[mensual]: $8,409 (**-$4,014**)
+- Sharpe: 0.589 (**-0.192**, la peor caída de todos los levers probados)
+- wr_pct_final_only SÍ subió (32.1% vs 20.0%, TP más alcanzable como se
+  esperaba) pero el tamaño de ganancia menor por trade hunde el resto de
+  métricas -- confirma que RR=3.0 es netamente superior pese a que casi
+  nunca se alcanza el TP completo (77% cierra por guards antes).
+
+**Conclusión con evidencia real: RR=2.0 empeora todo, más que EXCLUDE_CHOPPY.
+No tocar RR=3.0 en vivo.** Van 2 levers descartados con evidencia real
+(EXCLUDE_CHOPPY, RR_TEST) tras 2 que sí mejoraron (MAX_OPEN 3 y 4). El
+"techo" real del sistema con este motor de señales parece estar cerca de
+67-68% P(pass), no 95%.
+
+**Siguiente lever real, no probado aún**: `FRIDAY_CLOSE_HOUR_TEST` (línea
+63) -- actualmente cierra viernes a las 19 UTC; friday_close es el 2do
+motivo de cierre más común (27.6% de todos los cierres reales, después de
+final_SL). Probar un corte más tardío (ej. 21 o 22 UTC) para dar más
+tiempo a que trades de jueves/viernes alcancen TP en vez de forzar cierre.
+Lanzando intento 13: `MAX_OPEN_TEST=4 FRIDAY_CLOSE_HOUR_TEST=22`.
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por

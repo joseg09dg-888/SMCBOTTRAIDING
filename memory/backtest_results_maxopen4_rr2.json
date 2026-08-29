@@ -1,5 +1,6 @@
 {
   "date": "2026-08-28T21:59:13.465014",
+  "note": "MAX_OPEN=4 + RR_TEST=2.0 -- guardado aparte, el script sobreescribe backtest_results_maxopen4.json. Baseline real MAX_OPEN=4 con RR=3.0 (default en vivo): P(pass)=67.1%, E[mensual]=$12422.77, Sharpe=0.781 -- documentado en SESION_ACTUAL.md seccion 11.",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -8,14 +9,8 @@
     "rr": 2.0,
     "partial_tp": null,
     "kill_zone_utc": "14-16,20-23",
-    "pairs": [
-      "EURUSD",
-      "USDCAD",
-      "NZDUSD",
-      "USDCHF",
-      "EURAUD",
-      "GBPCAD"
-    ]
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
   },
   "stats": {
     "total_trades": 62249,
@@ -27,12 +22,6 @@
     "p_pass_axi": 58.6,
     "e_monthly": 8408.7,
     "sharpe": 0.589,
-    "best_hours": [
-      16,
-      21,
-      20,
-      22,
-      15
-    ]
+    "best_hours": [16, 21, 20, 22, 15]
   }
 }
