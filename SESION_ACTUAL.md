@@ -1042,6 +1042,30 @@ comparación honesta de cuánto progreso real se hizo hoy. Corriendo ahora
 (intento 42, `MAX_OPEN_TEST=4` config original sin hour-filtering extra,
 RR=3.0, sin trailing, sin ajuste de riesgo).
 
+**Intento 42 -- COMPLETADO. Comparación HONESTA final.** Guardado en
+`memory/backtest_results_global_baseline_honest.json`:
+
+| Config | P(pass) | E[mensual] | Sharpe |
+|---|---|---|---|
+| Baseline original (sin mejoras, motor corregido) | 41.9% | $3,739 | 0.607 |
+| **Con TODAS las mejoras de hoy (motor corregido)** | **57.8%** | **$6,388** | **0.997** |
+| **Mejora real** | **+15.9pp** | **+70.8%** | **+64.3%** |
+
+**Conclusión honesta: el trabajo de hoy SÍ produjo una mejora real y
+sustancial (Sharpe +64%, P(pass) +16pp), pero el techo del sistema con
+este motor de señales, corregido el bug de MAX_OPEN, está mucho más
+lejos del 95% de lo que parecía -- alrededor de 58%, no 80-88%.** Todos
+los números "80%+" reportados durante el día de hoy deben descartarse --
+fueron calculados con un motor que permitía hasta 6x más exposición
+simultánea de la que el bot real jamás tendría. **El 75% que el usuario
+recuerda de antes del daño del PC probablemente tenía el mismo problema**
+(el bug existe en el script desde su creación, no es nuevo de hoy).
+
+**Todos los hallazgos direccionales de hoy siguen siendo válidos**
+(horas 15-16 diluyen, RR=4 mejor que 3, trailing-to-BE ayuda, riesgo
+adaptativo escalado ayuda) -- lo que cambió es la MAGNITUD absoluta, no
+la dirección de cada mejora individual.
+
 ---
 
 ## Próximo candidato adaptativo (a pedido del usuario): filtro de
