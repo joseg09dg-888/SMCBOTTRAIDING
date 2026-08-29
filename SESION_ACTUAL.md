@@ -1066,6 +1066,17 @@ recuerda de antes del daño del PC probablemente tenía el mismo problema**
 adaptativo escalado ayuda) -- lo que cambió es la MAGNITUD absoluta, no
 la dirección de cada mejora individual.
 
+**Re-sweep de MAX_OPEN con el motor GLOBAL corregido** (ahora es un dial
+legítimo, antes no significaba nada real):
+
+| MAX_OPEN (global) | P(pass) | E[mensual] | Sharpe |
+|---|---|---|---|
+| 4 | 57.8% | $6,388 | 0.997 |
+| 6 | 67.6% | $9,152 | 1.057 |
+| **8** | **72.7%** | **$11,797** | **1.080** |
+
+Sigue mejorando con margen claro. Probando MAX_OPEN=10 a continuación.
+
 ---
 
 ## Próximo candidato adaptativo (a pedido del usuario): filtro de
