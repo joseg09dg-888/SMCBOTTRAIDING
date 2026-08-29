@@ -392,11 +392,30 @@ es el confirmado en vivo actualmente, no hay evidencia real de MAX_OPEN=5+
 todavía (no probado, y llega ruido: correlación real muestra riesgo
 triplicado si 3+ posiciones correlacionadas abren igual, DIM8).
 
-**Pendiente real para elevar hacia 95%**: (1) probar MAX_OPEN=5 con
-evidencia real (siguiente escalón natural, aunque con retornos decrecientes
-esperables y mayor riesgo de correlación por DIM8); (2) si se quiere
-explorar partial-close en serio, construir primero una simulación
-barra-por-barra del remanente (no usar DIM7 tal cual, ver caveat arriba).
+**Intento 10 (bdtxpwloh, MAX_OPEN_TEST=5) -- COMPLETADO OK.** Resultado
+guardado en `memory/backtest_results_maxopen5.json` (2026-08-28T20:24:46):
+P(pass)=**67.9%** (+0.8pp sobre MAX_OPEN=4, vs +1.9pp del salto 3->4 y
++5.8pp del salto 2->3), E[mensual]=$13,433 (+$1,010), Sharpe=**0.776**
+(BAJÓ desde 0.781 en MAX_OPEN=4). **Techo confirmado del lever MAX_OPEN**:
+rendimientos claramente decrecientes y el Sharpe ya invirtió tendencia --
+subir más posiciones simultáneas no es evidencia real de mejora neta,
+coincide con la advertencia de DIM8 (riesgo de correlación triplicado).
+No se sube MAX_OPEN a 5 en vivo (se queda en 4, ya confirmado superior con
+margen claro).
+
+**Progresión completa MAX_OPEN 2->3->4->5**: P(pass) 59.4/65.2/67.1/67.9% |
+E[mensual] $7721/$10630/$12423/$13433 | Sharpe 0.743/0.78/0.781/0.776.
+
+**Siguiente lever real, no probado aún**: `EXCLUDE_CHOPPY` (línea 117 del
+script) -- excluye trades en régimen CHOPPY, que el propio DIM3 de esta
+sesión y comentarios previos del script ya identificaron con WR=12% y
+avg -$205/-$213 (~22.5% de todos los trades, evidencia real ya en el
+propio backtest, no una hipótesis nueva). Es mecánicamente distinto de
+MAX_OPEN (filtra CALIDAD de entrada, no CANTIDAD de posiciones
+simultáneas) así que no debería tener el mismo techo de rendimientos
+decrecientes. Lanzando intento 11: `MAX_OPEN_TEST=4 EXCLUDE_CHOPPY=1`
+(sobre la config real en vivo, MAX_OPEN=4, aislando el efecto de este
+filtro nuevo).
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
