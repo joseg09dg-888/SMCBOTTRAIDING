@@ -498,6 +498,23 @@ que diluyó hora 15. El script no tenía forma de excluir un par vía env var
 `EXTRA_DEAD_HOURS`, sin tocar ninguna lógica de señales/riesgo). Lanzando
 intento 16: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15 EXCLUDE_PAIRS=GBPCAD`.
 
+**Intento 16 (byt2bm546) -- COMPLETADO SIN ERRORES** (código nuevo
+`EXCLUDE_PAIRS` verificado: log confirmó "pairs" sin GBPCAD, sin traceback).
+**RESULTADO NEGATIVO** vs el mejor (solo hora 15): P(pass)=68.8% (peor que
+70.3%), E[mensual]=$12,250 (peor que $13,359), Sharpe=0.869 (peor que
+0.890). Guardado en `memory/backtest_results_maxopen4_nohour15_nogbpcad.json`.
+**Mismo patrón que hora 20: GBPCAD es el más débil pero sigue aportando EV
+neto positivo -- no excluirlo.** Confirma que "hora 15" fue un caso
+especial de EV≈0 real, no una heurística general de "quitar lo más débil".
+
+**Mejor resultado confirmado de toda la sesión sigue siendo**: MAX_OPEN=4 +
+bloquear solo hora 15 → **P(pass)=70.3%, E[mensual]=$13,359, Sharpe=0.890**
+(intento 14). Lanzando intento 17: combinar los dos únicos levers
+positivos independientes de la sesión -- `MAX_OPEN_TEST=5 EXTRA_DEAD_HOURS=15`
+(MAX_OPEN=5 solo, sin hora 15, dio 67.9%/Sharpe 0.776 -- con hora 15
+bloqueada podría comportarse distinto ya que se quita el ruido de EV≈0
+antes de escalar posiciones simultáneas).
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores
