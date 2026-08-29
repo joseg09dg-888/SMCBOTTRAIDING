@@ -681,6 +681,90 @@ Y el P(pass) deja de subir claramente, se cierra el sweep de RR con
 RR=4.0 como el óptimo confirmado (mejor Sharpe) o RR=5.0/6.0 si el
 P(pass)/E[mensual] siguen justificándolo pese al Sharpe.
 
+**Intento 24 -- COMPLETADO. CONFIRMA LA REVERSIÓN, CIERRA EL SWEEP DE RR.**
+Guardado en `memory/backtest_results_maxopen4_soloTarde_rr6.json`:
+P(pass)=77.8% (bajó desde 78.1%), E[mensual]=$19,064 (sigue subiendo, pero
+solo por tamaño de ganancia -- wr_pct_final_only cayó a 7.7%, casi ningún
+trade llega ya al TP completo), Sharpe=1.065 (sigue bajando desde 1.103).
+**Confirmado: tanto P(pass) como Sharpe ya pasaron su pico entre RR=4.0 y
+RR=5.0. RR=6.0+ solo compra más $ nominal a cambio de mucha menos
+confiabilidad/consistencia -- mal trade para un reto prop-firm que exige
+consistencia.**
+
+---
+
+## 🌙 RESUMEN CONSOLIDADO — sesión nocturna 2026-08-28/29 (para cuando
+## el usuario despierte; NO se le habló en el chat, orden explícita:
+## silencio hasta 95% o hasta que pregunte)
+
+**Progresión completa de la noche** (todo con `REQUIRE_D1=0 REQUIRE_H4=0`,
+16 años H1 reales MT5, Monte Carlo 100K sims, sobre datos/lógica que
+coincide con el bot en vivo salvo el parámetro bajo prueba en cada fila):
+
+| # | Config | P(pass Axi) | E[mensual] | Sharpe |
+|---|---|---|---|---|
+| baseline sesión anterior | MAX_OPEN=2 (config vieja, desactualizada) | 59.4% | $7,721 | 0.743 |
+| 7 | MAX_OPEN=3 | 65.2% | $10,630 | 0.780 |
+| 9 | **MAX_OPEN=4 (real, coincide con vivo)** | 67.1% | $12,423 | 0.781 |
+| 10 | MAX_OPEN=5 (techo del lever) | 67.9% | $13,433 | 0.776 |
+| 11 | + EXCLUDE_CHOPPY | ❌ 65.4% | ❌ $11,534 | ❌ 0.755 |
+| 12 | + RR=2.0 | ❌ 58.6% | ❌ $8,409 | ❌ 0.589 |
+| 13 | + FRIDAY_CLOSE=22 | ❌ 66.1% | ❌ $12,165 | ❌ 0.759 |
+| 14 | **+ bloquear hora 15 UTC** | 70.3% | $13,359 | **0.890** |
+| 15 | + bloquear hora 15+20 | ❌ 68.4% | ❌ $11,786 | ❌ 0.876 |
+| 16 | + excluir GBPCAD | ❌ 68.8% | ❌ $12,250 | ❌ 0.869 |
+| 17 | MAX_OPEN=5 + hora15 | 70.2% | $14,041 | 0.866 |
+| 19 | + bloquear 15+16, abrir 17 | 72.5% | $14,388 | 0.939 |
+| 20 | **+ cerrar TODA la mañana (solo 20-23 UTC)** | 75.7% | $15,023 | 1.062 |
+| 21 | MAX_OPEN=5 + solo tarde | 75.7% | $15,678 | 1.038 |
+| 22 | + RR=4.0 | 77.9% | $17,066 | **1.103 (mejor Sharpe)** |
+| 23b | + RR=5.0 | **78.1% (mejor P(pass))** | $18,301 | 1.090 |
+| 24 | + RR=6.0 (confirma reversión) | 77.8% | $19,064 | 1.065 |
+
+**CONFIG GANADORA FINAL (la más defendible, mejor equilibrio)**:
+`MAX_OPEN=4` + **cerrar toda la sesión de mañana, operar SOLO 20-23 UTC**
++ **RR=4.0** (subido desde 3.0) →
+**P(pass Axi Select 5%)=77.9%, E[mensual]=$17,066, Sharpe=1.103**
+
+Esto **supera el 75% que recordabas haber alcanzado antes de que se
+dañara el PC**, con metodología verificada (paridad con el bot real,
+16 años de datos MT5 reales, cada cambio confirmado con evidencia
+empírica real, no intuición). Sigue sin llegar al 95% pedido -- el
+sistema parece tener un techo real cerca de 75-78% con este motor de
+señales SMC/BOS/CHoCH, dado lo que ya se probó exhaustivamente esta
+noche (11 levers distintos, 6 con mejora real, 5 descartados con
+evidencia).
+
+**2 hallazgos técnicos importantes, no aplicados al código en vivo
+todavía (solo backtesteados)**:
+1. La sesión de mañana (antes 14-16 UTC) diluye/perjudica el resultado
+   por un efecto estructural de "primera hora tras bloqueo largo"
+   (probablemente señales SMC atrasadas/falsas tras muchas horas sin
+   evaluar mercado) -- cerrarla del todo es mejor que intentar
+   arreglarla desplazándola.
+2. Subir RR de 3.0 a 4.0-5.0 (TP más lejano) mejora todo hasta ese punto,
+   luego revierte -- el óptimo real está en RR=4.0 (mejor Sharpe) a
+   RR=5.0 (mejor P(pass) nominal).
+
+**Cambios pendientes de aplicar al bot en vivo (requiere tu aprobación,
+NO se tocó `core/supervisor.py` esta noche, solo el script de backtest)**:
+- Agregar horas 15 y 16 UTC a `DEAD_HOURS_UTC` (core/supervisor.py:121)
+- Subir RR de 3.0 a 4.0 en la config de TP en vivo
+- MAX_OPEN_POSITIONS ya está en 4 (correcto, no tocar)
+
+**Levers probados y descartados con evidencia real** (no repetir):
+EXCLUDE_CHOPPY, RR=2.0, FRIDAY_CLOSE=22, bloquear hora 20 además de 15,
+excluir GBPCAD, MAX_OPEN>5, RR>5.0-6.0.
+
+**RAM**: 3 caídas externas durante la noche (intentos 6, 8, 23) sin
+traceback, patrón intermitente de RAM en un PC de 3.83GB -- todas
+relanzadas y completadas en el siguiente intento, sin pérdida de
+progreso real.
+
+**No se aplicó nada al código en vivo (`core/supervisor.py`) -- todo
+quedó en el script de backtest y esta documentación, a la espera de tu
+decisión.**
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

@@ -579,7 +579,11 @@ for pair, df1 in h1_data.items():
         # Threshold — actualizado 2026-07-05: MT5_SCORE_AUTO_REDUCE real=80 (core/supervisor.py:96,
         # recalibrado 2026-07-01 tras el sweep que probo 90-95 y NO mejoraba WR, solo cortaba volumen).
         # MT5_REAL_SCORE_THRESHOLD=95 es solo techo de excepcion, no la operacion normal.
-        thr = 80 if h4_d != "WAIT" else 90
+        thr = float(os.environ.get("THR_CONFIRMED_TEST", "80")) if h4_d != "WAIT" else float(os.environ.get("THR_WAIT_TEST", "90"))
+        # 2026-08-29: parametrizado -- el sweep 2026-07-01 que fijo 80/90 como
+        # optimo predata el descubrimiento de "solo tarde 20-23 UTC" de esta
+        # sesion (RR=3.0, todas las horas). Con el conjunto de trades distinto
+        # que deja ese filtro, el optimo de threshold podria haber cambiado.
         if score < thr: continue
 
         # Risk scaling by score
