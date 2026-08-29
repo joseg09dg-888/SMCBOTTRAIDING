@@ -83,6 +83,11 @@ PARTIAL_R_TEST = float(os.environ.get("PARTIAL_R_TEST", "0") or 0)
 # vuelva a breakeven en la MISMA barra, que es el efecto que un audit de 584
 # trades reales encontro y causo desactivar partial-close en vivo (commit
 # 5e3ffd5). 0 = desactivado (comportamiento actual en vivo, default).
+TRAIL_BE_R_TEST = float(os.environ.get("TRAIL_BE_R_TEST", "0") or 0)
+# 2026-08-29: modela el trailing-to-BE que YA EXISTE en vivo (mueve el SL a
+# breakeven al alcanzar TRAIL_BE_R_TEST*sl_dist a favor, SIN cerrar volumen,
+# a diferencia de PARTIAL_R_TEST) -- el backtest nunca lo modelaba antes.
+# 0 = desactivado (backtest histórico de esta sesión, sin trailing).
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
     # actualizado 2026-07-09: GBPUSD removido -- auditoria de episodes.db (591 trades
@@ -462,8 +467,26 @@ for pair, df1 in h1_data.items():
                         pair_stats[pair_p]["pnl"] += partial_pnl
                     vol_p = half_vol
                     sl = entry
-                    be_sl = entry
+                    be_sl = True
                     partial_done = True
+
+            if TRAIL_BE_R_TEST > 0 and not be_sl and not partial_done:
+                # 2026-08-29: modela el trailing-to-BE que YA existe en vivo
+                # (mueve el SL a breakeven al alcanzar TRAIL_BE_R_TEST*sl_dist
+                # a favor, SIN cerrar volumen -- protege contra giveback sin
+                # capar el upside, a diferencia de PARTIAL_R_TEST). El backtest
+                # nunca lo modelo antes (comentario previo: "doesn't change the
+                # SL/TP outcome distribution modeled here" -- eso era cierto
+                # solo porque no estaba implementado, no porque no importe).
+                if direction == "LONG":
+                    trail_price = entry + TRAIL_BE_R_TEST * sl_dist
+                    hit_trail = cur_h >= trail_price
+                else:
+                    trail_price = entry - TRAIL_BE_R_TEST * sl_dist
+                    hit_trail = cur_l <= trail_price
+                if hit_trail:
+                    sl = entry
+                    be_sl = True
 
             # cur_sl_dist (no sl_dist): tras un partial, sl se mueve a
             # breakeven (entry) -- el P&L de un stop-out debe reflejar la
@@ -672,7 +695,7 @@ for pair, df1 in h1_data.items():
             sl_p = entry + sl_dist_p
             tp_p = entry - sl_dist_p * RR
 
-        open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, entry, pip_v, pair, 0.0, None))
+        open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, False, pip_v, pair, 0.0, None))
 
 print(f"\n  Total trades (periodo completo H1): {len(trade_log)}")
 n_final = sum(1 for t in trade_log if t["type"] == "final")

@@ -1,0 +1,35 @@
+{
+  "date": "2026-08-29T07:53:51.998471",
+  "note": "SIMULACION REAL barra-por-barra de partial-close (no la formula DIM7, ya descartada por caveat metodologico). MAX_OPEN=4 + solo tarde 20-23 UTC + RR=4.0 + PARTIAL_R_TEST=0.75 (cierra 50% al alcanzar 0.75R, mueve SL del remanente a breakeven). RESULTADO: mucho PEOR que sin partial en las 3 metricas clave. Confirma con evidencia real la decision ya tomada en vivo (commit 5e3ffd5, 2026-07-06) de desactivar partial-close.",
+  "config": {
+    "years_h1": 2,
+    "years_d1": 10,
+    "threshold_h4_confirmed": 80,
+    "threshold_h4_wait": 90,
+    "rr": 4.0,
+    "partial_r_test": 0.75,
+    "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16],
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 47520,
+    "total_days": 4090,
+    "n_partial": 15065,
+    "n_final": 16184,
+    "wr_pct_final_only": 20.1,
+    "wr_pct_real": 60.4,
+    "avg_daily": 288.21,
+    "p_day_250": 40.2,
+    "p_pass_axi": 54.4,
+    "e_monthly": 6328.82,
+    "sharpe": 0.644,
+    "best_hours": [21, 20, 23, 22]
+  },
+  "comparacion_vs_sin_partial": {
+    "p_pass_axi": "54.4% vs 77.9% (-23.5pp)",
+    "e_monthly": "$6329 vs $17066 (-63%)",
+    "sharpe": "0.644 vs 1.103 (-42%)"
+  }
+}

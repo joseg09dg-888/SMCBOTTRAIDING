@@ -805,6 +805,38 @@ explorar una dirección nueva** (ej. construir una simulación real
 barra-por-barra de partial-close, que quedó pendiente y sin tocar por
 ser un desarrollo mayor, no un simple sweep de parámetro).
 
+---
+
+## Simulación REAL de partial-close (mañana 2026-08-29, a pedido del usuario)
+
+Se implementó `PARTIAL_R_TEST` (env var, scripts/backtest_multiyear.py
+líneas ~76-83 y ~399-478): a diferencia de DIM7 (fórmula analítica
+aproximada, ya marcada como no confiable), esto simula el cierre parcial
+usando la trayectoria de precio REAL barra-por-barra (mismo motor que ya
+usa el resto del backtest) -- cierra 50% del volumen al alcanzar
+PARTIAL_R_TEST×sl_dist a favor, mueve el SL del remanente a breakeven, y
+dejar correr el remanente sujeto a los mismos guards reales (peak_guard,
+stagnant, friday_close, time_close). Incluye la posibilidad de que el
+remanente vuelva a breakeven en la MISMA barra -- el efecto exacto que el
+audit de 584 trades reales encontró y que causó desactivar partial-close
+en vivo (commit 5e3ffd5, 2026-07-06).
+
+**Prueba: partial@0.75R sobre la config ganadora** (MAX_OPEN=4, solo
+tarde 20-23 UTC, RR=4.0). Guardado en
+`memory/backtest_results_partial075.json`. Se disparó correctamente
+(15,065 cierres parciales reales, confirmado en el log). **RESULTADO:
+MUCHO PEOR que sin partial**:
+- P(pass Axi): 54.4% (**-23.5pp** vs 77.9%)
+- E[mensual]: $6,329 (**-63%** vs $17,066)
+- Sharpe: 0.644 (**-42%** vs 1.103)
+
+**Confirmación definitiva con evidencia real (no una fórmula aproximada):
+partial-close efectivamente perjudica el sistema, tal como la decisión ya
+tomada en vivo (commit 5e3ffd5) determinó con datos reales de trading.
+No hay motivo para re-habilitarlo. Este lever queda cerrado
+permanentemente con evidencia sólida en ambas direcciones (real trading
+Y backtest bar-by-bar).**
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores
