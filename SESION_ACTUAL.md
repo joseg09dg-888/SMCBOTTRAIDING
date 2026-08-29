@@ -898,6 +898,51 @@ MAX_OPEN=4 + solo tarde (20-23 UTC) + RR=4.0 + TRAIL_BE_R_TEST=1.0 →
 significativa -- confirma que el bot YA está usando una fórmula de SL
 razonable).
 
+---
+
+## Sweep de RIESGO (RISK_MULT_TEST) -- toca dinero real, reportar con cuidado
+
+DIM6 (Kelly) de esta sesión muestra el sistema subutilizando capital
+masivamente (Kelly recomienda 4.3-8.5% vs 0.5% real usado). Un intento
+histórico (2026-07-09, **con la config VIEJA** -- sin RR=4.0, sin
+trailing, sin horas limpias) de doblar el riesgo disparó
+`P(mes < -5%)` de 6% a 16% y se rechazó por ese motivo. Se probó de
+nuevo con la config ganadora ACTUAL de esta sesión, vigilando
+`P(mes < -5%)` en cada paso, no solo P(pass):
+
+| RISK_MULT | P(pass) | E[mensual] | Sharpe | P(mes<-5%) |
+|---|---|---|---|---|
+| 1.0 (sin ajuste, baseline) | 79.2% | $17,413 | **1.147** | 6% |
+| 1.25 | 80.2% | $20,108 | 1.133 | 7% |
+| **1.5 (mejor punto riesgo-ajustado)** | 80.9% | $22,187 | 1.130 | 7% |
+| 2.0 (mismo multiplicador que el rechazo histórico) | 81.0% (se estanca) | $24,670 | 1.107 (revierte) | 8% |
+
+**El riesgo de mes catastrófico se mantuvo notablemente estable (6%→8%)
+incluso doblando el riesgo -- muy distinto al precedente histórico
+(6%→16%) porque el perfil riesgo/retorno del sistema cambió con las
+mejoras de esta sesión (RR=4.0 en vez de 3.0, trailing-to-BE protegiendo
+ganancias, horas limpias sin la dilución de la sesión de mañana).** Pero
+P(pass) ya se estancó en 2.0x y el Sharpe empezó a revertir -- **1.5x
+parece el mejor punto riesgo-ajustado real, no vale la pena seguir
+subiendo el multiplicador más allá.**
+
+**CONFIG GANADORA FINAL ACTUALIZADA (recomendada, con trade-off de
+riesgo explícito)**:
+- Conservadora (mejor Sharpe): sin ajuste de riesgo → P(pass)=79.2%,
+  Sharpe=1.147, P(mes<-5%)=6%
+- **Recomendada (mejor equilibrio)**: RISK_MULT=1.5 → **P(pass)=80.9%,
+  E[mensual]=$22,187, Sharpe=1.130, P(mes<-5%)=7%**
+
+**IMPORTANTE: este cambio de riesgo (subir 0.5%/0.25%/0.7% risk_pct por
+score a 0.75%/0.375%/1.05%, aprox) NO se ha aplicado a
+`core/supervisor.py`. Es una decisión que toca dinero real directamente
+y debe confirmarse explícitamente antes de tocar el código en vivo,** a
+diferencia de los demás hallazgos (horas, RR, trailing) que son más
+seguros de aplicar por sí solos.
+
+Progresión total de la sesión: 59.4% → 65.2% → 67.1% → 70.3% → 72.5% →
+75.7% → 77.9% → 79.2% → **80.9%** (con ajuste de riesgo moderado).
+
 **Config ganadora ACTUALIZADA de toda la sesión**: MAX_OPEN=4 + solo
 tarde (20-23 UTC) + RR=4.0 + TRAIL_BE_R_TEST=1.0 →
 **P(pass Axi Select 5%) = 79.2% | E[mensual] = $17,413 | Sharpe = 1.147**

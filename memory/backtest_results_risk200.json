@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-29T13:14:44.495471",
+  "note": "RISK_MULT_TEST=2.0 (doblar el riesgo). P(pass) se estanca (81.0% vs 80.9% en 1.5x) y Sharpe empieza a bajar claramente (1.107 vs 1.13). P(mes<-5%) sigue sorprendentemente bajo (8%) comparado con el precedente historico (2026-07-09, config vieja) donde doblar el riesgo disparo P(mes<-5%) de 6% a 16% -- el perfil riesgo/retorno del sistema cambio fundamentalmente con las mejoras de esta sesion (RR=4.0, trailing-to-BE, horas limpias). Aun asi, el P(pass) ya no sube y el Sharpe revierte -- 1.5x parece el mejor punto riesgo-ajustado, no 2.0x.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "risk_mult_test": 2.0,
+    "active_hours_utc": "20-23 unicamente", "extra_dead_hours": [15, 16], "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 36684, "total_days": 3989, "wr_pct_final_only": 17.0, "wr_pct_real": 46.2,
+    "avg_daily": 1121.46, "p_day_250": 43.0, "p_pass_axi": 81.0, "e_monthly": 24669.76,
+    "sharpe": 1.107, "p_mes_menos_5pct": 8, "best_hours": [21, 20, 23, 22]
+  }
+}
