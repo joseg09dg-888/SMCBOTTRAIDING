@@ -943,6 +943,47 @@ seguros de aplicar por sí solos.
 Progresión total de la sesión: 59.4% → 65.2% → 67.1% → 70.3% → 72.5% →
 75.7% → 77.9% → 79.2% → **80.9%** (con ajuste de riesgo moderado).
 
+Además, extender el boost de riesgo de EURUSD (1.8x) a EURAUD (casi
+empatados en DIM5 con la config nueva) dio otra mejora real:
+RISK_MULT=1.5+EXTRA_BOOST_PAIRS=EURAUD → **P(pass)=81.4%,
+E[mensual]=$23,232, Sharpe=1.141**.
+
+---
+
+## CORRECCIÓN CRÍTICA: el modelo de riesgo del backtest NO coincide con
+## la lógica real en vivo -- el 81.4% tampoco es directamente desplegable
+
+Se encontró que `core/supervisor.py:2246-2255` usa un tope de riesgo
+**ADAPTATIVO por progreso del día** ($100 si ya se cumplió la meta diaria,
+$200 si va detrás, hasta $400 si va muy detrás), completamente distinto
+del modelo estático por-score (`risk_for_score`) que usa este backtest.
+Todo el sweep de RISK_MULT_TEST (1.25x-2.0x, incluyendo el boost EURAUD)
+usa el modelo estático -- **no representa lo que el bot real haría.**
+
+Se implementó `REALISTIC_RISK_CAP=1` replicando la fórmula real completa.
+Resultado sobre la config ganadora (sin RISK_MULT, sin boost extra):
+**P(pass)=78.2%, E[mensual]=$16,677, Sharpe=1.131 -- ligeramente PEOR
+que el baseline sin tocar nada (79.2%/$17,413/1.147).** El tope
+adaptativo real, tal como está calibrado hoy en vivo, no aporta sobre el
+modelo simple -- de hecho lo empeora un poco (probablemente porque cae a
+$100 apenas se cumple la meta diaria, frenando ganancias adicionales ese
+mismo día).
+
+**Conclusión honesta: ninguno de los números optimistas del sweep de
+riesgo (80.9%, 81.4%) es directamente desplegable sin ANTES cambiar los
+propios tiers reales ($100/$200/$400) en `core/supervisor.py` -- eso es
+un cambio de código en vivo real y separado, no solo un parámetro de
+backtest.** Se parametrizó `REALISTIC_RISK_CAP_MULT` para escalar esos 3
+tiers manteniendo la estructura adaptativa real (no el modelo estático) y
+así probar esta vía correctamente. Pendiente de correr.
+
+**Config ganadora real y honesta de la sesión, sin cambios de riesgo sin
+probar en su estructura real**: MAX_OPEN=4 + solo tarde (20-23 UTC) +
+RR=4.0 + TRAIL_BE_R_TEST=1.0 → **P(pass)=79.2%, E[mensual]=$17,413,
+Sharpe=1.147** -- este es el número sólido y aplicable. Los de riesgo
+(80.9%/81.4%) quedan como "candidatos pendientes de validar con la
+estructura real de riesgo adaptativo", no como ganancias confirmadas.
+
 **Config ganadora ACTUALIZADA de toda la sesión**: MAX_OPEN=4 + solo
 tarde (20-23 UTC) + RR=4.0 + TRAIL_BE_R_TEST=1.0 →
 **P(pass Axi Select 5%) = 79.2% | E[mensual] = $17,413 | Sharpe = 1.147**

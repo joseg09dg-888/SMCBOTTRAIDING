@@ -685,13 +685,18 @@ for pair, df1 in h1_data.items():
             # score>=90 a RISK_MULT=1.5 ya da $412, a 2.0 da $550-825 segun tier --
             # muy por encima de lo que el bot real permitiria). Esto replica la
             # formula real completa para dar el numero HONESTO y deployable.
+            _rcm = float(os.environ.get("REALISTIC_RISK_CAP_MULT", "1.0") or 1.0)
+            # 2026-08-29: escala los 3 tiers reales ($100/$200/$400) manteniendo
+            # la ESTRUCTURA adaptativa real (por progreso diario) -- a diferencia
+            # de RISK_MULT_TEST, que multiplicaba el modelo estatico por-score
+            # que no coincide con como el bot realmente calcula el riesgo.
             _shortfall = DAILY_TARGET - daily_pnl.get(day_str, 0.0)
             if _shortfall > 200 and hour_utc >= 13:
-                max_r = min(400.0, 200.0 + _shortfall * 0.3)
+                max_r = min(400.0 * _rcm, (200.0 + _shortfall * 0.3) * _rcm)
             elif _shortfall <= 0:
-                max_r = 100.0
+                max_r = 100.0 * _rcm
             else:
-                max_r = 200.0
+                max_r = 200.0 * _rcm
 
         # DIAGNOSTICO 2026-07-09: escalar riesgo SOLO donde hay edge real
         # comprobado (episodes.db real: EURUSD PF=1.11, unico con neto positivo

@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-29T15:00:48.450579",
+  "note": "REALISTIC_RISK_CAP=1 -- formula REAL de riesgo adaptativo de core/supervisor.py:2246-2255 ($100 si meta cumplida, $200 si va detras, hasta $400 si va MUY detras). RESULTADO: ligeramente PEOR que el baseline estatico simple (78.2% vs 79.2%). Esto significa que el sweep optimista de RISK_MULT_TEST (hasta 81.4% con boost EURAUD) NO es directamente desplegable -- la logica real de vivo es fundamentalmente distinta (adaptativa por progreso diario, no un multiplicador estatico por score) y en la practica rinde un poco PEOR que no tocar nada. Para lograr una mejora real habria que cambiar los propios tiers ($100/$200/$400) en core/supervisor.py, una decision de codigo en vivo separada, no probada aun.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "realistic_risk_cap": true,
+    "active_hours_utc": "20-23 unicamente", "extra_dead_hours": [15, 16], "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 35237, "total_days": 3939, "wr_pct_final_only": 18.4, "wr_pct_real": 43.7,
+    "avg_daily": 755.33, "p_day_250": 40.3, "p_pass_axi": 78.2, "e_monthly": 16676.55,
+    "sharpe": 1.131, "best_hours": [21, 20, 23, 22]
+  }
+}
