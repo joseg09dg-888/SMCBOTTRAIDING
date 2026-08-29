@@ -674,16 +674,32 @@ for pair, df1 in h1_data.items():
         max_r *= _mult
 
         # Volume
-        sl_dist_p = atr_v * float(os.environ.get("SL_ATR_MULT_TEST", "1.5") or 1.5)
-        # 2026-08-29: parametrizado -- ADVERTENCIA DE PARIDAD: a diferencia de
-        # RR/threshold/horas (que sí mapean a constantes reales en vivo), no
-        # se encontro un ATR-multiplier equivalente explicito en el motor de
-        # senales real (smc/structure.py usa atr*1.5 para deteccion de
-        # desplazamiento, NO para el sizing del SL) -- este es un parametro
-        # SOLO del backtest sin ancla de paridad confirmada en vivo. Util para
-        # explorar, pero un resultado positivo aqui NO es evidencia lista para
-        # aplicar en vivo sin antes ubicar el calculo real de SL en el motor
-        # de senales vivo y confirmar que coincide con este modelo.
+        # 2026-08-29: CORRECCION -- se encontro el calculo real de SL en vivo:
+        # agents/signal_agent.py:_sl_distance() -- atr14*1.5 (SIN cap/floor en
+        # ESTE backtest hasta ahora), pero el motor real SI aplica un cap y un
+        # floor por par que este script nunca modelaba:
+        #   cap (pips): EURUSD/GBPUSD/USDCAD=40, AUDUSD/NZDUSD/USDCHF=35,
+        #               EURAUD=45, GBPCAD=50
+        #   floor (pips): majors=20, GBP-crosses(GBPCAD)=25
+        # Sin el cap, ATR alto (regimen HIGH vol) generaba SL mucho mas anchos
+        # que en vivo -- explica por que SL_ATR_MULT_TEST=1.0 (barrido previo,
+        # sin cap) se acercaba por accidente al comportamiento real capado.
+        # REALISTIC_SL=1 aplica la formula real completa (recomendado); si no,
+        # se usa el multiplicador simple SL_ATR_MULT_TEST (modo exploratorio
+        # anterior, sin cap/floor, se mantiene por compatibilidad).
+        if os.environ.get("REALISTIC_SL", "0") == "1":
+            _sl_cap_pips = {"EURUSD": 40, "GBPUSD": 40, "USDCAD": 40,
+                             "AUDUSD": 35, "NZDUSD": 35, "USDCHF": 35,
+                             "EURAUD": 45, "GBPCAD": 50}
+            _sl_floor_pips = {"GBPCAD": 25}  # resto = 20 (default)
+            sl_dist_p = atr_v * 1.5
+            _cap_p = _sl_cap_pips.get(pair)
+            if _cap_p is not None:
+                sl_dist_p = min(sl_dist_p, _cap_p * PIP_SZ[pair])
+            _floor_p = _sl_floor_pips.get(pair, 20)
+            sl_dist_p = max(sl_dist_p, _floor_p * PIP_SZ[pair])
+        else:
+            sl_dist_p = atr_v * float(os.environ.get("SL_ATR_MULT_TEST", "1.5") or 1.5)
         pip_v = PIP_VAL[pair]
         pip_s = PIP_SZ[pair]
         sl_pips = sl_dist_p / pip_s

@@ -1,11 +1,11 @@
 {
-  "date": "2026-08-29T09:47:15.674999",
+  "date": "2026-08-29T10:17:00.103696",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
     "threshold_h4_confirmed": 80,
     "threshold_h4_wait": 90,
-    "rr": 5.0,
+    "rr": 4.0,
     "partial_tp": null,
     "kill_zone_utc": "14-16,20-23",
     "pairs": [
@@ -18,20 +18,20 @@
     ]
   },
   "stats": {
-    "total_trades": 34766,
-    "total_days": 3931,
-    "wr_pct_final_only": 12.0,
-    "wr_pct_real": 43.8,
-    "avg_daily": 851.64,
-    "p_day_250": 38.6,
-    "p_pass_axi": 79.2,
-    "e_monthly": 18672.68,
-    "sharpe": 1.129,
+    "total_trades": 36482,
+    "total_days": 4044,
+    "wr_pct_final_only": 23.9,
+    "wr_pct_real": 42.8,
+    "avg_daily": 1019.07,
+    "p_day_250": 45.3,
+    "p_pass_axi": 88.2,
+    "e_monthly": 22390.8,
+    "sharpe": 1.479,
     "best_hours": [
       20,
       21,
-      23,
-      22
+      22,
+      23
     ]
   }
 }

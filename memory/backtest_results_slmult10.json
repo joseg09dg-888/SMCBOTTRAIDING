@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-29T10:17:00.103696",
+  "note": "SL_ATR_MULT_TEST=1.0 (vs default 1.5) sobre config ganadora (MAX_OPEN=4, solo tarde, RR=4.0, TRAIL_BE=1.0). SALTO GRANDE, el mejor resultado de toda la sesion por mucho margen. CAVEAT: este parametro no tiene ancla de paridad confirmada con el codigo real en vivo (no se encontro donde el motor de senales real calcula el SL) -- tratar como resultado exploratorio hasta confirmar la formula real.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "sl_atr_mult_test": 1.0,
+    "active_hours_utc": "20-23 unicamente", "extra_dead_hours": [15, 16], "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 36482, "total_days": 4044, "wr_pct_final_only": 23.9, "wr_pct_real": 42.8,
+    "avg_daily": 1019.07, "p_day_250": 45.3, "p_pass_axi": 88.2, "e_monthly": 22390.8,
+    "sharpe": 1.479, "best_hours": [20, 21, 22, 23]
+  }
+}
