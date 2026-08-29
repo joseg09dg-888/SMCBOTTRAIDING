@@ -765,6 +765,46 @@ progreso real.
 quedó en el script de backtest y esta documentación, a la espera de tu
 decisión.**
 
+---
+
+## Actualización post-resumen: sweep de threshold (cierra la sesión nocturna)
+
+Se parametrizó `THR_CONFIRMED_TEST`/`THR_WAIT_TEST` (nuevo, mismo patrón
+que los anteriores) para verificar si el threshold=80/90 (fijado en un
+sweep del 2026-07-01, **antes** de descubrir "solo tarde"+RR=4.0 esta
+noche) seguía siendo óptimo con la config nueva:
+
+- **threshold=70/90**: P(pass)=77.5%, E[mensual]=$16,965, Sharpe=1.093 --
+  ligeramente peor. Volumen casi idéntico (37,910 vs 37,902 trades) --
+  el score casi nunca cae entre 70-79, bajar el umbral ahí no cambia nada.
+- **threshold=85/90**: P(pass)=**42.9%** (colapso), E[mensual]=$4,276,
+  volumen se derrumba a 5,419 trades (de 37,902) -- confirma que el score
+  se concentra justo en el rango 80-84; subir a 85 corta la inmensa
+  mayoría de setups válidos.
+- **Conclusión: threshold=80/90 (el valor por defecto, ya fijado en vivo)
+  sigue siendo el óptimo real, reconfirmado con la config ganadora
+  nueva.** No cambiar.
+
+## 🏁 CONFIG GANADORA FINAL DE TODA LA SESIÓN (confirmada, lista para
+## considerar aplicar en vivo con tu aprobación):
+
+**MAX_OPEN=4** (ya está así en vivo, correcto) + **cerrar toda la sesión
+de mañana, operar SOLO 20-23 UTC** (agregar horas 15 y 16 a
+`DEAD_HOURS_UTC` en `core/supervisor.py:121`, que ya bloquea 0-14,17-19)
++ **RR=4.0** (subir desde 3.0 en la config de TP) + threshold=80/90 (sin
+cambio, ya está óptimo) →
+
+**P(pass Axi Select 5%) = 77.9% | E[mensual] = $17,066 | Sharpe = 1.103**
+
+Supera el 75% de referencia. **Se agotaron todos los levers de bajo
+riesgo razonables de esta sesión** (MAX_OPEN, horas activas, RR,
+threshold, EXCLUDE_CHOPPY, EXCLUDE_PAIRS, FRIDAY_CLOSE -- 12 variantes
+probadas con evidencia real, 6 mejoras, 6 descartes). **No se relanzarán
+más backtests automáticamente hasta que el usuario revise esto o pida
+explorar una dirección nueva** (ej. construir una simulación real
+barra-por-barra de partial-close, que quedó pendiente y sin tocar por
+ser un desarrollo mayor, no un simple sweep de parámetro).
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores
