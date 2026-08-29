@@ -669,6 +669,18 @@ en el momento: 458MB, más que en caídas previas -- patrón intermitente,
 no bloqueo duro). 3ra caída externa de la sesión (tras intentos 6 y 8).
 Relanzado de inmediato como intento 23b (bn6yfkto1).
 
+**Intento 23b -- COMPLETADO.** Guardado en
+`memory/backtest_results_maxopen4_soloTarde_rr5.json`: P(pass)=78.1%
+(+0.2pp, casi plano vs 77.9% de RR=4.0), E[mensual]=$18,301 (+$1,235,
+sigue subiendo), Sharpe=**1.09 (BAJÓ** desde 1.103 de RR=4.0 -- primera
+señal de reversión). **P(pass) sigue subiendo pero al borde del ruido;
+Sharpe ya empezó a revertir.** Posible señal de que el óptimo
+riesgo-ajustado ya pasó en RR=4.0. Un punto más para confirmar la
+reversión: lanzando intento 24 `RR_TEST=6.0`. Si el Sharpe sigue bajando
+Y el P(pass) deja de subir claramente, se cierra el sweep de RR con
+RR=4.0 como el óptimo confirmado (mejor Sharpe) o RR=5.0/6.0 si el
+P(pass)/E[mensual] siguen justificándolo pese al Sharpe.
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

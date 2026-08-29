@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-29T04:35:08.588484",
+  "note": "MAX_OPEN=4 + solo tarde + RR_TEST=5.0. P(pass) casi plano vs RR=4.0 (78.1% vs 77.9%), pero Sharpe empieza a bajar (1.09 vs 1.103) -- posible señal de que el óptimo de Sharpe ya paso en RR=4.0, aunque P(pass) y E[mensual] siguen subiendo.",
+  "config": {
+    "years_h1": 2,
+    "years_d1": 10,
+    "threshold_h4_confirmed": 80,
+    "threshold_h4_wait": 90,
+    "rr": 5.0,
+    "partial_tp": null,
+    "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16],
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 37293,
+    "total_days": 3940,
+    "wr_pct_final_only": 11.6,
+    "wr_pct_real": 42.9,
+    "avg_daily": 833.29,
+    "p_day_250": 38.8,
+    "p_pass_axi": 78.1,
+    "e_monthly": 18300.96,
+    "sharpe": 1.09,
+    "best_hours": [20, 21, 23, 22]
+  }
+}
