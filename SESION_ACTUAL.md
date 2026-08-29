@@ -441,12 +441,27 @@ No tocar RR=3.0 en vivo.** Van 2 levers descartados con evidencia real
 "techo" real del sistema con este motor de señales parece estar cerca de
 67-68% P(pass), no 95%.
 
-**Siguiente lever real, no probado aún**: `FRIDAY_CLOSE_HOUR_TEST` (línea
-63) -- actualmente cierra viernes a las 19 UTC; friday_close es el 2do
-motivo de cierre más común (27.6% de todos los cierres reales, después de
-final_SL). Probar un corte más tardío (ej. 21 o 22 UTC) para dar más
-tiempo a que trades de jueves/viernes alcancen TP en vez de forzar cierre.
-Lanzando intento 13: `MAX_OPEN_TEST=4 FRIDAY_CLOSE_HOUR_TEST=22`.
+**Intento 13 (b0vgyhgym, MAX_OPEN_TEST=4 FRIDAY_CLOSE_HOUR_TEST=22) --
+COMPLETADO, RESULTADO NEGATIVO (leve).** Guardado en
+`memory/backtest_results_maxopen4_friday22.json`:
+P(pass)=66.1% (-1.0pp), E[mensual]=$12,165 (-$258), Sharpe=0.759 (-0.022).
+Cortar más tarde el viernes no ayuda -- descartado.
+
+**Van 3 levers descartados** (EXCLUDE_CHOPPY, RR=2.0, FRIDAY_CLOSE=22) y
+**2 que mejoraron** (MAX_OPEN 3, 4). Revisé todos los `os.environ.get(...)`
+del script (grep completo) buscando el siguiente parametrizado-sin-barrer:
+MAX_HOLD_HOURS_TEST, SWING_MAX_LOSS_TEST, PEAK_GUARD_RETRACE,
+STAGNANT_PEAK_MAX, STAGNANT_GRACE_HOURS no tienen evidencia real previa
+apuntando a un valor mejor (pura especulación si se tocan). Pero
+**la propia tabla DIM4 de este intento reveló algo con evidencia MUY
+fuerte**: hora 15 UTC (activa, dentro de la kill zone 14-16) tiene
+23,803 trades (**40% del total**) con WR=33% y avg P&L=**-$1** (esencialmente
+breakeven/negativo) -- la peor hora activa por lejos, comparado con
+16h/21h/22h/23h que son "PREMIUM" (WR 50-58%, avg $85-125). Volumen enorme
+de trades de EV casi cero diluyendo el resultado total. Lanzando intento
+14: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15` (bloquear hora 15 UTC, dejar
+16+20-23 como está) usando el mecanismo `EXTRA_DEAD_HOURS` ya existente en
+el script (línea 368-370), sin tocar código, solo env var.
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por

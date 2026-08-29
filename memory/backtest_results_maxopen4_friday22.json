@@ -1,5 +1,6 @@
 {
   "date": "2026-08-28T22:41:31.080927",
+  "note": "MAX_OPEN=4 + FRIDAY_CLOSE_HOUR_TEST=22 -- guardado aparte, el script sobreescribe backtest_results_maxopen4.json. Baseline real MAX_OPEN=4 con FRIDAY_CLOSE=19 (default en vivo): P(pass)=67.1%, E[mensual]=$12422.77, Sharpe=0.781.",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -8,14 +9,9 @@
     "rr": 3.0,
     "partial_tp": null,
     "kill_zone_utc": "14-16,20-23",
-    "pairs": [
-      "EURUSD",
-      "USDCAD",
-      "NZDUSD",
-      "USDCHF",
-      "EURAUD",
-      "GBPCAD"
-    ]
+    "friday_close_hour_test": 22,
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
   },
   "stats": {
     "total_trades": 58663,
@@ -27,12 +23,6 @@
     "p_pass_axi": 66.1,
     "e_monthly": 12164.6,
     "sharpe": 0.759,
-    "best_hours": [
-      22,
-      21,
-      16,
-      23,
-      20
-    ]
+    "best_hours": [22, 21, 16, 23, 20]
   }
 }
