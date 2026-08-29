@@ -73,6 +73,16 @@ MAX_RISK = 275.0  # probado doblar a 550 (2026-07-09): P(pasar Axi)+2.5pp pero
 # P(mes<-5%) 6%->16% (casi triplico) -- Axi revienta la cuenta a ese drawdown,
 # no vale la pena el intercambio. Revertido a 275.
 RR = float(os.environ.get("RR_TEST", "3.0"))  # 2026-07-24: parametrizado -- live data shows only 2.8% of real closes hit the designed TP (77% close via guards instead), testing whether a more reachable RR changes that
+PARTIAL_R_TEST = float(os.environ.get("PARTIAL_R_TEST", "0") or 0)
+# 2026-08-29: simulacion REAL barra-por-barra de partial-close (a diferencia
+# de DIM7 mas abajo, que es una formula analitica aproximada sin respaldo de
+# trayectoria de precio real -- ver caveat metodologico en SESION_ACTUAL.md).
+# Si >0, cierra 50% del volumen al alcanzar PARTIAL_R_TEST*sl_dist a favor y
+# mueve el SL del remanente a breakeven, usando el mismo H/L de barra real
+# que ya usa el resto del motor -- incluye la posibilidad de que el remanente
+# vuelva a breakeven en la MISMA barra, que es el efecto que un audit de 584
+# trades reales encontro y causo desactivar partial-close en vivo (commit
+# 5e3ffd5). 0 = desactivado (comportamiento actual en vivo, default).
 DAILY_TARGET = 250.0
 PAIRS_FOREX = {
     # actualizado 2026-07-09: GBPUSD removido -- auditoria de episodes.db (591 trades
@@ -419,14 +429,57 @@ for pair, df1 in h1_data.items():
             # and are kept.
             top_close_type = None
 
+            if PARTIAL_R_TEST > 0 and not partial_done:
+                if direction == "LONG":
+                    partial_price = entry + PARTIAL_R_TEST * sl_dist
+                    hit_partial = cur_h >= partial_price
+                else:
+                    partial_price = entry - PARTIAL_R_TEST * sl_dist
+                    hit_partial = cur_l <= partial_price
+                if hit_partial:
+                    half_vol = vol_p / 2.0
+                    partial_pnl = half_vol * PARTIAL_R_TEST * sl_dist * pip_v / PIP_SZ[pair_p]
+                    if partial_pnl != 0.0:
+                        daily_pnl[day_str] += partial_pnl
+                        vr = vol_regime(df1, idx)
+                        tr = trend_regime(df1, idx)
+                        trade_log.append({
+                            "pair": pair_p, "type": "partial", "pnl": partial_pnl,
+                            "win": partial_pnl > 0, "hour": hour_utc, "year": year_str,
+                            "vol_regime": vr, "trend_regime": tr,
+                        })
+                        regime_stats[(vr, tr)]["trades"] += 1
+                        regime_stats[(vr, tr)]["wins"] += int(partial_pnl > 0)
+                        regime_stats[(vr, tr)]["pnl"] += partial_pnl
+                        hour_stats[hour_utc]["trades"] += 1
+                        hour_stats[hour_utc]["wins"] += int(partial_pnl > 0)
+                        hour_stats[hour_utc]["pnl"] += partial_pnl
+                        year_stats[year_str]["trades"] += 1
+                        year_stats[year_str]["wins"] += int(partial_pnl > 0)
+                        year_stats[year_str]["pnl"] += partial_pnl
+                        pair_stats[pair_p]["trades"] += 1
+                        pair_stats[pair_p]["wins"] += int(partial_pnl > 0)
+                        pair_stats[pair_p]["pnl"] += partial_pnl
+                    vol_p = half_vol
+                    sl = entry
+                    be_sl = entry
+                    partial_done = True
+
+            # cur_sl_dist (no sl_dist): tras un partial, sl se mueve a
+            # breakeven (entry) -- el P&L de un stop-out debe reflejar la
+            # distancia REAL entry->sl en ese momento (≈0 en breakeven), no
+            # la distancia original de diseño. sl_dist original se sigue
+            # usando para el TP (que no se mueve) y para el tamano del
+            # partial en si (calculado antes de este bloque).
+            cur_sl_dist = abs(entry - sl)
             if direction == "LONG":
                 if cur_l <= sl:
-                    pnl = -vol_p * sl_dist * pip_v / PIP_SZ[pair_p]
+                    pnl = -vol_p * cur_sl_dist * pip_v / PIP_SZ[pair_p]
                 elif cur_h >= tp:
                     pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
             else:
                 if cur_h >= sl:
-                    pnl = -vol_p * sl_dist * pip_v / PIP_SZ[pair_p]
+                    pnl = -vol_p * cur_sl_dist * pip_v / PIP_SZ[pair_p]
                 elif cur_l <= tp:
                     pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
 
