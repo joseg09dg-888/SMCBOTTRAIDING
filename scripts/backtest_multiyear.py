@@ -674,7 +674,16 @@ for pair, df1 in h1_data.items():
         max_r *= _mult
 
         # Volume
-        sl_dist_p = atr_v * 1.5
+        sl_dist_p = atr_v * float(os.environ.get("SL_ATR_MULT_TEST", "1.5") or 1.5)
+        # 2026-08-29: parametrizado -- ADVERTENCIA DE PARIDAD: a diferencia de
+        # RR/threshold/horas (que sí mapean a constantes reales en vivo), no
+        # se encontro un ATR-multiplier equivalente explicito en el motor de
+        # senales real (smc/structure.py usa atr*1.5 para deteccion de
+        # desplazamiento, NO para el sizing del SL) -- este es un parametro
+        # SOLO del backtest sin ancla de paridad confirmada en vivo. Util para
+        # explorar, pero un resultado positivo aqui NO es evidencia lista para
+        # aplicar en vivo sin antes ubicar el calculo real de SL en el motor
+        # de senales vivo y confirmar que coincide con este modelo.
         pip_v = PIP_VAL[pair]
         pip_s = PIP_SZ[pair]
         sl_pips = sl_dist_p / pip_s

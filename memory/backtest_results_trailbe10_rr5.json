@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-29T09:47:15.674999",
+  "note": "RR=5.0 + TRAIL_BE_R_TEST=1.0. P(pass) empata con RR=4.0+TRAIL_BE=1.0 (79.2%), mejor en $ ($18673 vs $17413), peor en Sharpe (1.129 vs 1.147). Mismo patron de trade-off ya visto sin trailing.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 5.0, "trail_be_r_test": 1.0, "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16], "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 34766, "total_days": 3931, "wr_pct_final_only": 12.0, "wr_pct_real": 43.8,
+    "avg_daily": 851.64, "p_day_250": 38.6, "p_pass_axi": 79.2, "e_monthly": 18672.68,
+    "sharpe": 1.129, "best_hours": [20, 21, 23, 22]
+  }
+}

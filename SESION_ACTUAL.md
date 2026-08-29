@@ -837,6 +837,40 @@ No hay motivo para re-habilitarlo. Este lever queda cerrado
 permanentemente con evidencia sólida en ambas direcciones (real trading
 Y backtest bar-by-bar).**
 
+---
+
+## Trailing-to-BE real (mismo día, mecanismo que YA existe en vivo)
+
+A diferencia de partial-close (cierra 50% del volumen), el trailing-to-BE
+solo mueve el SL a breakeven sin cerrar nada -- protege contra dar
+ganancias de vuelta sin capar el upside. **Ya existe en el bot en vivo**
+mencionado en un comentario del propio script ("Trailing-to-BE at 1.5R
+still exists live... doesn't change the SL/TP outcome distribution
+modeled here") -- pero el backtest NUNCA lo había simulado hasta hoy. Se
+implementó `TRAIL_BE_R_TEST` (mismo patrón que los demás parámetros).
+
+Mini-sweep sobre la config ganadora (MAX_OPEN=4, solo tarde, RR=4.0):
+
+| TRAIL_BE_R | P(pass) | E[mensual] | Sharpe |
+|---|---|---|---|
+| (sin trailing, baseline) | 77.9% | $17,066 | 1.103 |
+| 1.5 (valor real en vivo) | 78.5% | $17,230 | 1.123 |
+| **1.0 (óptimo)** | **79.2%** | $17,413 | **1.147** |
+| 0.5 (revierte) | 77.3% | $15,631 | 1.119 |
+
+**TRAIL_BE=1.0R es mejor que el valor 1.5R que usa el bot en vivo
+actualmente** -- otro candidato real para ajustar en vivo (no aplicado
+todavía). Combinado con RR=5.0: P(pass) empata (79.2%) pero mejor $
+($18,673) y peor Sharpe (1.129) -- mismo trade-off ya visto, RR=4.0 sigue
+siendo la mejor opción riesgo-ajustada.
+
+**Config ganadora ACTUALIZADA de toda la sesión**: MAX_OPEN=4 + solo
+tarde (20-23 UTC) + RR=4.0 + TRAIL_BE_R_TEST=1.0 →
+**P(pass Axi Select 5%) = 79.2% | E[mensual] = $17,413 | Sharpe = 1.147**
+
+Progresión total de la sesión: 59.4% → 65.2% → 67.1% → 70.3% → 72.5% →
+75.7% → 77.9% → **79.2%**.
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores
