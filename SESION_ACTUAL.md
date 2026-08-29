@@ -574,6 +574,39 @@ que 17 (ya confirmada PREMIUM: WR=51%, avg $99) sea la nueva entrada real
 debería limpiar el efecto por completo. Lanzando:
 `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,16 REMOVE_DEAD_HOURS=17`.
 
+**Intento 19 (bit5i2fxh) -- COMPLETADO SIN ERRORES. NUEVO MEJOR RESULTADO
+DE TODA LA SESIÓN.** Guardado en
+`memory/backtest_results_maxopen4_hora17_shift.json`:
+- P(pass Axi): **72.5%** (+2.2pp sobre el anterior mejor de 70.3%)
+- E[mensual]: **$14,388** (+$1,029)
+- Sharpe: **0.939** (+0.049, el mejor Sharpe de toda la sesión)
+- total_trades: 49,679 (vs 59,396 con solo hora15 bloqueada)
+
+**La hipótesis del "efecto primera-hora-tras-bloqueo" SE CONFIRMÓ
+completamente**: en este intento, la hora 17 (ahora la primera activa)
+desarrolló el MISMO patrón que 15 y 16 tuvieron antes (33% WR, avg P&L=$13,
+24,793 trades -- el patrón se mueve, no desaparece, sea cual sea la hora
+que quede "primera"). **Es una propiedad estructural del motor de señales
+(probablemente BOS/CHoCH detecta falsos rompimientos acumulados tras
+horas sin evaluar el mercado), no arreglable desplazando la ventana
+indefinidamente.** Pero el resultado total mejoró de todas formas: bloquear
+2 horas de transición (15+16) en vez de 1 elimina más ruido acumulado del
+que cuesta en volumen perdido, incluso dejando la nueva "hora sucia" (17)
+adentro. **No seguir desplazando la ventana más (18, 19... rendimientos
+decrecientes esperables, y 18/19 ya mostraron WR bajo en análisis previos
+de sesiones anteriores).**
+
+**Config líder actual, la mejor confirmada de toda la sesión**: MAX_OPEN=4
++ `EXTRA_DEAD_HOURS=15,16` + `REMOVE_DEAD_HOURS=17` → **P(pass)=72.5%,
+E[mensual]=$14,388, Sharpe=0.939**. Sigue sin llegar a 95% (el usuario
+recuerda haber llegado a 75% antes del daño del PC -- este resultado ya
+está muy cerca de esa referencia, con evidencia real y metodología
+verificada, no solo memoria). Probando la variante final de este patrón:
+`MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,16` (SIN reabrir 17 -- dejar el
+sistema con ventana activa reducida a solo 20-23 UTC, sesión de tarde
+pura, para ver si cortar del todo la ventana de mañana, en vez de solo
+desplazarla, es aún mejor).
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

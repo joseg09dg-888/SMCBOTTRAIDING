@@ -1,0 +1,30 @@
+{
+  "date": "2026-08-29T02:19:28.056435",
+  "note": "MAX_OPEN=4 + EXTRA_DEAD_HOURS=15,16 + REMOVE_DEAD_HOURS=17 -- NUEVO MEJOR RESULTADO DE LA SESION. El script sobreescribe backtest_results_maxopen4.json, guardado aparte por seguridad.",
+  "config": {
+    "years_h1": 2,
+    "years_d1": 10,
+    "threshold_h4_confirmed": 80,
+    "threshold_h4_wait": 90,
+    "rr": 3.0,
+    "partial_tp": null,
+    "kill_zone_utc": "14-16,20-23",
+    "extra_dead_hours": [15, 16],
+    "remove_dead_hours": [17],
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 49679,
+    "total_days": 4107,
+    "wr_pct_final_only": 22.5,
+    "wr_pct_real": 43.8,
+    "avg_daily": 658.41,
+    "p_day_250": 43.5,
+    "p_pass_axi": 72.5,
+    "e_monthly": 14387.77,
+    "sharpe": 0.939,
+    "best_hours": [20, 21, 22, 23, 17],
+    "note_hora17_diluted": "hora 17 (ahora primera activa) SIGUE mostrando el patron EV bajo (33% WR, avg $13, 24793 trades) -- confirma que el problema es estructural (primera hora tras bloqueo), no arreglable desplazando la ventana. Pero el resultado TOTAL mejoro igual porque se redujo mas ruido del que costo en volumen."
+  }
+}
