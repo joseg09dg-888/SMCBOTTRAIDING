@@ -458,10 +458,26 @@ fuerte**: hora 15 UTC (activa, dentro de la kill zone 14-16) tiene
 23,803 trades (**40% del total**) con WR=33% y avg P&L=**-$1** (esencialmente
 breakeven/negativo) -- la peor hora activa por lejos, comparado con
 16h/21h/22h/23h que son "PREMIUM" (WR 50-58%, avg $85-125). Volumen enorme
-de trades de EV casi cero diluyendo el resultado total. Lanzando intento
-14: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15` (bloquear hora 15 UTC, dejar
-16+20-23 como está) usando el mecanismo `EXTRA_DEAD_HOURS` ya existente en
-el script (línea 368-370), sin tocar código, solo env var.
+de trades de EV casi cero diluyendo el resultado total. **Intento 14 (bc7igt1vi, MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15) --
+COMPLETADO, MEJORA CLARA — la mejor de la sesión.** Guardado en
+`memory/backtest_results_maxopen4_nohour15.json`:
+- P(pass Axi): **70.3%** (+3.2pp vs 67.1% baseline)
+- E[mensual]: **$13,359** (+$936)
+- Sharpe: **0.890** (+0.109, el mejor Sharpe de toda la sesión, salto grande)
+- total_trades: 50,081 (vs 60,073 -- 16.6% menos, pero de mayor calidad neta)
+
+**Confirma la hipótesis: hora 15 UTC (EV≈0, 40% del volumen) diluía el
+resultado.** Quitarla sube P(pass) Y Sharpe simultáneamente (a diferencia
+de EXCLUDE_CHOPPY que también quitaba volumen pero empeoraba todo) --
+la diferencia es que hora 15 tenía EV genuinamente negativo/nulo, no solo
+WR bajo con PF aceptable. **Candidato real para cambiar en vivo**: agregar
+15 a `DEAD_HOURS_UTC` en `core/supervisor.py` (actualmente bloquea
+{0-14,17,18,19}, dejando 15-16 y 20-23 activos) — **NO aplicado todavía**,
+pendiente de más pruebas antes de tocar código en vivo real.
+
+Lanzando intento 15: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,20` (sumar
+también la hora 20, la otra mediocre: WR=37%, avg $10) para ver si el
+efecto se acumula o si 20 sí aporta lo suficiente para quedarse.
 
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
