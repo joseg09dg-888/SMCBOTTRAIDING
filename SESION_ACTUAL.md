@@ -515,6 +515,39 @@ positivos independientes de la sesión -- `MAX_OPEN_TEST=5 EXTRA_DEAD_HOURS=15`
 bloqueada podría comportarse distinto ya que se quita el ruido de EV≈0
 antes de escalar posiciones simultáneas).
 
+**Intento 17 (b0ho1257z) -- COMPLETADO.** Guardado en
+`memory/backtest_results_maxopen5_nohour15.json`: P(pass)=70.2% (empate
+técnico con 70.3% de MAX_OPEN=4+hora15, dentro del ruido de Monte Carlo),
+E[mensual]=$14,041 (mejor, +$681 vs MAX_OPEN=4+hora15), Sharpe=0.866
+(peor, -0.024). Dos candidatos líderes, trade-off real:
+- MAX_OPEN=4+hora15: P(pass)=70.3%, E[mensual]=$13,359, Sharpe=**0.890** (mejor riesgo-ajustado)
+- MAX_OPEN=5+hora15: P(pass)=70.2%, E[mensual]=**$14,041**, Sharpe=0.866 (mejor $ absoluto)
+
+Para un reto de prop-firm (Axi Select, penaliza inconsistencia/drawdown)
+el primero es la recomendación más defendible, pero ambos son válidos.
+
+Revisión de tablas DIM1 (por año) y DIM2/3 (régimen) buscando otro patrón
+tipo "hora 15": DIM1 no muestra ningún año con WR o avg/día cercano a
+cero (rango real: WR 41-47%, avg/día $166-$616 en 2010-2026, todos
+positivos) -- no hay lever ahí. DIM2/3 sí muestra CHOPPY con avg P&L
+fuertemente negativo (-$223/-$243/-$231, ~27% de trades) que a primera
+vista parece un lever obvio, pero ya se probó (intento 11, EXCLUDE_CHOPPY)
+y empeoró todo -- a diferencia de la hora 15 (bloqueo ANTES de cualquier
+lógica de entrada, cambia toda la trayectoria de la simulación de forma
+limpia), el filtro CHOPPY actúa más adentro del loop y remover esos
+trades altera qué otros trades sí caben dentro del límite MAX_OPEN en
+cada momento -- path-dependency, no simplemente "resta lo negativo". La
+tabla de avg P&L por categoría NO es evidencia suficiente por sí sola;
+solo la prueba empírica real lo confirma. Ya se gastó esa vía.
+
+Nuevo parámetro añadido: `REMOVE_DEAD_HOURS` (script, misma zona que
+EXTRA_DEAD_HOURS) -- permite reabrir una hora actualmente bloqueada
+(0-13,14,17-19 UTC) para medir si con los 16 años reales de MT5 ahora
+disponibles alguna tiene edge real que no tenía cuando se bloqueó
+originalmente. Lanzando intento 18: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15
+REMOVE_DEAD_HOURS=17` (hora 17, adyacente a la ventana activa 16h, la
+candidata más cercana a reabrir).
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

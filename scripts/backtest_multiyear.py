@@ -374,6 +374,11 @@ for pair, df1 in h1_data.items():
         _extra_dead = os.environ.get("EXTRA_DEAD_HOURS", "")
         if _extra_dead:
             DEAD_HOURS_UTC = DEAD_HOURS_UTC | {int(h) for h in _extra_dead.split(",") if h.strip()}
+        _remove_dead = os.environ.get("REMOVE_DEAD_HOURS", "")
+        if _remove_dead:  # 2026-08-29: probar horas actualmente bloqueadas con los 16
+            # anios reales de MT5 ahora disponibles (bloqueo original se fijo con menos
+            # historia) -- permite reabrir una hora especifica para medir su edge real.
+            DEAD_HOURS_UTC = DEAD_HOURS_UTC - {int(h) for h in _remove_dead.split(",") if h.strip()}
         if hour_utc in DEAD_HOURS_UTC: continue  # kill zone
         day_str = str(pd.Timestamp(dt).date())
         year_str = str(pd.Timestamp(dt).year)
