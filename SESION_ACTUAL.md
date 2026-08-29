@@ -635,6 +635,19 @@ Siguiente paso: combinar esta config ganadora con MAX_OPEN=5 (que ya
 mostró ganancia en $ absolutos en otras pruebas) para ver si sigue
 escalando. Lanzando intento 21: `MAX_OPEN_TEST=5 EXTRA_DEAD_HOURS=15,16`.
 
+**Intento 21 (bg2jb8g8u) -- COMPLETADO.** Guardado en
+`memory/backtest_results_maxopen5_soloTarde.json`: P(pass)=**75.7%**
+(empate exacto con MAX_OPEN=4), E[mensual]=$15,678 (mejor, +$654),
+Sharpe=1.038 (peor que 1.062). Mismo patrón de trade-off que en la sesión
+de mañana: MAX_OPEN=5 da más $ absolutos, MAX_OPEN=4 da mejor Sharpe.
+**Recomendación líder sigue siendo MAX_OPEN=4 + solo tarde (20-23 UTC)**
+por mejor riesgo-ajustado para un reto prop-firm.
+
+RR=2.0 ya mostró una caída fuerte y monótona respecto a RR=3.0 en la
+config completa (-8.5pp) -- probando si esa dirección se sostiene hacia
+arriba: RR más alto podría seguir ayudando. Lanzando intento 22, sobre la
+config ganadora: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,16 RR_TEST=4.0`.
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

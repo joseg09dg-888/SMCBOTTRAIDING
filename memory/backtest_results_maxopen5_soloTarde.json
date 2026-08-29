@@ -1,5 +1,6 @@
 {
   "date": "2026-08-29T03:19:01.845952",
+  "note": "MAX_OPEN=5 + EXTRA_DEAD_HOURS=15,16 (solo tarde 20-23 UTC). Empata en P(pass) con MAX_OPEN=4 (75.7%), mejor en $ absolutos, peor en Sharpe.",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -7,15 +8,10 @@
     "threshold_h4_wait": 90,
     "rr": 3.0,
     "partial_tp": null,
-    "kill_zone_utc": "14-16,20-23",
-    "pairs": [
-      "EURUSD",
-      "USDCAD",
-      "NZDUSD",
-      "USDCHF",
-      "EURAUD",
-      "GBPCAD"
-    ]
+    "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16],
+    "max_open_test": 5,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
   },
   "stats": {
     "total_trades": 40907,
@@ -27,11 +23,6 @@
     "p_pass_axi": 75.7,
     "e_monthly": 15677.58,
     "sharpe": 1.038,
-    "best_hours": [
-      21,
-      20,
-      23,
-      22
-    ]
+    "best_hours": [21, 20, 23, 22]
   }
 }
