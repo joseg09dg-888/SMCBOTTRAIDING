@@ -864,6 +864,40 @@ todavía). Combinado con RR=5.0: P(pass) empata (79.2%) pero mejor $
 ($18,673) y peor Sharpe (1.129) -- mismo trade-off ya visto, RR=4.0 sigue
 siendo la mejor opción riesgo-ajustada.
 
+---
+
+## CORRECCIÓN IMPORTANTE: el "88.2%" fue un espejismo (SL_ATR_MULT sin cap)
+
+Se probó `SL_ATR_MULT_TEST` (multiplicador simple de ATR para el SL, sin
+tope/piso) y en `SL_ATR_MULT_TEST=1.0` dio un salto enorme: P(pass)=88.2%,
+Sharpe=1.479. **Este número NO es real ni aplicable.** Se encontró el
+cálculo REAL del SL en vivo (`agents/signal_agent.py:143`,
+`_sl_distance()`): `atr14*1.5`, pero con un **tope y un piso por par que
+el backtest nunca modelaba**:
+- Tope (pips): EURUSD/GBPUSD/USDCAD=40, AUDUSD/NZDUSD/USDCHF=35,
+  EURAUD=45, GBPCAD=50
+- Piso (pips): majors=20, GBP-crosses=25
+
+Se implementó `REALISTIC_SL=1` replicando la fórmula real completa
+(cap+floor por par) y se corrió sobre la misma config ganadora. **Resultado:
+P(pass)=79.3%, E[mensual]=$17,731, Sharpe=1.152 -- prácticamente IGUAL al
+baseline sin tocar el SL (79.2%/$17,413/1.147), NO el 88.2% que sugería
+la prueba sin cap.** Esto confirma que el salto grande era un artefacto:
+el multiplicador global de 1.0x sin restricciones estaba (por accidente)
+imitando el efecto del cap real en los casos de ATR alto, pero sin
+replicar la fórmula real completa correctamente en el resto de casos.
+**Lección: un resultado que salta demasiado en un solo cambio de
+parámetro merece sospecha extra, no entusiasmo -- se verificó antes de
+reportarlo como definitivo, tal como pide la regla del usuario de "si
+algo no funciona, decirlo explícitamente".**
+
+**La config ganadora real y aplicable de la sesión sigue siendo**:
+MAX_OPEN=4 + solo tarde (20-23 UTC) + RR=4.0 + TRAIL_BE_R_TEST=1.0 →
+**P(pass Axi Select 5%) = 79.2% | E[mensual] = $17,413 | Sharpe = 1.147**
+(el SL real, con o sin el cap explícito modelado, no cambia esto de forma
+significativa -- confirma que el bot YA está usando una fórmula de SL
+razonable).
+
 **Config ganadora ACTUALIZADA de toda la sesión**: MAX_OPEN=4 + solo
 tarde (20-23 UTC) + RR=4.0 + TRAIL_BE_R_TEST=1.0 →
 **P(pass Axi Select 5%) = 79.2% | E[mensual] = $17,413 | Sharpe = 1.147**

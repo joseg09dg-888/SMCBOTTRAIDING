@@ -345,11 +345,20 @@ def h4_bias(dh1, dt):
     e8, e20 = ema(c,8).iloc[-1], ema(c,20).iloc[-1]
     return "LONG" if e8 > e20 else ("SHORT" if e8 < e20 else "WAIT")
 
+RISK_MULT_TEST = float(os.environ.get("RISK_MULT_TEST", "1.0") or 1.0)
+# 2026-08-29: parametrizado -- DIM6 (Kelly) de esta sesion muestra el sistema
+# subutilizando capital (Kelly recomienda 4.3-8.5% vs 0.5% real). Un intento
+# previo (2026-07-09) de doblar MAX_RISK a 550 disparo P(mes<-5%) de 6% a 16%
+# -- pero eso se probo ANTES de RR=4.0/trailing-to-BE/horas limpias de esta
+# sesion, que cambiaron el perfil riesgo/retorno. Probar un paso MODESTO
+# (no doblar de una vez) y vigilar P(mes<-5%) en el Monte Carlo, no solo
+# P(pass) -- el usuario pidio maximizar pero la regla de consistencia de
+# Axi Select puede reventar la cuenta si el drawdown mensual se dispara.
 def risk_for_score(score):
     """Dynamic risk based on conviction score."""
-    if score >= 90: return min(MAX_RISK * 1.5, 400.0), 0.01
-    if score >= 80: return MAX_RISK, 0.005
-    return MAX_RISK * 0.7, 0.0025
+    if score >= 90: return min(MAX_RISK * 1.5 * RISK_MULT_TEST, 400.0 * RISK_MULT_TEST), 0.01 * RISK_MULT_TEST
+    if score >= 80: return MAX_RISK * RISK_MULT_TEST, 0.005 * RISK_MULT_TEST
+    return MAX_RISK * 0.7 * RISK_MULT_TEST, 0.0025 * RISK_MULT_TEST
 
 # ── DIMENSIÓN 1+2+3: Run full historical simulation ───────────────────
 print("\n" + "=" * 72)

@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-29T11:29:33.335922",
+  "note": "REALISTIC_SL=1 -- formula REAL de SL en vivo (agents/signal_agent.py:143): atr*1.5 con cap/floor por par. Resultado: CASI IGUAL al baseline sin ajuste de SL (79.3% vs 79.2%). Esto CONTRADICE el resultado exploratorio SL_ATR_MULT=1.0 sin cap (88.2%) -- confirma que ese salto grande era un artefacto de un multiplicador global sin las restricciones reales por par, NO una mejora real aplicable en vivo. El numero real y aplicable sigue siendo ~79%.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "realistic_sl": true,
+    "active_hours_utc": "20-23 unicamente", "extra_dead_hours": [15, 16], "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 35261, "total_days": 3938, "wr_pct_final_only": 17.4, "wr_pct_real": 43.9,
+    "avg_daily": 809.31, "p_day_250": 40.9, "p_pass_axi": 79.3, "e_monthly": 17730.88,
+    "sharpe": 1.152, "best_hours": [21, 20, 23, 22]
+  }
+}
