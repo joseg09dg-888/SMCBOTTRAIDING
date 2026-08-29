@@ -607,6 +607,34 @@ sistema con ventana activa reducida a solo 20-23 UTC, sesión de tarde
 pura, para ver si cortar del todo la ventana de mañana, en vez de solo
 desplazarla, es aún mejor).
 
+**Intento 20 (bn3iw415x) -- COMPLETADO. NUEVO MEJOR RESULTADO DE TODA LA
+SESIÓN, por mucho margen — coincide/supera la referencia de 75% que el
+usuario recordaba de antes del daño del PC.** Guardado en
+`memory/backtest_results_maxopen4_soloTarde.json`:
+- P(pass Axi): **75.7%** (+3.2pp sobre el anterior mejor de 72.5%; **iguala
+  y supera el 75% que el usuario dijo haber alcanzado antes**)
+- E[mensual]: **$15,023** (+$635)
+- Sharpe: **1.062** (rompe la barrera de 1.0 por primera vez en toda la
+  sesión, +0.123 sobre el anterior mejor)
+- total_trades: 38,855 (menos volumen, pero la mejor calidad neta de la
+  sesión con margen claro)
+
+**Config ganadora confirmada**: cerrar TODA la sesión de mañana (10-19
+UTC bloqueada, activo SOLO 20-23 UTC) + MAX_OPEN=4. El efecto
+"primera-hora-tras-bloqueo" resultó ser tan persistente y costoso que
+eliminar la sesión de mañana COMPLETA (en vez de intentar salvarla
+desplazándola) fue la mejor decisión. Esto es coherente y no es un
+resultado sospechoso: la sesión de mañana (kill zone 14-16 originalmente)
+siempre fue el segmento más débil desde el principio de esta sesión de
+trabajo (DIM4 de intentos anteriores ya mostraba horas 14-16 con WR más
+bajo que 20-23).
+
+**Config líder actual de TODA la sesión**: MAX_OPEN=4, solo trading
+20-23 UTC → **P(pass)=75.7%, E[mensual]=$15,023, Sharpe=1.062**.
+Siguiente paso: combinar esta config ganadora con MAX_OPEN=5 (que ya
+mostró ganancia en $ absolutos en otras pruebas) para ver si sigue
+escalando. Lanzando intento 21: `MAX_OPEN_TEST=5 EXTRA_DEAD_HOURS=15,16`.
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

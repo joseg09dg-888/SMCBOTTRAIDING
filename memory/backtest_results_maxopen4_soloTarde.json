@@ -1,0 +1,28 @@
+{
+  "date": "2026-08-29T02:48:51.709664",
+  "note": "MAX_OPEN=4 + EXTRA_DEAD_HOURS=15,16 (SIN reabrir 17 -- solo sesion de tarde 20-23 UTC activa). NUEVO MEJOR RESULTADO DE TODA LA SESION, por mucho margen. Coincide/supera el 75% que el usuario recordaba haber alcanzado antes del daño del PC.",
+  "config": {
+    "years_h1": 2,
+    "years_d1": 10,
+    "threshold_h4_confirmed": 80,
+    "threshold_h4_wait": 90,
+    "rr": 3.0,
+    "partial_tp": null,
+    "active_hours_utc": "20-23 unicamente (14-19 todas bloqueadas)",
+    "extra_dead_hours": [15, 16],
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 38855,
+    "total_days": 3975,
+    "wr_pct_final_only": 25.6,
+    "wr_pct_real": 43.5,
+    "avg_daily": 679.79,
+    "p_day_250": 42.5,
+    "p_pass_axi": 75.7,
+    "e_monthly": 15023.32,
+    "sharpe": 1.062,
+    "best_hours": [21, 20, 23, 22]
+  }
+}
