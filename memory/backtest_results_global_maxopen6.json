@@ -1,0 +1,15 @@
+{
+  "date": "2026-08-29T16:54:54.311486",
+  "note": "MAX_OPEN=6 GLOBAL (motor corregido). Mejora real y grande sobre MAX_OPEN=4 (57.8%->67.6%).",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "realistic_risk_cap": true, "realistic_risk_cap_mult": 1.5,
+    "active_hours_utc": "20-23 unicamente", "extra_dead_hours": [15, 16], "max_open_test": 6,
+    "motor": "GLOBAL (corregido)", "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 20354, "total_days": 3861, "wr_pct_final_only": 17.7, "wr_pct_real": 44.2,
+    "avg_daily": 414.16, "p_day_250": 40.9, "p_pass_axi": 67.6, "e_monthly": 9152.33,
+    "sharpe": 1.057, "best_hours": [20, 21, 23, 22]
+  }
+}
