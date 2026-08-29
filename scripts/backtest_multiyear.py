@@ -85,6 +85,12 @@ PAIRS_FOREX = {
     "EURAUD": "EURAUD=X",
     "GBPCAD": "GBPCAD=X",
 }
+_exclude_pairs = {p.strip().upper() for p in os.environ.get("EXCLUDE_PAIRS", "").split(",") if p.strip()}
+if _exclude_pairs:  # 2026-08-28: parametrizado para aislar el efecto de un par debil
+    # (mismo patron que EXTRA_DEAD_HOURS) -- DIM5 mostro GBPCAD con avg P&L=$15/trade,
+    # muy por debajo del resto ($24-$57), candidato a diluir el resultado igual que
+    # hizo la hora 15 UTC con avg P&L~$0.
+    PAIRS_FOREX = {k: v for k, v in PAIRS_FOREX.items() if k not in _exclude_pairs}
 PAIR_NAS = {"NAS100": "^NDX"}
 PIP_SZ  = {"EURUSD":0.0001,"GBPUSD":0.0001,"AUDUSD":0.0001,"USDCAD":0.0001,"NZDUSD":0.0001,
            "USDCHF":0.0001,"EURAUD":0.0001,"GBPCAD":0.0001,"NAS100":1.0}

@@ -479,6 +479,25 @@ Lanzando intento 15: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,20` (sumar
 también la hora 20, la otra mediocre: WR=37%, avg $10) para ver si el
 efecto se acumula o si 20 sí aporta lo suficiente para quedarse.
 
+**Intento 15 (buuipd9vo, MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15,20) --
+COMPLETADO, PEOR que bloquear solo hora 15.** Guardado en
+`memory/backtest_results_maxopen4_nohour1520.json`:
+P(pass)=68.4% (peor que 70.3% de solo-15), E[mensual]=$11,786 (peor que
+$13,359), Sharpe=0.876 (peor que 0.890). **Confirma: hora 20 SÍ aporta
+valor neto positivo pese a verse "mediocre" (avg $10, no ~$0 como hora
+15) -- no quitarla.** El mejor resultado confirmado de la sesión sigue
+siendo: **MAX_OPEN=4 + bloquear solo hora 15 → P(pass)=70.3%,
+E[mensual]=$13,359, Sharpe=0.890.**
+
+**Siguiente lever real, mismo patrón que hora 15**: la tabla DIM5 (ranking
+por par) de intentos previos muestra a GBPCAD como el par más débil de los
+6 activos: avg P&L=$15/trade (vs $57 EURUSD, $51 EURAUD, $40 USDCHF, $38
+NZDUSD, $24 USDCAD) -- mismo patrón de "volumen alto, EV cercano a cero"
+que diluyó hora 15. El script no tenía forma de excluir un par vía env var
+-- se añadió `EXCLUDE_PAIRS` (parametrización nueva, mecánica idéntica a
+`EXTRA_DEAD_HOURS`, sin tocar ninguna lógica de señales/riesgo). Lanzando
+intento 16: `MAX_OPEN_TEST=4 EXTRA_DEAD_HOURS=15 EXCLUDE_PAIRS=GBPCAD`.
+
 ## Bugs activos conocidos
 Ver BUGS_HISTORIAL.md (7 documentados, todos verificados como siguen arreglados por
 grep de spot-check 2026-08-28). Nota: hay ~100+ commits `fix:` en git log posteriores

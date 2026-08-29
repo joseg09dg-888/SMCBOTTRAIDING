@@ -1,5 +1,6 @@
 {
   "date": "2026-08-28T23:48:55.813122",
+  "note": "MAX_OPEN=4 + EXTRA_DEAD_HOURS=15,20 -- guardado aparte, el script sobreescribe backtest_results_maxopen4.json. Mejor resultado real sigue siendo SOLO hora 15 bloqueada: P(pass)=70.3%, E[mensual]=$13359.1, Sharpe=0.890.",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -8,14 +9,9 @@
     "rr": 3.0,
     "partial_tp": null,
     "kill_zone_utc": "14-16,20-23",
-    "pairs": [
-      "EURUSD",
-      "USDCAD",
-      "NZDUSD",
-      "USDCHF",
-      "EURAUD",
-      "GBPCAD"
-    ]
+    "extra_dead_hours": [15, 20],
+    "max_open_test": 4,
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
   },
   "stats": {
     "total_trades": 41952,
@@ -27,11 +23,6 @@
     "p_pass_axi": 68.4,
     "e_monthly": 11786.48,
     "sharpe": 0.876,
-    "best_hours": [
-      21,
-      22,
-      23,
-      16
-    ]
+    "best_hours": [21, 22, 23, 16]
   }
 }
