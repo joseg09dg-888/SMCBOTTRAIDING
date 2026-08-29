@@ -984,6 +984,83 @@ Sharpe=1.147** -- este es el número sólido y aplicable. Los de riesgo
 (80.9%/81.4%) quedan como "candidatos pendientes de validar con la
 estructura real de riesgo adaptativo", no como ganancias confirmadas.
 
+**RESUELTO: `REALISTIC_RISK_CAP_MULT=1.5`** (escala los tiers reales
+$100/$200/$400 → $150/$300/$600, MANTENIENDO la estructura adaptativa
+real por progreso diario) → **P(pass)=80.0%, E[mensual]=$19,436,
+Sharpe=1.138, P(mes<-5%)=7%.** Esta SÍ es una mejora real y honestamente
+desplegable (a diferencia del sweep RISK_MULT_TEST anterior). Tardó 7
+intentos por caídas repetidas de RAM (patrón anómalo específico de este
+test, incluso una versión con menos historia falló -- parece
+degradación general del sistema por las horas de uptime, según hipótesis
+del usuario, no un problema del código). Pendiente: probar
+REALISTIC_RISK_CAP_MULT=2.0 para ver si sigue mejorando.
+
+**Config ganadora ACTUALIZADA y honesta**: MAX_OPEN=4 + solo tarde
+(20-23 UTC) + RR=4.0 + TRAIL_BE=1.0 + REALISTIC_RISK_CAP_MULT=1.5 →
+**P(pass)=80.0% | E[mensual]=$19,436 | Sharpe=1.138**
+
+---
+
+## ⚠️ CORRECCIÓN CRÍTICA MÁS IMPORTANTE DE TODA LA SESIÓN: MAX_OPEN era
+## POR-PAR, no GLOBAL -- todos los números de arriba están inflados
+
+`core/supervisor.py:2151-2156` confirma que `MAX_OPEN_POSITIONS` es un
+límite **GLOBAL sobre TODA la cuenta** (cuenta posiciones de TODOS los
+símbolos juntos, sin filtrar por par antes de comparar). Pero este
+backtest simulaba cada uno de los 6 pares en su propio loop
+**independiente**, con su propio `open_pos` reseteado a `[]` -- es decir,
+`MAX_OPEN_TEST` se aplicaba **por par**, permitiendo hasta
+`MAX_OPEN_TEST × 6` posiciones simultáneas reales combinadas (hasta 24
+con MAX_OPEN=4), muy por encima del límite real (4 EN TOTAL). **Esto
+significa que absolutamente todos los resultados de esta sesión (y
+probablemente de sesiones anteriores, incluido el 75% que el usuario
+recordaba de antes del daño del PC) estaban inflados por este mismo
+bug**, que existe en el script desde que se escribió, no algo introducido
+hoy.
+
+**Arreglado**: se reestructuró el motor de simulación para fusionar las 6
+líneas de tiempo H1 (una por par) en una sola línea cronológica real
+(via `heapq.merge`, sin materializar la lista completa en memoria) con un
+`open_pos` **compartido entre todos los pares**. Verificado sin
+traceback, y el conteo total de trades cayó de ~35,709 a **15,489**
+(confirma que el bug realmente inflaba el volumen simulado).
+
+**RESULTADO HONESTO con el motor corregido** (misma "config ganadora":
+MAX_OPEN=4, solo tarde, RR=4.0, TRAIL_BE=1.0, riesgo adaptativo x1.5):
+
+**P(pass Axi Select) = 57.8% | E[mensual] = $6,388 | Sharpe = 0.997**
+
+Guardado en `memory/backtest_results_global_maxopen_fixed.json`. Esto es
+MUCHO más bajo que el 80.0%/81.4% que se venía reportando -- **y más bajo
+incluso que el primer baseline de la sesión (59.4%)**, porque ese
+baseline TAMBIÉN tenía el mismo bug (así que también estaba inflado, solo
+que en menor proporción ya que MAX_OPEN era más bajo entonces).
+
+**Próximo paso inmediato**: recalcular el baseline REAL (config original,
+sin ninguna de las mejoras de hoy) con el motor corregido, para tener una
+comparación honesta de cuánto progreso real se hizo hoy. Corriendo ahora
+(intento 42, `MAX_OPEN_TEST=4` config original sin hour-filtering extra,
+RR=3.0, sin trailing, sin ajuste de riesgo).
+
+---
+
+## Próximo candidato adaptativo (a pedido del usuario): filtro de
+## correlación real entre pares (DIM8)
+
+El usuario pidió explícitamente revisar qué más puede hacerse adaptativo,
+en línea con la visión de que el bot debe "simular la operación de un
+humano" leyendo el mercado. El candidato más fuerte con evidencia real
+ya generada esta sesión: DIM8 (correlación) mostró consistentemente
+`EURUSD+USDCHF: r=-0.84` (cobertura natural, sin problema) y
+`EURUSD+NZDUSD: r=+0.71` (riesgo correlacionado si se abren ambos en la
+misma dirección) -- **este filtro nunca se ha implementado como
+restricción real, ni en el backtest ni en vivo.** Es exactamente el tipo
+de decisión "adaptativa/inteligente" que el usuario pide: en vez de
+abrir una posición nueva ciegamente, el bot debería revisar qué ya tiene
+abierto y bloquear/reducir una entrada si es altamente redundante
+(misma dirección, correlación fuerte) con una posición existente.
+Evaluando viabilidad de implementarlo en el backtest a continuación.
+
 **Config ganadora ACTUALIZADA de toda la sesión**: MAX_OPEN=4 + solo
 tarde (20-23 UTC) + RR=4.0 + TRAIL_BE_R_TEST=1.0 →
 **P(pass Axi Select 5%) = 79.2% | E[mensual] = $17,413 | Sharpe = 1.147**

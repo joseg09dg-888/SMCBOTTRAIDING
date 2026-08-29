@@ -20,7 +20,7 @@ NZDUSD/USDCHF/EURAUD/GBPCAD tienen H1 real desde 2010-06 (~16.1 años), no
 solo 2. NAS100 se queda en yfinance (no es de los 6 pares activos, y los
 indices en MT5 tienen convenciones de sesion distintas).
 """
-import sys, os, warnings, json
+import sys, os, warnings, json, heapq
 warnings.filterwarnings("ignore")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -373,13 +373,31 @@ hour_stats   = defaultdict(lambda: {"trades": 0, "wins": 0, "pnl": 0.0})
 year_stats   = defaultdict(lambda: {"trades": 0, "wins": 0, "pnl": 0.0})
 pair_stats   = defaultdict(lambda: {"trades": 0, "wins": 0, "pnl": 0.0})
 
-for pair, df1 in h1_data.items():
-    dfd = d1_data.get(pair, pd.DataFrame())
-    open_pos = []
+# 2026-08-29: HALLAZGO CRITICO DE PARIDAD -- core/supervisor.py:2151-2156
+# confirma que MAX_OPEN_POSITIONS es un limite GLOBAL sobre TODA la cuenta
+# (cuenta posiciones "existing" de TODOS los simbolos, no filtra por
+# pair/symbol antes de comparar contra MAX_OPEN_POSITIONS). Este backtest
+# simulaba cada par en su propio loop independiente con su propio open_pos
+# reseteado a [] -- es decir, MAX_OPEN_TEST se aplicaba POR PAR, permitiendo
+# hasta MAX_OPEN_TEST*6 posiciones simultaneas reales entre todos los pares
+# combinados, muy por encima del limite real (4 TOTAL). TODOS los resultados
+# de esta sesion hasta este punto estan inflados por este error. Arreglado
+# fusionando las 6 lineas de tiempo H1 (por par) en una sola linea
+# cronologica real via heapq.merge (streaming, no materializa la lista
+# completa en memoria) y usando un open_pos GLOBAL compartido entre pares.
+def _pair_stream(_p, _df1):
+    _idx_arr = _df1.index
+    for _i in range(80, len(_df1)):
+        yield (_idx_arr[_i], _p, _i)
 
-    for idx in range(80, len(df1)):
+_events = heapq.merge(*[_pair_stream(_p, h1_data[_p]) for _p in h1_data], key=lambda e: e[0])
+open_pos = []  # GLOBAL: compartido entre TODOS los pares, no reseteado por par
+
+if True:
+    for dt, pair, idx in _events:
+        df1 = h1_data[pair]
+        dfd = d1_data.get(pair, pd.DataFrame())
         bar = df1.iloc[idx]
-        dt = df1.index[idx]
         if pd.Timestamp(dt).weekday() >= 5: continue
         hour_utc = pd.Timestamp(dt).hour
         # Bug found 2026-07-07: this used to keep hours 13-19 UTC, which is NOT
@@ -408,9 +426,16 @@ for pair, df1 in h1_data.items():
         year_str = str(pd.Timestamp(dt).year)
 
         # Manage open positions (partial TP + BE at 1.0R, full TP/SL)
+        # 2026-08-29: open_pos ahora es GLOBAL (todos los pares) -- solo se
+        # gestionan aqui las posiciones DE ESTE par (bar solo tiene precios
+        # de este par); las de otros pares se dejan intactas en other_pos y
+        # se reincorporan al final, sin tocarlas hasta que les toque su
+        # propio evento en la linea de tiempo fusionada.
+        other_pos = [p for p in open_pos if p[10] != pair]
+        this_pair_pos = [p for p in open_pos if p[10] == pair]
         new_open = []
         is_friday = pd.Timestamp(dt).weekday() == 4
-        for pos in open_pos:
+        for pos in this_pair_pos:
             (eidx, direction, entry, sl, tp, vol_p, sl_dist,
              partial_done, be_sl, pip_v, pair_p, peak_pnl, stagn_flag_idx) = pos
             pnl = None
@@ -607,8 +632,8 @@ for pair, df1 in h1_data.items():
                     new_open.append((eidx, direction, entry, sl, tp, vol_p, sl_dist,
                                       partial_done, be_sl, pip_v, pair_p, peak_pnl, stagn_flag_idx))
 
-        open_pos = new_open
-        if len(open_pos) >= MAX_OPEN_TEST: continue  # actualizado 2026-07-01: MAX_OPEN_POSITIONS real=2 (era 4, commit 468c476 bajo 3->2)
+        open_pos = other_pos + new_open  # 2026-08-29: reincorpora las posiciones de otros pares sin tocar
+        if len(open_pos) >= MAX_OPEN_TEST: continue  # ahora GLOBAL (todos los pares) -- corregido 2026-08-29, antes era por-par
 
         # Signal generation -- decoupled from D1/H4 bias (see smc_signal()
         # docstring, 2026-07-21). REQUIRE_D1/REQUIRE_H4 let this backtest

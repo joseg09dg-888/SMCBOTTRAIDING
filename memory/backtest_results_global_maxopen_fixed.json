@@ -1,0 +1,16 @@
+{
+  "date": "2026-08-29T16:09:30.208492",
+  "note": "PRIMER resultado con el motor de simulacion CORREGIDO (MAX_OPEN ahora es GLOBAL entre los 6 pares, no por-par). Config: MAX_OPEN=4, solo tarde 20-23 UTC, RR=4.0, TRAIL_BE=1.0, REALISTIC_RISK_CAP_MULT=1.5 -- la misma 'config ganadora' que daba 80.0% con el motor BUGUEADO. Con el motor corregido: 57.8%, mucho mas bajo. total_trades cayo de ~35709 a 15489, confirmando que el bug realmente inflaba el volumen simulado (hasta 4x6=24 posiciones simultaneas reales vs el limite real de 4 TOTAL).",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "realistic_risk_cap": true, "realistic_risk_cap_mult": 1.5,
+    "active_hours_utc": "20-23 unicamente", "extra_dead_hours": [15, 16], "max_open_test": 4,
+    "motor": "GLOBAL (corregido 2026-08-29)",
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 15489, "total_days": 3728, "wr_pct_final_only": 17.7, "wr_pct_real": 44.3,
+    "avg_daily": 290.56, "p_day_250": 40.0, "p_pass_axi": 57.8, "e_monthly": 6387.68,
+    "sharpe": 0.997, "best_hours": [20, 21, 23, 22]
+  }
+}
