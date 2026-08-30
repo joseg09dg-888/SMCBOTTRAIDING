@@ -1132,7 +1132,25 @@ adelante para ver si realmente hay un techo, pero MAX_OPEN=16 ya captura
 la mayoría de la mejora disponible por esta vía.
 
 Progresión honesta completa de la sesión: 41.9% (baseline) → 57.8% →
-67.6% → 72.7% → 73.4% → 76.4% → 77.9% → **79.9%**.
+67.6% → 72.7% → 73.4% → 76.4% → 77.9% → 79.9% → **80.4%** (+RR=5.0) →
+80.8% (+MAX_OPEN=24, YA CONFIRMA TECHO: Sharpe revierte a 1.098 desde
+1.124, P(pass) casi no sube).
+
+**Boost a USDCHF además de EURAUD: neutro (80.0% vs 79.9%), descartado.**
+
+**CONCLUSIÓN: el lever de MAX_OPEN está agotado. Config recomendada
+final de este lever**: MAX_OPEN=16 + boost EURAUD + RR=5.0 →
+**P(pass)=80.4%, E[mensual]=$21,563, Sharpe=1.124** (mejor punto
+riesgo-ajustado; MAX_OPEN=24 da 0.4pp más de P(pass) pero pierde Sharpe
+de forma clara, no vale el trade-off).
+
+**Siguiente lever, ahora viable gracias a la reestructuración del motor**:
+el filtro de correlación DIM8 (EURUSD+NZDUSD r=+0.71, evitar abrir ambos
+en la misma dirección) requería que el motor conociera QUÉ hay abierto en
+OTROS pares al momento de decidir una entrada nueva -- imposible con el
+motor viejo (cada par se simulaba aislado), pero **ahora que `open_pos`
+es global entre pares (por el fix del bug de MAX_OPEN), esto es
+directamente implementable.** Construyendo esta pieza a continuación.
 
 ---
 

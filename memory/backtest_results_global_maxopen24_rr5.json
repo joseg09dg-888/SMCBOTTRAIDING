@@ -1,0 +1,16 @@
+{
+  "date": "2026-08-29T22:34:35.295528",
+  "note": "MAX_OPEN=24 + RR=5.0 + boost EURAUD. P(pass) casi se estanca (+0.4pp desde MAX_OPEN=16), Sharpe ya revierte claramente (1.098 vs 1.124). Confirma que MAX_OPEN=16-24 esta cerca del techo real de este lever.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 5.0, "trail_be_r_test": 1.0, "realistic_risk_cap": true, "realistic_risk_cap_mult": 1.5,
+    "extra_boost_pairs": ["EURAUD"], "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16], "max_open_test": 24, "motor": "GLOBAL (corregido)",
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 39101, "total_days": 3956, "wr_pct_final_only": 11.5, "wr_pct_real": 44.6,
+    "avg_daily": 1116.14, "p_day_250": 38.9, "p_pass_axi": 80.8, "e_monthly": 24512.26,
+    "sharpe": 1.098, "p_mes_menos_5pct": 8, "best_hours": [20, 21, 23, 22]
+  }
+}

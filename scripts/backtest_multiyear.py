@@ -643,6 +643,23 @@ if True:
         sig, score, atr_v = smc_signal(df1, idx)
         if sig == "WAIT": continue
 
+        if os.environ.get("CORR_FILTER", "0") == "1":
+            # 2026-08-29: filtro de correlacion real (DIM8) -- ahora viable
+            # porque open_pos es GLOBAL entre pares (arreglo del bug de
+            # MAX_OPEN). Bloquea una entrada nueva si ya hay una posicion
+            # abierta en la MISMA direccion en un par fuertemente
+            # correlacionado (r>0.5 en la matriz de correlacion real de
+            # esta sesion): EURUSD-NZDUSD (+0.71), USDCAD-USDCHF (+0.56).
+            # Correlaciones negativas (ej EURUSD-USDCHF -0.84) NO se
+            # bloquean -- son cobertura natural, no riesgo concentrado.
+            _CORR_PAIRS = {frozenset({"EURUSD", "NZDUSD"}), frozenset({"USDCAD", "USDCHF"})}
+            _corr_blocked = any(
+                p[1] == sig and frozenset({pair, p[10]}) in _CORR_PAIRS
+                for p in open_pos
+            )
+            if _corr_blocked:
+                continue
+
         d_dir = d1_trend(dfd, dt)
         if REQUIRE_D1:
             if d_dir == "UNKNOWN": continue
