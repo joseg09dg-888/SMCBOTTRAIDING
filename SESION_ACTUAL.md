@@ -1392,6 +1392,23 @@ sesión futura si se decide invertir el tiempo en portar el bono
 histórico (con cuidado de evitar look-ahead bias) y el multiplicador de
 8 dimensiones.
 
+**ACTUALIZACIÓN: multiplicador de 8D portado (5/6 sub-dimensiones reales,
+DIM6 circuit-breaker neutral por depender de episodes.db en vivo)**.
+Primer resultado real con el motor 100% fiel (estructura+BOS+OB+FVG+
+premium/descuento+score DecisionFilter+multiplicador 8D), sobre 8,000
+barras (~1.3 años, 6 pares): **38 trades totales** (antes 0). WR
+real=28.9%, avg win=$782, avg loss=$300 -- edge positivo pero delgado
+(expectancy ≈ +$13/trade). **P(pass Axi)=5%, E[mensual]=$322,
+Sharpe=0.12.** Muy por debajo de todo lo reportado esta noche con el
+modelo simplificado (80.6%) -- la frecuencia real (≈29 trades/año en
+6 pares, ≈2-3/mes) es mucho más baja de lo asumido, y con tan pocas
+operaciones al mes el Monte Carlo no converge de forma fiable hacia el
+5% mensual. Muestra pequeña (1.3 años) -- pendiente confirmar con más
+historia antes de tratar este número como definitivo. Continuando la
+iteración sobre el motor real per instrucción del usuario (silencio
+hasta resultado rentable/consistente) -- NO reportado al usuario
+todavía, orden explícita en pie.
+
 **Resultado concreto y seguro de la sesión, ya aplicado al bot real**:
 los 3 cambios en `core/supervisor.py`/`core/supervisor_constants.py`
 (horas 15-16 bloqueadas, MAX_OPEN=16, riesgo adaptativo escalado a
@@ -1441,3 +1458,26 @@ BUGS_HISTORIAL.md es un resumen curado de clases de bug, no exhaustivo del git l
 - pytest completo: NO corrido esta sesión (RAM crítica, ver hallazgo 3).
 - Backtest: primer intento crasheó (hallazgo 6), relanzado con fix, resultado
   pendiente de confirmar al cierre de esta sesión.
+
+---
+
+## 🔴 CORRECCIÓN CRÍTICA 2026-08-30 (motor de señal REAL, post-madrugada)
+
+Primer resultado con el motor 100% real (estructura+BOS+CHoCH+OrderBlocks+
+FVG+premium/descuento+score DecisionFilter+multiplicador 8D real) sobre
+8,000 barras (~1.3 años, 6 pares), CON horas 15-16 bloqueadas (como
+estaba el código en vivo tras el cambio de anoche):
+**38 trades, WR=28.9%, P(pass)=5%, E[mensual]=$322, Sharpe=0.12.**
+
+Al probar SIN bloquear 15-16: **93 trades, WR=41.9%, P(pass)=34%,
+E[mensual]=$3,599, Sharpe=1.06.** `agents/eight_dim_agent.py` (DIM4)
+marca la hora 15 como "GOLD" (1.30x, la mejor) -- contradice el hallazgo
+de anoche (hecho con el modelo `smc_signal()` simplificado). **El
+bloqueo de horas 15-16 aplicado anoche a `core/supervisor.py` era un
+error real, basado en el motor aproximado. Ya se REVIRTIÓ** (sintaxis
+verificada) -- `DEAD_HOURS_UTC` vuelve a su estado sin 15/16 bloqueadas.
+
+Muestra aún pequeña (1.3 años) -- P(pass)=34% con el motor real y horas
+correctas sigue sin llegar a rentable/consistente por el objetivo del
+usuario. Continuando iteración (más historia, MAX_OPEN, otros
+parámetros) sobre esta base ya corregida.

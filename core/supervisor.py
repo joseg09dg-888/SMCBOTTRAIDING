@@ -147,11 +147,17 @@ SCALP_MAX_DOLLAR_RISK    = 50.0
 # 13:00 UTC = WR 29%, avg -$97/trade → SEÑALES RANCIAS overnight → BLOQUEAR
 # 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading → BLOQUEAR
 DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                             15, 16, 17, 18, 19}  # 2026-08-30: 15 y 16 bloqueadas -- backtest
-                             # 16 años reales (motor global corregido, ver SESION_ACTUAL.md)
-                             # mostro hora 15 con WR=32-33% y avg P&L~$0-13 (volumen enorme,
-                             # EV≈0, diluia el resultado total). Solo 20-23 UTC queda activa,
-                             # unica ventana con edge real confirmado.
+                             17, 18, 19}  # 15,16 REVERTIDO 2026-08-30: el bloqueo de
+                             # 15-16 se aplico primero con el motor de señal simplificado
+                             # (smc_signal(), aproximacion EMA/BOS por puntos), que mostro
+                             # hora 15 con EV≈0. Al construir el motor REAL (estructura de
+                             # swing points + BOS/CHoCH + Order Blocks + FVG + score real +
+                             # multiplicador de 8 dimensiones, ver agents/eight_dim_agent.py
+                             # DIM4 que marca la hora 15 como "GOLD" 1.30x) se confirmo lo
+                             # contrario: sin bloquear 15-16, sobre 8000 barras reales (1.3
+                             # años), P(pass) sube de 5% a 34%, Sharpe de 0.12 a 1.06, WR de
+                             # 28.9% a 41.9%. El bloqueo de 15-16 era un error basado en el
+                             # motor aproximado, no en el real. Ver SESION_ACTUAL.md.
 
 
 
