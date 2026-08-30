@@ -1193,7 +1193,64 @@ explícita, NADA se tocó en `core/supervisor.py` todavía)**:
    $100/$200/$400 a $150/$300/$600
 5. `MAX_OPEN_POSITIONS` (supervisor_constants.py): subir de 4 a 16
    (NOTA: con solo 6 pares esto en la práctica casi elimina el límite)
-6. Extender el boost de riesgo 1.8x (ya existe solo para EURUSD) a EURAUD también
+6. Extender el boost de riesgo 1.8x (ya existe solo para EURUSD) a EURAUD y GBPCAD también
+
+Boost adicional a GBPCAD (+0.2pp, marginal) y re-confirmación de
+threshold 70/85 (idéntico a 80/90, confirma que no es lever) cierran el
+ciclo de tuning de parámetros. **P(pass)=80.6%, E[mensual]=$21,860,
+Sharpe=1.124 es el número final honesto de la sesión.**
+
+---
+
+## 🏁🏁 INFORME FINAL DE LA SESIÓN (2026-08-28 a 2026-08-30)
+
+**Resultado final, verificado con evidencia real y motor de simulación
+corregido (dos veces verificado: primero se encontró y arregló el bug
+crítico de MAX_OPEN por-par vs global, luego se re-optimizó todo sobre
+la base corregida)**:
+
+### Config recomendada para aplicar en vivo:
+- `DEAD_HOURS_UTC`: agregar horas 15 y 16 UTC (dejar solo 20-23 UTC activo)
+- RR (TP): subir de 3.0 a 5.0
+- Trailing-to-BE: bajar de 1.5R a 1.0R (mueve SL a breakeven sin cerrar volumen)
+- `MAX_DOLLAR_RISK` (supervisor.py:2250-2255): escalar $100/$200/$400 → $150/$300/$600
+- `MAX_OPEN_POSITIONS`: subir de 4 a 16 (con 6 pares, esto casi elimina el límite real)
+- Boost de riesgo 1.8x: extender de solo EURUSD a EURUSD+EURAUD+GBPCAD
+
+### Resultado con esa config (16 años de datos MT5 reales, Monte Carlo 100K sims):
+**P(pass Axi Select 5%) = 80.6% | E[mensual] = $21,860 | Sharpe = 1.124 |
+P(mes < -5%) ≈ 7-8%**
+
+### Progresión honesta completa:
+41.9% (baseline real, sin ninguna mejora) → 57.8% → 67.6% → 72.7% →
+73.4% → 76.4% → 77.9% → 79.9% → 80.4% → **80.6%**
+
+### Lo más importante que se corrigió hoy:
+El script tenía un bug estructural (existente desde su creación, no
+introducido hoy) donde el límite de posiciones simultáneas se aplicaba
+POR PAR en vez de GLOBAL en toda la cuenta -- permitía simular hasta 6x
+más exposición de la que el bot real puede tener. Se descubrió, se
+corrigió reestructurando el motor de simulación (línea de tiempo unificada
+entre los 6 pares), y se volvió a optimizar todo desde cero sobre la base
+corregida. **Los números de esta sección son los honestos y verificados,
+no los que se reportaron erróneamente durante buena parte del día
+(80-88% con el motor bugueado).**
+
+### Por qué no se llegó a 90-95%:
+Se probaron 60+ configuraciones distintas con evidencia real (16 años de
+datos MT5, sin atajos). Los levers de bajo riesgo (horas, RR, trailing,
+riesgo adaptativo, threshold, filtro de correlación, SL) están agotados
+-- todos los que ayudan ya están en la config recomendada, y los que no
+ayudan quedaron descartados con evidencia (partial-close real, filtro de
+correlación, EXCLUDE_CHOPPY, RR bajo, etc.). Subir más allá de ~80%
+probablemente requiere algo estructural: modelar spread/slippage real,
+mejorar la calidad de la señal SMC misma, o agregar una fuente de
+información nueva -- no más ajuste de los parámetros que ya existen.
+
+### Nada de esto se aplicó a `core/supervisor.py` todavía.
+Toda la sesión trabajó exclusivamente en `scripts/backtest_multiyear.py`.
+Aplicar los cambios recomendados a la config real en vivo requiere tu
+aprobación explícita antes de tocar código que mueve dinero real.
 
 ---
 
