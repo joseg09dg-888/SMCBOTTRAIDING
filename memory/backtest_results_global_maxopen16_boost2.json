@@ -1,0 +1,16 @@
+{
+  "date": "2026-08-29T21:31:53.307342",
+  "note": "MAX_OPEN=16 + boost EURAUD+USDCHF. Resultado esencialmente NEUTRAL vs solo EURAUD (80.0% vs 79.9%, practicamente igual, Sharpe ligeramente peor). Agregar USDCHF al boost no aporta -- mantener boost solo en EURUSD+EURAUD.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 4.0, "trail_be_r_test": 1.0, "realistic_risk_cap": true, "realistic_risk_cap_mult": 1.5,
+    "extra_boost_pairs": ["EURAUD", "USDCHF"], "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16], "max_open_test": 16, "motor": "GLOBAL (corregido)",
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 35394, "total_days": 3963, "wr_pct_final_only": 17.6, "wr_pct_real": 44.6,
+    "avg_daily": 907.74, "p_day_250": 41.0, "p_pass_axi": 80.0, "e_monthly": 19951.52,
+    "sharpe": 1.127, "best_hours": [21, 20, 23, 22]
+  }
+}
