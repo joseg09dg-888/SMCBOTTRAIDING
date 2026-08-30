@@ -1102,6 +1102,19 @@ tramo de la sesión -- se sigue reintentando cuando hay margen.
 Sigue sin llegar al 90-95% pedido. Pendiente confirmar: MAX_OPEN=10+,
 RR>4 sobre esta base, filtro de horas re-verificado, D1/H4 reactivado.
 
+**Actualización (tras el periodo de mucha presión de RAM)**: se
+confirmaron dos mejoras reales adicionales sobre MAX_OPEN=8 (72.7%):
+
+| Config | P(pass) | E[mensual] | Sharpe |
+|---|---|---|---|
+| MAX_OPEN=8 | 72.7% | $11,797 | 1.080 |
+| + boost EURAUD | 73.4% | $12,063 | 1.094 |
+| **MAX_OPEN=10 + boost EURAUD (mejor confirmado)** | **76.4%** | **$14,525** | **1.115** |
+
+MAX_OPEN=12 falló 4 veces seguidas por RAM sin poder confirmarse. Se
+reintentará más adelante. Progresión honesta completa de la sesión:
+41.9% (baseline) → 57.8% → 67.6% → 72.7% → 73.4% → **76.4%**.
+
 ---
 
 ## Próximo candidato adaptativo (a pedido del usuario): filtro de
