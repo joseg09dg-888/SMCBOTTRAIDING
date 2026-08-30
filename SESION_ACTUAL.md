@@ -1150,7 +1150,50 @@ en la misma dirección) requería que el motor conociera QUÉ hay abierto en
 OTROS pares al momento de decidir una entrada nueva -- imposible con el
 motor viejo (cada par se simulaba aislado), pero **ahora que `open_pos`
 es global entre pares (por el fix del bug de MAX_OPEN), esto es
-directamente implementable.** Construyendo esta pieza a continuación.
+directamente implementable.** Construido e implementado.
+
+**Resultado CORR_FILTER=1**: NEGATIVO. P(pass)=77.3% (peor que 80.4%),
+E[mensual]=$18,825 (peor), Sharpe=1.053 (peor). Mismo patrón que
+EXCLUDE_CHOPPY -- el volumen que se pierde al bloquear entradas
+correlacionadas pesa más que el riesgo de concentración que evita.
+**Descartado con evidencia real.**
+
+**REALISTIC_SL re-confirmado en esta base**: prácticamente neutro (80.3%
+vs 80.4%). La fórmula de SL no es un lever relevante aquí -- se puede
+dejar el default simple sin cap/floor explícito.
+
+---
+
+## 🏁 RESUMEN CONSOLIDADO (post-corrección del bug crítico de MAX_OPEN)
+
+**Config ganadora final, honesta y con evidencia real verificada dos
+veces (motor corregido)**:
+
+MAX_OPEN=16 (global) + solo tarde 20-23 UTC (horas 15-16 bloqueadas) +
+RR=5.0 + TRAIL_BE=1.0 + REALISTIC_RISK_CAP_MULT=1.5 (topes reales
+$150/$300/$600) + boost de riesgo en EURUSD+EURAUD →
+
+**P(pass Axi Select 5%) = 80.4% | E[mensual] = $21,563 | Sharpe = 1.124 |
+P(mes < -5%) = ~7-8%**
+
+Progresión honesta completa: 41.9% (baseline real) → 57.8% → 67.6% →
+72.7% → 73.4% → 76.4% → 77.9% → 79.9% → **80.4%**.
+
+**Levers descartados con evidencia real** (no repetir): EXCLUDE_CHOPPY,
+RR=2.0, FRIDAY_CLOSE=22, bloquear hora 20 además de 15, excluir GBPCAD,
+partial-close real (bar-by-bar), filtro de correlación DIM8, boost a
+USDCHF además de EURAUD, threshold≠80, REALISTIC_SL (neutro).
+
+**Cambios pendientes de aplicar en vivo (requieren tu aprobación
+explícita, NADA se tocó en `core/supervisor.py` todavía)**:
+1. `DEAD_HOURS_UTC` (supervisor.py:121): agregar horas 15 y 16
+2. RR de TP: subir de 3.0 a 5.0
+3. Trailing-to-BE: bajar de 1.5R a 1.0R
+4. `MAX_DOLLAR_RISK` (supervisor.py:2250-2255): escalar tiers de
+   $100/$200/$400 a $150/$300/$600
+5. `MAX_OPEN_POSITIONS` (supervisor_constants.py): subir de 4 a 16
+   (NOTA: con solo 6 pares esto en la práctica casi elimina el límite)
+6. Extender el boost de riesgo 1.8x (ya existe solo para EURUSD) a EURAUD también
 
 ---
 
