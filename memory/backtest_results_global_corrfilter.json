@@ -1,0 +1,16 @@
+{
+  "date": "2026-08-29T23:02:05.195595",
+  "note": "CORR_FILTER=1 (bloquea entradas nuevas en la misma direccion en pares fuertemente correlacionados: EURUSD-NZDUSD, USDCAD-USDCHF). RESULTADO NEGATIVO: peor en las 3 metricas (77.3% vs 80.4%, $18825 vs $21563, Sharpe 1.053 vs 1.124). Mismo patron que EXCLUDE_CHOPPY -- el volumen perdido pesa mas que el riesgo de concentracion que evita. Descartado.",
+  "config": {
+    "years_h1": 2, "years_d1": 10, "threshold_h4_confirmed": 80, "threshold_h4_wait": 90,
+    "rr": 5.0, "trail_be_r_test": 1.0, "realistic_risk_cap": true, "realistic_risk_cap_mult": 1.5,
+    "extra_boost_pairs": ["EURAUD"], "corr_filter": true, "active_hours_utc": "20-23 unicamente",
+    "extra_dead_hours": [15, 16], "max_open_test": 16, "motor": "GLOBAL (corregido)",
+    "pairs": ["EURUSD", "USDCAD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]
+  },
+  "stats": {
+    "total_trades": 30080, "total_days": 3890, "wr_pct_final_only": 11.6, "wr_pct_real": 44.5,
+    "avg_daily": 857.17, "p_day_250": 38.5, "p_pass_axi": 77.3, "e_monthly": 18824.82,
+    "sharpe": 1.053, "best_hours": [21, 20, 23, 22]
+  }
+}
