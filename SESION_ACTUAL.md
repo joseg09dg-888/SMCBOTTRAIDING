@@ -1200,6 +1200,13 @@ threshold 70/85 (idéntico a 80/90, confirma que no es lever) cierran el
 ciclo de tuning de parámetros. **P(pass)=80.6%, E[mensual]=$21,860,
 Sharpe=1.124 es el número final honesto de la sesión.**
 
+**Re-confirmación 2026-08-30**: RISK_CAP_MULT=2.0 (primero con un fallo
+de datos de GBPCAD -- MT5 no conectó, usó yfinance con solo 1.4 años,
+descartado; relanzado con datos completos) dio 80.7%/$22,754/Sharpe 1.116
+-- prácticamente igual a 1.5x, confirma el mismo plateau. **El riesgo
+también está agotado como lever en esta base. 80.6-80.7% es el techo real
+confirmado por segunda vez con evidencia sólida.**
+
 ---
 
 ## 🏁🏁 INFORME FINAL DE LA SESIÓN (2026-08-28 a 2026-08-30)
