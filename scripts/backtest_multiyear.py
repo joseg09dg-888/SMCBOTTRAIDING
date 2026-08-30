@@ -523,6 +523,17 @@ def real_signal(w, pair, dt, daily_pnl_so_far, capital, open_pos_list=None):
             if nearest >= entry - max_tp_dist:
                 tp = round(nearest, 5)
 
+    # MIN_RR real (core/supervisor.py:116, =4.5): si el RR resultante queda
+    # corto, se ajusta el TP para garantizar el minimo -- pieza que faltaba
+    # en el primer port, encontrada al revisar por que MAX_OPEN no cambiaba
+    # nada (confirma que el TP real casi siempre depende de esto, no solo
+    # del snap a swing).
+    MIN_RR_REAL = 4.5
+    _rr_now = abs(tp - entry) / sl_dist if sl_dist > 0 else 0
+    if _rr_now < MIN_RR_REAL:
+        _tp_rr = MIN_RR_REAL + 0.1
+        tp = round(entry + sl_dist * _tp_rr, 5) if is_bullish else round(entry - sl_dist * _tp_rr, 5)
+
     # ── Score real (core/decision_filter.py::DecisionFilter) ──
     smc_score = 0
     is_trending = struct.structure_type.value in ("bullish_trend", "bearish_trend")

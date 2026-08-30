@@ -1481,3 +1481,20 @@ Muestra aún pequeña (1.3 años) -- P(pass)=34% con el motor real y horas
 correctas sigue sin llegar a rentable/consistente por el objetivo del
 usuario. Continuando iteración (más historia, MAX_OPEN, otros
 parámetros) sobre esta base ya corregida.
+
+**Escalando muestra**: 20,000 barras (~3.3 años) tardó demasiado, timeout
+2 veces (>590s) -- el motor real es mucho mas lento que el simplificado,
+limite practico de este PC. **12,000 barras (~2 años) sí completó**:
+**143 trades, WR=45.5%, avg win=$712, avg loss=$302, P(pass)=51%,
+E[mensual]=$5,070, Sharpe=1.42** -- mejora clara sobre 8,000 barras
+(34%->51%, Sharpe 1.06->1.42, el mejor Sharpe de TODA la sesión, real o
+simplificado). La tendencia con más muestra es positiva. Continuando
+iteración sobre esta base (12k barras como scope estándar práctico).
+
+**15,000 barras (~2.5 años) -- NO fue mejora monótona**: 186 trades,
+WR=41.9%, P(pass)=**35%** (peor que 51% de 12k), E[mensual]=$3,678,
+Sharpe=1.07 (peor que 1.42). Confirma que hay varianza real entre
+distintas ventanas de tiempo (los ~5 meses extra que entran en 15k vs
+12k parecen haber sido un periodo mas dificil) -- no asumir que "mas
+historia = mejor" de forma lineal, es ruido de muestra normal. 12,000
+barras sigue siendo el mejor resultado confirmado hasta ahora.
