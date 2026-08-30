@@ -1111,9 +1111,28 @@ confirmaron dos mejoras reales adicionales sobre MAX_OPEN=8 (72.7%):
 | + boost EURAUD | 73.4% | $12,063 | 1.094 |
 | **MAX_OPEN=10 + boost EURAUD (mejor confirmado)** | **76.4%** | **$14,525** | **1.115** |
 
-MAX_OPEN=12 falló 4 veces seguidas por RAM sin poder confirmarse. Se
-reintentará más adelante. Progresión honesta completa de la sesión:
-41.9% (baseline) → 57.8% → 67.6% → 72.7% → 73.4% → **76.4%**.
+MAX_OPEN=12 falló 4 veces seguidas por RAM sin poder confirmarse
+inicialmente, luego se confirmó. Sweep completo de MAX_OPEN con boost
+EURAUD:
+
+| MAX_OPEN | P(pass) | E[mensual] | Sharpe |
+|---|---|---|---|
+| 8 | 73.4% | $12,063 | 1.094 |
+| 10 | 76.4% | $14,525 | 1.115 |
+| 12 | 77.9% | $16,638 | 1.118 |
+| **16 (mejor confirmado)** | **79.9%** | **$19,730** | **1.130** |
+| 24 | (falló 4 veces por RAM, sin confirmar) |
+
+**Nota importante**: con solo 6 pares activos, MAX_OPEN por encima de ~16
+prácticamente deja de ser una restricción real (el bot rara vez tendría
+16+ señales simultáneas genuinas) -- el sistema parece seguir mejorando
+al subir el límite porque cada vez es MENOS restrictivo, no porque haya
+un "más es mejor" ilimitado. Vale la pena confirmar MAX_OPEN=24+ más
+adelante para ver si realmente hay un techo, pero MAX_OPEN=16 ya captura
+la mayoría de la mejora disponible por esta vía.
+
+Progresión honesta completa de la sesión: 41.9% (baseline) → 57.8% →
+67.6% → 72.7% → 73.4% → 76.4% → 77.9% → **79.9%**.
 
 ---
 
