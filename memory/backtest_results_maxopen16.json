@@ -1,5 +1,5 @@
 {
-  "date": "2026-08-30T14:24:03.615043",
+  "date": "2026-08-30T15:58:45.538702",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -18,19 +18,20 @@
     ]
   },
   "stats": {
-    "total_trades": 132,
-    "total_days": 87,
-    "wr_pct_final_only": 22.2,
-    "wr_pct_real": 57.6,
-    "avg_daily": 332.13,
-    "p_day_250": 45.8,
-    "p_pass_axi": 74.2,
-    "e_monthly": 7304.65,
-    "sharpe": 1.996,
+    "total_trades": 163,
+    "total_days": 99,
+    "wr_pct_final_only": 19.4,
+    "wr_pct_real": 57.7,
+    "avg_daily": 410.34,
+    "p_day_250": 49.6,
+    "p_pass_axi": 82.2,
+    "e_monthly": 9031.06,
+    "sharpe": 2.014,
     "best_hours": [
+      23,
       20,
       15,
-      16,
+      22,
       21
     ]
   }

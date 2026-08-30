@@ -1555,3 +1555,39 @@ alta varianza normal en ese rango, no representativo). **12,000 barras
 (~2 años) es el máximo práctico y confiable del motor real en este PC.**
 No se pudo confirmar con más historia por límite físico de hardware, no
 por falta de intento -- se probó repetidamente.
+
+---
+
+## 🏆 RESULTADO FINAL DEFINITIVO: 16 AÑOS COMPLETOS, MOTOR REAL, SIN LÍMITE DE TIEMPO
+
+A pedido del usuario, se relanzó sin timeout artificial (corrida larga,
+igual que las de la sesión anterior) con los 16 años completos de datos
+MT5 reales, motor de señal 100% real (estructura+BOS/CHoCH+OrderBlocks+
+FVG+premium/descuento+score DecisionFilter+multiplicador 8D completo+
+MIN_RR+circuit breaker). **Completó sin errores.**
+
+**163 trades en 16 años (99 días con operaciones de ~4,160 días
+totales -- sistema muy selectivo por diseño, solo entra en condiciones
+de alta calidad, consistente con la premisa "no inventar, no perder,
+entrar en señales seguras").**
+
+- WR real: 57.7% | avg win: $664 | avg loss: $316
+- E[mensual]: $9,031
+- **P(pass Axi Select 5%): 82%**
+- **Sharpe mensual: 2.01** (el mejor de toda la sesión, con datos completos)
+- **P(mes < -5%): 0%** (ningún mes catastrófico en 100,000 simulaciones Monte Carlo)
+
+**CORRECCIÓN CRÍTICA FINAL**: el usuario preguntó, con razón, cómo 163
+trades en 16 años podían dar 82% de pasar la meta MENSUAL si un solo
+trade promedio ($664) no se acerca a la meta ($4,851). Investigando se
+encontró un bug real: `daily_pnl` (dict usado para el Monte Carlo) solo
+registra días CON al menos un trade -- los días sin operación nunca
+entran al dict. Con el motor viejo (miles de trades/día promedio) esto
+era invisible. Con el motor real (163 trades en ~4,160 días de trading,
+97.6% de los días SIN operación) el Monte Carlo estaba re-muestreando
+SOLO días-con-trade como si fueran "un día cualquiera" -- simulando
+meses con frecuencia de trading ~100% en vez de la real ~2.4%. **Bug
+corregido**: se reconstruye la serie diaria completa (con ceros en los
+días sin trade) antes del Monte Carlo. Relanzando la corrida de 16 años
+completos con el fix -- el 82% anterior queda invalidado, pendiente el
+número real y honesto.

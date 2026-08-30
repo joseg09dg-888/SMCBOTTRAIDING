@@ -661,6 +661,10 @@ print("  Simulando ~16 años H1 (MT5 real) con todos los pares...")
 print("=" * 72)
 
 trade_log = []       # all trades with metadata
+ALL_TRADING_DAYS = set()  # 2026-08-30: TODOS los dias de trading activos
+# escaneados (con o sin trade) -- ver comentario junto a day_str mas abajo.
+# Necesario para reconstruir la serie diaria completa (con ceros) para el
+# Monte Carlo, distinto de daily_pnl que solo tiene dias-con-trade.
 daily_pnl  = defaultdict(float)
 regime_stats = defaultdict(lambda: {"trades": 0, "wins": 0, "pnl": 0.0})
 hour_stats   = defaultdict(lambda: {"trades": 0, "wins": 0, "pnl": 0.0})
@@ -718,6 +722,20 @@ if True:
         if hour_utc in DEAD_HOURS_UTC: continue  # kill zone
         day_str = str(pd.Timestamp(dt).date())
         year_str = str(pd.Timestamp(dt).year)
+        ALL_TRADING_DAYS.add(day_str)
+        # 2026-08-30: HALLAZGO CRITICO -- daily_pnl (defaultdict) solo tiene
+        # entrada para dias con AL MENOS un cierre no-cero; dias sin ningun
+        # trade simplemente no aparecen en el dict. Con el motor viejo
+        # (miles de trades) esto era invisible (~todos los dias tenian
+        # trade). Con el motor real (163 trades en 16 años, ver
+        # SESION_ACTUAL.md) el 97.6% de los dias de trading NO tienen
+        # entrada -- el Monte Carlo mas abajo (bootstrap sobre
+        # daily_pnl.values()) estaba re-muestreando SOLO dias-con-trade
+        # como si fueran "un dia cualquiera", simulando meses donde CADA
+        # dia tiene operacion (frecuencia ~100% en vez de la real ~2.4%).
+        # ALL_TRADING_DAYS registra TODOS los dias activos escaneados
+        # (con o sin trade) para reconstruir la serie diaria completa,
+        # con ceros, antes del Monte Carlo.
 
         # Manage open positions (partial TP + BE at 1.0R, full TP/SL)
         # 2026-08-29: open_pos ahora es GLOBAL (todos los pares) -- solo se
@@ -1324,6 +1342,15 @@ print("  MONTE CARLO — 100,000 simulaciones con distribución empírica REAL")
 print("=" * 72)
 
 daily_vals = list(daily_pnl.values())
+if REALISTIC_SIGNAL:
+    # 2026-08-30: fix critico -- daily_pnl solo tiene dias-con-trade;
+    # reconstruye la serie diaria REAL completa (con ceros en los dias
+    # sin operacion) para que el Monte Carlo re-muestree con la frecuencia
+    # real de trading (~2.4% de dias con trade), no ~100%.
+    daily_vals = [daily_pnl.get(d, 0.0) for d in sorted(ALL_TRADING_DAYS)]
+    print(f"  [FIX-FRECUENCIA-REAL] {len(ALL_TRADING_DAYS)} dias de trading reales "
+          f"escaneados, {len(daily_pnl)} con al menos un trade "
+          f"({len(daily_pnl)/max(1,len(ALL_TRADING_DAYS))*100:.1f}% de frecuencia real)")
 if len(daily_vals) >= 20:
     daily_arr = np.array(daily_vals)
     # Bootstrap: resample daily P&L
@@ -1418,6 +1445,8 @@ if len(daily_vals) >= 20:
         "stats": {
             "total_trades": len(trade_log),
             "total_days": n_days,
+            "total_trading_days_real": len(ALL_TRADING_DAYS) if REALISTIC_SIGNAL else None,
+            "trade_frequency_pct": round(len(daily_pnl) / max(1, len(ALL_TRADING_DAYS)) * 100, 2) if REALISTIC_SIGNAL else None,
             # 2026-08-28: wr_pct_final_only = solo cierres TP/SL puro (22.9% de
             # los cierres reales) -- sesgado, ver DIMENSION 6 (Kelly) mas abajo
             # para el WR real sobre TODOS los cierres (incluye guardias).
