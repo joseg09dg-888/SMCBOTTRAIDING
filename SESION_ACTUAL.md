@@ -1528,3 +1528,22 @@ el escalado de riesgo adicional** (69-71%/Sharpe 1.4-1.5 es mejor
 punto). El escalado de riesgo ($150/$300/$600) ya aplicado en vivo
 puede mantenerse o revertirse -- efecto marginal/mixto bajo el motor
 real, no es indispensable.
+
+**ÚLTIMA PIEZA REAL: DIM6 circuit breaker** (3 pérdidas seguidas en 8h =
+bloqueo; WR<40% en últimas 5 = reduce 0.6x; meta mensual 4%+ = reduce
+0.3x) -- construido con el historial simulado propio del backtest
+(cronológico, sin mirar al futuro), NO con episodes.db real. Encontrado
+y corregido 1 bug real en la implementación (formato de tupla
+inconsistente entre los dos puntos donde se registra un cierre). Motor
+REAL ahora completo: las 8 dimensiones + score DecisionFilter + MIN_RR +
+circuit breaker.
+
+**Resultado FINAL, confirmado en dos ventanas de tiempo**:
+- 12,000 barras: 152 trades, WR=53.3%, **P(pass)=74%**, Sharpe=1.85
+- 8,000 barras: 132 trades, WR=57.6%, **P(pass)=74%** (idéntico),
+  Sharpe=2.00
+
+**P(pass) idéntico (74%) en ambas ventanas, Sharpe el más alto de toda
+la sesión (1.85-2.00). Este es el número final, más completo y honesto
+de los dos días de trabajo: motor de señal real, gestión real, entrada
+real, las 8 dimensiones reales -- no una aproximación.**
