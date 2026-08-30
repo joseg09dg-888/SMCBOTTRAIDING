@@ -1591,3 +1591,169 @@ corregido**: se reconstruye la serie diaria completa (con ceros en los
 días sin trade) antes del Monte Carlo. Relanzando la corrida de 16 años
 completos con el fix -- el 82% anterior queda invalidado, pendiente el
 número real y honesto.
+
+---
+
+## 🔴 RESULTADO REAL Y FINAL, CORREGIDO (16 años completos, fix de frecuencia aplicado)
+
+Corrida completada sin errores (EXIT_CODE=0). Mismo motor 100% real
+(estructura+BOS/CHoCH+OB+FVG+premium/descuento+score DecisionFilter+8D+
+MIN_RR+circuit breaker), mismos 163 trades que antes (la generación de
+señales no cambió, solo se corrigió cómo el Monte Carlo cuenta los días).
+
+```
+[FIX-FRECUENCIA-REAL] 4,181 días de trading reales escaneados,
+99 con al menos un trade (2.4% de frecuencia real) -- confirma
+el diagnóstico del bug: SÍ era ~2.4%, no ~100%.
+
+E[día]:              $10
+E[mes]:              $214
+P(día >= $250):       1%
+P(mes >= 5%=$4,851):  0%   <- objetivo Axi Select
+P(mes >= 3%=$2,910):  2%
+Sharpe mensual:       0.28
+P(mes < -5%):         0%
+```
+
+**El 82%/Sharpe 2.01 anterior era 100% artefacto del bug -- totalmente
+invalidado. El número real y honesto es P(pass Axi Select)=0%,
+E[mensual]=$214 (0.22% del capital, muy por debajo del 5% exigido).**
+
+**Interpretación honesta**: el motor real, tal como existe hoy en el
+código en vivo (`agents/signal_agent.py` + `core/decision_filter.py` +
+`agents/eight_dim_agent.py`), es demasiado selectivo -- genera solo 163
+señales de calidad suficiente en 16 años completos (6 pares, H1). Un
+sistema que opera el 2.4% de los días no puede alcanzar una meta
+MENSUAL de 5% aunque cada trade individual tenga buena expectativa
+(WR=57.7%, avg win $664 vs avg loss $316 -- la calidad por trade SÍ es
+buena). El problema no es la calidad de las señales, es la ESCASEZ.
+
+**Esto contradice directamente todos los resultados de la sección
+"RESUMEN CONSOLIDADO" de arriba (77-78% P(pass) con el motor
+simplificado)** -- aquellos números venían de un proxy (`smc_signal()`)
+que generaba miles de señales por corrida y nunca fue fiel al código
+real en vivo. Quedan invalidados como guía para decisiones sobre el bot
+real, tal como pidió el usuario al exigir la auditoría completa.
+
+**Causa raíz identificable, no solo síntoma**: el `has_setup` gate real
+(`(bullish|bearish) AND (FVG OR (OB AND OTE) OR (BOS AND displacement))
+AND premium/discount_ok`) combinado con el score mínimo 80/100 del
+`DecisionFilter` y el `MIN_RR=4.5` filtran casi todo. Próximo paso
+lógico: auditar CUÁL de estos filtros es responsable de la mayor pérdida
+de señales (no bajar umbrales a ciegas -- medir con datos primero cuántas
+señales potenciales mueren en cada gate del pipeline real), para decidir
+con evidencia si algún filtro está sobre-ajustado sin edge real que lo
+justifique, o si 2.4% de frecuencia es simplemente el techo real de esta
+estrategia SMC tal como está diseñada y hace falta una estrategia
+adicional (no solo tuning) para generar más señales de calidad.
+
+---
+
+## 🟡 HALLAZGO CRÍTICO NUEVO: la corrida de 16 años que dio 0% probablemente
+## tenía doble-filtrado (REQUIRE_D1/REQUIRE_H4 default=1 aplicados ENCIMA
+## del motor real, que ya resuelve dirección internamente)
+
+Causa raíz del score techo 65/100: revisando `core/decision_filter.py`, de
+los 5 componentes del score real (SMC 30 + ML 10 + Sentiment 20 + Risk 25 +
+Historical 20 = 100 teórico), **Sentiment siempre es 0** (desactivado, ver
+`smc/sentiment.py`) y **Historical también es 0 para forex/NAS100** —
+verificado contra `memory/historical_data.db`: la tabla `ohlcv_daily` SOLO
+tiene los 6 pares de cripto (BTCUSDT, ETHUSDT, ADAUSDT, BNBUSDT, SOLUSDT,
+XRPUSDT), CERO cobertura de EURUSD/USDCAD/NZDUSD/USDCHF/EURAUD/GBPCAD/NAS100.
+Techo real del score para cualquier trade forex: 30+10+25=**65/100 máximo**,
+contra un threshold operativo real de 78-90 (`_adaptive_threshold()` en
+`core/position_guards.py`). Matemáticamente casi imposible de alcanzar sin
+el multiplicador 8D en su tope (1.4x).
+
+Mientras se investigaba esto, se relanzó un baseline limpio y rápido (12,000
+barras ≈ 1.9 años, `REALISTIC_SIGNAL=1 REQUIRE_D1=0 REQUIRE_H4=0
+MAX_OPEN_TEST=16 THR_CONFIRMED_TEST=80`, mismo threshold=80 que el run de
+16 años) para comparar en igualdad de condiciones. Resultado, guardado en
+`memory/backtest_results_maxopen16.json`:
+
+- **152 trades en ~1.9 años** (vs 163 trades en 16 años del run anterior —
+  ~13x más frecuencia)
+- Frecuencia real: **17.1%** de los días (vs 2.4% del run de 16 años)
+- E[mensual]: **$1,298** (vs $214)
+- **P(pass Axi Select 5%): 5%** (vs 0%)
+- Sharpe mensual: 0.73 (vs 0.28)
+
+**Interpretación**: el run de 16 años que reportó 0% NO tenía
+`REQUIRE_D1=0 REQUIRE_H4=0` explícitos — el script por default usa
+`REQUIRE_D1=1 REQUIRE_H4=1` (líneas 65-66), que aplican `d1_trend()`/
+`h4_bias()` (funciones PROXY heredadas del modelo simplificado viejo) COMO
+FILTRO ADICIONAL encima del motor real, que ya resuelve su propia dirección
+internamente vía estructura SMC real. Es doble filtrado con lógicas que no
+coinciden — no es fiel al bot en vivo (el H4 real en vivo es
+`self._mt5_h4_direction`, un mecanismo distinto, ya evaluado dentro de
+`real_signal()`/el pipeline de threshold real). El 0% de la corrida de 16
+años queda marcado como **posiblemente sobre-pesimista por este bug
+metodológico**, no descartado pero sí bajo sospecha — 5% (este resultado
+limpio) es más confiable como referencia por ahora.
+
+**Sigue muy lejos del 90% pedido, incluso con esta corrección.** Siguiente
+prueba en curso: mismo config limpio pero `THR_CONFIRMED_TEST=65
+THR_WAIT_TEST=65` (bajar el umbral de 80 a un nivel realmente alcanzable
+dado el techo real de 65/100 antes del multiplicador 8D) para medir con
+evidencia si recupera más frecuencia sin destruir el WR.
+
+**Resultado THR=65 — HIPÓTESIS RECHAZADA, bajar el umbral empeora todo**
+(mismo config limpio, `MT5_H1_MAX_BARS=12000`):
+- Frecuencia real: **14.7%** de los días (PEOR que 17.1% con THR=80 —
+  contraintuitivo: menos trade-days con umbral más permisivo)
+- E[mensual]: **$493** (peor que $1,298 con THR=80)
+- **P(pass Axi Select 5%): 1%** (peor que 5% con THR=80)
+- Sharpe mensual: 0.36 (peor que 0.73)
+
+**Conclusión con evidencia real: bajar el umbral de 80 a 65 NO ayuda, hace
+todo peor.** Hipótesis probable (no confirmada con instrumentación
+adicional): los setups de calidad 65-79 que antes se rechazaban tienen EV
+negativo/marginal, y al aceptarlos generan más pérdidas que activan el
+circuit breaker DIM6 (3 pérdidas seguidas en 8h = bloqueo duro 8h),
+bloqueando después setups de calidad real que sí hubieran pasado. Esto
+confirma independientemente, con el motor real, la calibración que ya
+existía en `core/supervisor_constants.py` (comentario 2026-07-01: "80 es
+el óptimo, 90-95 no mejora, solo reduce volumen") -- ahora también
+verificado que bajar de 80 tampoco mejora. **THR=80 se mantiene como el
+mejor confirmado hasta ahora.** Descartado bajar threshold como lever.
+
+**Siguiente prueba, sobre THR=80 (el mejor config real hasta ahora)**:
+replicar el lever más fuerte encontrado en la sesión con el modelo
+simplificado (ahora inválido) -- cerrar la sesión de mañana completa
+(14-16 UTC) y dejar solo 20-23 UTC -- pero esta vez medido con el motor
+100% real, no el proxy. `EXTRA_DEAD_HOURS=14,15,16` sobre el config
+limpio (THR=80, REQUIRE_D1=0, REQUIRE_H4=0, MAX_OPEN=16).
+
+**Resultado EXTRA_DEAD_HOURS=14,15,16 (solo tarde) — TAMBIÉN EMPEORA,
+al revés que en el modelo simplificado:**
+- Frecuencia real: **10.5%** (peor que 17.1% baseline)
+- E[mensual]: **$130** (mucho peor que $1,298)
+- **P(pass Axi 5%): 0%** (peor que 5%)
+- Sharpe: 0.14 (peor que 0.73)
+
+**Conclusión: el lever de "cerrar la mañana" que fue el MEJOR hallazgo de
+la sesión con el modelo simplificado (75.7% pass) se invierte por completo
+con el motor real -- lo empeora.** Explicación coherente: en el modelo
+viejo había miles de trades y sobraba volumen para poder ser selectivo por
+hora sin perder frecuencia neta. En el motor real, con solo ~150 trades en
+2 años, la frecuencia YA es el cuello de botella crítico -- quitar
+CUALQUIER hora activa solo resta oportunidades sin compensación posible.
+**Los hallazgos del modelo simplificado (todo el "RESUMEN CONSOLIDADO"
+de la sesión anterior) quedan formalmente invalidados como guía para el
+motor real -- no solo el número final, la lógica de qué levers ayudan es
+opuesta.** Dos levers probados y descartados bajo el motor real: bajar
+threshold, cerrar horas. **El único config que sigue siendo el mejor
+confirmado: baseline limpio THR=80, sin restricciones extra de hora**
+(152 trades, 17.1% freq, P(pass)=5%, E[mensual]=$1,298, Sharpe=0.73).
+
+**Cambio de dirección**: los 2 levers de "seleccionar mejor QUÉ operar"
+fallaron porque la frecuencia ya es demasiado baja para poder permitirse
+ser más selectivo. Métrica clave: expectancy por trade ya es positivo
+(~$190/trade con WR~53%, avg win $629 / avg loss $305) pero con solo
+~6-7 trades/mes el $ mensual esperado (~$1,298) queda muy por debajo del
+objetivo ($4,851). La brecha no es de CALIDAD de señal, es de TAMAÑO de
+posición: Kelly (DIM6) dice que el riesgo actual (0.5% real, igual que en
+vivo) está entre 10x-60x por debajo del óptimo teórico. Probando
+`RISK_MULT_TEST=2.0` sobre el baseline (mismo score/threshold/horas,
+posiciones 2x más grandes) para medir si escalar tamaño (no señal) cierra
+la brecha sin disparar el riesgo de cola (P(mes<-5%)).
