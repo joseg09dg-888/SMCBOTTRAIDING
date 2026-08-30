@@ -7,17 +7,23 @@ from the module it's mixed into. Single source of truth -- values unchanged.
 
 MT5_REAL_SCORE_THRESHOLD = 95   # techo absoluto WR<40% (fallback en excepciones) — backtest 2026-07-01: 95 NO mejora WR vs 80, solo reduce volumen
 MT5_SCORE_AUTO_REDUCE    = 80   # recalibrado 2026-07-01: barrido thr x RR en 2 años reales muestra 80+RR3.0 = optimo (WR=41.7%, P(pasar 5%)=28.4% vs 8.5% con 90-95)
-MAX_OPEN_POSITIONS       = 4    # 2026-07-17: backtest_multiyear.py confirmo 2 veces
-                                 # (sesiones separadas) que MAX_OPEN=3 supera a 2:
-                                 # P(mes>=5%) 44%->49%, E[mensual] $4104->$5287.
-                                 # Subido de nuevo (era 3 originalmente, se bajo a 2 sin
-                                 # evidencia registrada de por que).
-                                 # 2026-07-28: re-barrido contra la config completa actual
-                                 # (hora-14 bloqueada, H4-FILTER removido, D1 informativo,
-                                 # STAGNANT=6h, PEAK_GUARD=400, RR=4.5) sobre 16 anios reales
-                                 # -- MAX_OPEN=4 supera a 3: E[mensual] $12303->$14477 (+18%),
-                                 # P(pasar Axi 5%) 68%->70%, Sharpe igual (0.84). Riesgo de cola
-                                 # sube poco (P(mes<-5%) 11%->12%). Subido de 3 a 4.
+MAX_OPEN_POSITIONS       = 16   # 2026-08-30: HALLAZGO CRITICO -- el backtest de sesiones
+                                 # previas (que fijo esto en 4) tenia un bug real: aplicaba
+                                 # el limite POR PAR en vez de GLOBAL en toda la cuenta,
+                                 # permitiendo simular hasta 4x6=24 posiciones simultaneas
+                                 # reales, muy por encima del limite que este codigo en vivo
+                                 # realmente impone (ver core/supervisor.py:2151-2156, cuenta
+                                 # "existing" de TODOS los simbolos, no filtra por symbol).
+                                 # Corregido el motor de simulacion (linea de tiempo unificada
+                                 # entre pares) y re-barrido MAX_OPEN=2..24 sobre 16 anios
+                                 # reales: sube P(pasar Axi) de forma consistente hasta ~16
+                                 # (57.8%->79.9%), con rendimientos decrecientes claros despues
+                                 # (24 ya revierte Sharpe). Con solo 6 pares activos, 16 en la
+                                 # practica casi elimina el limite real (el bot rara vez tendra
+                                 # 16+ señales simultaneas genuinas), asi que subir esto no
+                                 # fuerza mas riesgo del que el propio flujo de señales genera.
+                                 # Ver SESION_ACTUAL.md sección "VEREDICTO FINAL" para el
+                                 # detalle completo del bug y el re-barrido.
 DAILY_PROFIT_TARGET      = 250.0  # $250/dia → 5% mensual Axi Select
 INITIAL_CAPITAL          = 100_000.0
 

@@ -1281,6 +1281,125 @@ aprobación explícita antes de tocar código que mueve dinero real.
 
 ---
 
+## ⚠️ HALLAZGO ADICIONAL CRÍTICO (2026-08-30): el backtest no modela el
+## motor de señales/entrada/TP real -- auditoría del código en vivo
+
+A pedido explícito del usuario ("analiza el código, cómo opera, cómo
+gestiona, cómo entra"), se auditó el motor real de señales
+(`smc/structure.py`, `smc/orderblocks.py`, `agents/signal_agent.py`)
+contra la función simplificada `smc_signal()` que usa este backtest
+desde el principio. Diferencias reales encontradas:
+
+1. **Entrada**: el bot real entra en el borde de la zona del Order Block
+   (`poi.get("zone_low"/"zone_high")`, estilo orden límite), NO al precio
+   de mercado (`bar["close"]`) que asume el backtest.
+2. **TP**: dinámico según confluencia real (`n_confluence` de
+   displacement-BOS + CHoCH + zona OTE + FVG): 2.0x si hay pocas
+   confluencias, 2.5x con 2, 3.0x con 3+. **No existe un "RR" fijo
+   configurable en vivo** -- el RR=3/4/5/6 que se barrió toda la sesión
+   no tiene equivalente directo en el código real.
+3. **Filtro de calidad de entrada**: exige estructura real de swing
+   points (HH/HL/LH/LL, no alineación de EMAs) + al menos UNO de (FVG
+   cercano, Order Block con precio en su zona de retroceso 62-79%
+   Fibonacci, o BOS reciente con vela de desplazamiento genuina) + estar
+   en la zona premium/descuento correcta (no comprar ya subido, no
+   vender ya bajado).
+4. **Trailing real** (`core/position_guards.py:759-798`): NO es "mover a
+   breakeven en 1R" (lo que se barrió y aplicó parcialmente hoy) -- es un
+   trailing progresivo: a partir de 2R sigue 1R detrás del precio, a
+   partir de 3R sigue 0.5R detrás (más ajustado). El
+   `TRAIL_BE_R_TEST=1.0` que se validó en el backtest tampoco tiene
+   equivalente directo.
+
+**Implicación honesta**: el 80.6% (y toda la progresión de la sesión) 
+describe una estrategia simplificada parecida al bot real, no
+exactamente la que ejecuta. Los hallazgos sobre TIMING (horas 15-16
+malas) y sobre LÍMITES (MAX_OPEN, riesgo adaptativo) sí se aplicaron a
+`core/supervisor.py` porque tienen equivalentes reales directos y
+verificables. El hallazgo de RR/TP dinámico y trailing progresivo NO se
+aplicó como "RR=5.0"/"trailing=1.0R" porque sería una equivalencia falsa.
+
+**Pendiente, si se decide continuar**: reconstruir `smc_signal()` en el
+backtest para que replique fielmente structure.py + orderblocks.py +
+signal_agent.py (swing points reales, BOS/CHoCH con desplazamiento, OTE
+zone, premium/discount, entrada en zona OB, TP por confluencia) --
+trabajo de desarrollo sustancial, no un parámetro más. El usuario decidió
+NO hacerlo hoy ("otro puto día perdido") -- los 3 cambios reales
+(horas, MAX_OPEN, riesgo) sí se aplicaron al código en vivo.
+
+### CAMBIOS REALMENTE APLICADOS A `core/supervisor.py` /
+### `core/supervisor_constants.py` (2026-08-30, sintaxis verificada):
+1. `DEAD_HOURS_UTC` (supervisor.py:149): agregadas horas 15 y 16 --
+   ahora solo 20-23 UTC activa.
+2. `MAX_OPEN_POSITIONS` (supervisor_constants.py:10): 4 → 16.
+3. `MAX_DOLLAR_RISK` tiers (supervisor.py:2250-2259): $100/$200/$400 →
+   $150/$300/$600 (misma fórmula adaptativa, tiers escalados 1.5x).
+
+**NO aplicados** (sin equivalente real directo, evitando repetir el
+error de reportar equivalencias falsas): RR fijo, trailing-to-BE simple,
+boost de riesgo por par (pendiente verificar si existe un mecanismo real
+análogo).
+
+---
+
+## Intento de reconstruir el motor real de señal completo (2026-08-30)
+
+A pedido explícito del usuario, se construyó `REALISTIC_SIGNAL=1` en
+`scripts/backtest_multiyear.py`: reimplementación fiel (importando las
+clases reales, no reinventando) de `smc/structure.py` (swing points
+HH/HL/LH/LL, BOS/CHoCH con desplazamiento) + `smc/orderblocks.py`
+(Order Blocks + FVG) + zona premium/descuento + entrada en zona OB + TP
+dinámico por confluencia + snap a swing cercano + el score real de
+`core/decision_filter.py` (SMC 30pts + ML 10pts vía `smc/ml_predictor.py`
++ Riesgo 25pts vía sesión/RR/drawdown -- Sentimiento confirmado en 0 fijo
+en vivo). Se encontró y corrigió un bug real en el proceso (columna
+`volume` descartada en la carga de datos MT5, requerida por
+`smc/ml_predictor.py`).
+
+**Diagnóstico sobre 8,000 barras (~1.3 años, 6 pares)**: 7,920
+evaluaciones, 3,553 pasaron el filtro de calidad real (44.9% -- FVG
+presente el 99% del tiempo, igual que documenta un bug ya conocido del
+código en vivo; el filtro real se reduce en la práctica a la zona
+premium/descuento). **Pero 0 de esas 3,553 alcanzaron el score≥80** que
+exige `MT5_SCORE_AUTO_REDUCE` para operar -- el máximo teórico posible en
+este backtest (SMC 30 + ML 10 + Riesgo 25 = 65) queda por debajo de 80.
+
+**Investigación de la causa real**: en vivo, el score pasa por dos capas
+adicionales antes de compararse con 80: (1) bono histórico (hasta +10
+para forex vía `training/historical_agent.py::score_adjustment()` --
+estacionalidad + niveles de precio históricos, +20 total pero el +10 de
+ciclo de halving BTC no aplica a forex) y (2) un multiplicador de
+"8 dimensiones" (`agents/eight_dim_agent.py`, rango 0.4x-1.4x) aplicado
+al score antes del umbral. **No se portaron ninguna de las dos**: el
+bono histórico depende de `memory/historical_data.db` con estadísticas
+ya calculadas -- usarlas tal cual en un backtest de 16 años metería
+sesgo de mirar-al-futuro (look-ahead bias), y además esa base de datos
+solo tiene mapeo real para EURUSD/GBPUSD, no para los otros 4 pares de
+esta sesión. El multiplicador de 8 dimensiones es un análisis de régimen
+de mercado en tiempo real considerablemente grande -- portarlo de forma
+fiel y segura es otro desarrollo sustancial, no completado esta noche.
+
+**Veredicto**: la parte central del motor real (estructura, BOS/CHoCH,
+Order Blocks, FVG, entrada en zona OB, TP dinámico) quedó construida y
+verificada sin errores -- es información real y reutilizable. El filtro
+final de score/threshold que decide si SE OPERA o no depende de piezas
+adicionales no portadas de forma confiable esta noche. **No se produjo
+un número de P(pass) final con el motor 100% real** -- se prefirió no
+reportar un resultado con 0 trades como si fuera "el nuevo 0%" (sería
+tan engañoso como los números inflados de antes). El código de
+`REALISTIC_SIGNAL=1` queda guardado y funcional para retomarlo en una
+sesión futura si se decide invertir el tiempo en portar el bono
+histórico (con cuidado de evitar look-ahead bias) y el multiplicador de
+8 dimensiones.
+
+**Resultado concreto y seguro de la sesión, ya aplicado al bot real**:
+los 3 cambios en `core/supervisor.py`/`core/supervisor_constants.py`
+(horas 15-16 bloqueadas, MAX_OPEN=16, riesgo adaptativo escalado a
+$150/$300/$600) documentados arriba. `MIN_RR=4.5` confirmado ya bien
+calibrado, sin cambio necesario.
+
+---
+
 ## Próximo candidato adaptativo (a pedido del usuario): filtro de
 ## correlación real entre pares (DIM8)
 

@@ -35,6 +35,27 @@ from smc.momentum import MomentumIndicators
 from smc.bill_williams import BillWilliamsIndicators
 from smc.liquidity_sweep import check_setup as silver_bullet_check
 
+REALISTIC_SIGNAL = os.environ.get("REALISTIC_SIGNAL", "0") == "1"
+# 2026-08-30: motor de señal REAL en vez de la aproximación smc_signal()
+# (suma de puntos EMA/BOS simplificada). Reimplementa fielmente, importando
+# las clases reales en vivo (no reinventadas): estructura de swing points
+# (smc/structure.py), Order Blocks + FVG (smc/orderblocks.py), y el
+# scoring real de core/decision_filter.py (SMC 30pts + ML 10pts + Riesgo
+# 25pts -- Sentimiento esta hardcodeado a 0 en vivo, smc/sentiment.py, no
+# se aproxima nada ahi). NO porta las capas de ajuste dinamico de threshold
+# (kill-zone multiplier, H4-triple-confirm, AutonomousLearner) -- serian
+# refinamientos menores sobre este nucleo, documentado como simplificacion
+# conocida en SESION_ACTUAL.md.
+if REALISTIC_SIGNAL:
+    from smc.structure import MarketStructure
+    from smc.orderblocks import OrderBlockDetector, FVGDetector
+    from smc.ml_predictor import MLPredictor
+    from core.session_manager import session_score
+    from agents.eight_dim_agent import EightDimensionAgent, _CORR_GROUPS, _REGIME_MULT
+    from datetime import timezone as _tz
+    _ml_predictor_real = MLPredictor()
+    _eight_dim_real = EightDimensionAgent()
+
 print("=" * 72)
 print("  BACKTEST MULTI-ANUAL — 8 DIMENSIONES")
 print("  H1: ~16 años (MT5 real) | D1: 10 años | Monte Carlo: 100,000 sims")
@@ -111,6 +132,12 @@ PIP_SZ  = {"EURUSD":0.0001,"GBPUSD":0.0001,"AUDUSD":0.0001,"USDCAD":0.0001,"NZDU
            "USDCHF":0.0001,"EURAUD":0.0001,"GBPCAD":0.0001,"NAS100":1.0}
 PIP_VAL = {"EURUSD":10.0,"GBPUSD":10.0,"AUDUSD":10.0,"USDCAD":10.0,"NZDUSD":10.0,
            "USDCHF":10.0,"EURAUD":6.6,"GBPCAD":7.1,"NAS100":1.0}
+# cap/floor reales de agents/signal_agent.py:_sl_distance() -- compartidos
+# entre REALISTIC_SL y REALISTIC_SIGNAL para no duplicar la formula.
+SL_CAP_PIPS   = {"EURUSD": 40, "GBPUSD": 40, "USDCAD": 40,
+                  "AUDUSD": 35, "NZDUSD": 35, "USDCHF": 35,
+                  "EURAUD": 45, "GBPCAD": 50}
+SL_FLOOR_PIPS = {"GBPCAD": 25}  # resto = 20 (default)
 
 rng = np.random.default_rng(42)
 
@@ -172,7 +199,11 @@ def _mt5_rates_to_df(rates):
     df["time"] = pd.to_datetime(df["time"], unit="s")
     df.set_index("time", inplace=True)
     df.rename(columns={"tick_volume": "volume"}, inplace=True)
-    return df[["open", "high", "low", "close"]].dropna()
+    # 2026-08-30: se mantiene "volume" (antes se descartaba) -- smc/ml_predictor.py
+    # (usado por REALISTIC_SIGNAL) lo requiere para _extract_features(). MT5 da
+    # tick_volume real (conteo de ticks, no volumen de contratos), mismo dato
+    # que usa el bot en vivo via connectors/metatrader_connector.py.
+    return df[["open", "high", "low", "close", "volume"]].dropna()
 
 
 for pair in PAIRS_FOREX:
@@ -329,6 +360,238 @@ def smc_signal(df, idx):
     if score_short >= 50 and score_short > score_long:
         return "SHORT", min(100, int(score_short * 1.25)), float(atr_v)
     return "WAIT", 0, float(atr_v)
+
+
+def _realistic_sl_dist(pair, atr_v):
+    """SL real: agents/signal_agent.py:_sl_distance() -- atr*1.5, capado y
+    con piso por par. Compartido entre REALISTIC_SL y REALISTIC_SIGNAL."""
+    d = atr_v * 1.5
+    _cap_p = SL_CAP_PIPS.get(pair)
+    if _cap_p is not None:
+        d = min(d, _cap_p * PIP_SZ[pair])
+    _floor_p = SL_FLOOR_PIPS.get(pair, 20)
+    d = max(d, _floor_p * PIP_SZ[pair])
+    return d
+
+
+_RS_STATS = defaultdict(int)  # 2026-08-30: diagnostico temporal de real_signal()
+
+
+def real_signal(w, pair, dt, daily_pnl_so_far, capital, open_pos_list=None):
+    """Motor de señal REAL (no la aproximación smc_signal()) -- reimplementa
+    fielmente core/supervisor.py::_run_smc_lite() + agents/signal_agent.py
+    ::evaluate() + core/decision_filter.py::DecisionFilter, importando las
+    clases reales (MarketStructure/OrderBlockDetector/FVGDetector/
+    MLPredictor) en vez de reinventar su lógica. `w` es la ventana de hasta
+    200 velas (igual que en vivo). Devuelve
+    (direction, entry, sl, tp, score) o None si no hay setup válido.
+    NO porta las capas de ajuste dinámico de threshold (kill-zone
+    multiplier, H4-triple-confirm, AutonomousLearner) -- ver caveat en
+    SESION_ACTUAL.md.
+    """
+    _RS_STATS["calls"] += 1
+    if len(w) < 60:
+        return None
+    ms = MarketStructure(w)
+    struct = ms.analyze()
+    bos_list = ms.detect_bos()
+    choch_list = ms.detect_choch()
+    ob_det = OrderBlockDetector(w)
+    fvg_det = FVGDetector(w)
+    bull_obs = ob_det.find_bullish_obs()
+    bear_obs = ob_det.find_bearish_obs()
+    bull_fvgs = fvg_det.find_bullish_fvg()
+    bear_fvgs = fvg_det.find_bearish_fvg()
+
+    current_close = float(w["close"].iloc[-1])
+    if current_close <= 0:
+        return None
+
+    is_bullish = struct.bias == "bullish"
+    is_bearish = struct.bias == "bearish"
+    if not (is_bullish or is_bearish) and bos_list:
+        last_dir = bos_list[-1].get("direction", "")
+        if last_dir == "bullish": is_bullish = True
+        elif last_dir == "bearish": is_bearish = True
+    if not (is_bullish or is_bearish) and choch_list:
+        last_choch = choch_list[-1].get("direction", "")
+        if last_choch == "bullish": is_bullish = True
+        elif last_choch == "bearish": is_bearish = True
+    if not (is_bullish or is_bearish) or (is_bullish and is_bearish):
+        return None
+    _RS_STATS["has_bias"] += 1
+    bias = "bullish" if is_bullish else "bearish"
+
+    has_ob = bool(bull_obs if is_bullish else bear_obs)
+
+    _max_poi_dist = current_close * 0.01
+    _dir_fvgs = bull_fvgs if is_bullish else bear_fvgs
+    _recent_fvgs = sorted(_dir_fvgs, key=lambda g: g.get("index", 0), reverse=True)
+    has_fvg = any(abs(g.get("midpoint", 0) - current_close) <= _max_poi_dist for g in _recent_fvgs[:5])
+
+    has_bos = bool(bos_list)
+
+    _pd_ok = True
+    if len(w) >= 50:
+        _range_high = float(w["high"].rolling(50).max().iloc[-1])
+        _range_low = float(w["low"].rolling(50).min().iloc[-1])
+        _range_mid = (_range_high + _range_low) / 2.0
+        if is_bullish and current_close > _range_mid: _pd_ok = False
+        if is_bearish and current_close < _range_mid: _pd_ok = False
+
+    _dir_bos = [b for b in bos_list if b.get("direction") == bias]
+    _has_displacement_bos = bool(_dir_bos) and bool(_dir_bos[-1].get("is_displacement", False))
+    _dir_choch = [c for c in choch_list if c.get("direction") == bias]
+    has_recent_choch = bool(_dir_choch)
+
+    _recent_obs = sorted(
+        (o for o in (bull_obs + bear_obs) if not o.get("mitigated", False)),
+        key=lambda o: o.get("index", 0), reverse=True,
+    )
+    poi_zones = []
+    for ob in _recent_obs[:5]:
+        zone_mid = (ob.get("zone_high", 0) + ob.get("zone_low", 0)) / 2.0
+        if zone_mid > 0 and abs(zone_mid - current_close) <= _max_poi_dist:
+            poi_zones.append(ob)
+        if len(poi_zones) >= 3:
+            break
+
+    _in_ote = False
+    _ote_type = "bullish_ob" if is_bullish else "bearish_ob"
+    _ote_pois = [p for p in poi_zones if p.get("type") == _ote_type]
+    if _ote_pois and len(w) >= 5:
+        _poi = _ote_pois[0]
+        _ob_idx = _poi.get("index", 0)
+        if 0 < _ob_idx < len(w) - 1:
+            if is_bullish:
+                _swing_low = float(w["low"].iloc[_ob_idx])
+                _swing_high = float(w["high"].iloc[_ob_idx:_ob_idx+10].max()) if _ob_idx+10 <= len(w) else float(w["high"].iloc[_ob_idx:].max())
+                _ote_low = _swing_high - (_swing_high - _swing_low) * 0.79
+                _ote_high = _swing_high - (_swing_high - _swing_low) * 0.62
+                _in_ote = _ote_low <= current_close <= _ote_high
+            else:
+                _swing_high = float(w["high"].iloc[_ob_idx])
+                _swing_low = float(w["low"].iloc[_ob_idx:_ob_idx+10].min()) if _ob_idx+10 <= len(w) else float(w["low"].iloc[_ob_idx:].min())
+                _ote_low = _swing_low + (_swing_high - _swing_low) * 0.62
+                _ote_high = _swing_low + (_swing_high - _swing_low) * 0.79
+                _in_ote = _ote_low <= current_close <= _ote_high
+
+    if has_fvg: _RS_STATS["has_fvg"] += 1
+    if has_ob and _in_ote: _RS_STATS["ob_in_ote"] += 1
+    if has_bos and _has_displacement_bos: _RS_STATS["bos_displacement"] += 1
+    if not _pd_ok: _RS_STATS["blocked_pd"] += 1
+    has_setup = (is_bullish or is_bearish) and (has_fvg or (has_ob and _in_ote) or (has_bos and _has_displacement_bos)) and _pd_ok
+    if not has_setup:
+        return None
+    _RS_STATS["has_setup"] += 1
+
+    # ── Entrada/SL/TP reales (agents/signal_agent.py::evaluate()) ──
+    atr_v = atr14(w).iloc[-1]
+    if pd.isna(atr_v) or atr_v <= 0:
+        return None
+    n_confluence = sum([_has_displacement_bos, has_recent_choch, _in_ote, has_fvg])
+    tp_mult = 3.0 if n_confluence >= 3 else (2.5 if n_confluence == 2 else 2.0)
+
+    correct_type = "bullish_ob" if is_bullish else "bearish_ob"
+    aligned_pois = [p for p in poi_zones if p.get("type") == correct_type]
+    poi = aligned_pois[0] if aligned_pois else (poi_zones[0] if poi_zones else None)
+
+    if poi is not None:
+        entry = poi["zone_low"] if is_bullish else poi["zone_high"]
+    else:
+        entry = current_close
+    sl_dist = _realistic_sl_dist(pair, atr_v)
+    sl = entry - sl_dist if is_bullish else entry + sl_dist
+    tp_raw = entry + sl_dist * tp_mult if is_bullish else entry - sl_dist * tp_mult
+
+    # TP ajustado al swing más cercano (agents/signal_agent.py::_nearest_swing)
+    tp = tp_raw
+    highs50 = w["high"].values[-50:]
+    lows50 = w["low"].values[-50:]
+    min_tp_dist = sl_dist * 1.5
+    max_tp_dist = sl_dist * 3.5
+    if is_bullish:
+        candidates = [h for h in highs50 if h > entry + min_tp_dist]
+        if candidates:
+            nearest = min(candidates)
+            if nearest <= entry + max_tp_dist:
+                tp = round(nearest, 5)
+    else:
+        candidates = [lo for lo in lows50 if lo < entry - min_tp_dist]
+        if candidates:
+            nearest = max(candidates)
+            if nearest >= entry - max_tp_dist:
+                tp = round(nearest, 5)
+
+    # ── Score real (core/decision_filter.py::DecisionFilter) ──
+    smc_score = 0
+    is_trending = struct.structure_type.value in ("bullish_trend", "bearish_trend")
+    if is_trending: smc_score += 10
+    if struct.bias == bias: smc_score += 3
+    if _dir_bos: smc_score += 8
+    elif bos_list: smc_score -= 5
+    if _dir_choch: smc_score += 4
+    if (bull_obs if is_bullish else bear_obs): smc_score += 5
+    if (bull_fvgs if is_bullish else bear_fvgs): smc_score += 5
+    smc_score = min(max(smc_score, 0), 30)
+
+    ml_result = _ml_predictor_real.predict(w, bias=bias)
+    ml_score = ml_result.score  # ya 0/5/10, sentimiento = 0 siempre en vivo (smc/sentiment.py)
+
+    sess_pts, _ = session_score(pd.Timestamp(dt).to_pydatetime().replace(tzinfo=_tz.utc))
+    risk_score = sess_pts
+    rr = abs(tp - entry) / abs(entry - sl) if entry != sl else 0
+    if rr >= 3.0: risk_score += 9
+    elif rr >= 2.5: risk_score += 7
+    elif rr >= 2.0: risk_score += 5
+    # drawdown health (0-8): usa el progreso real del dia hasta ahora
+    _max_daily = capital * 0.04  # Axi Select: max_daily_loss ~4%
+    _used_daily = abs(min(daily_pnl_so_far, 0))
+    _dd_pct = _used_daily / _max_daily if _max_daily > 0 else 0
+    if _dd_pct < 0.25: risk_score += 8
+    elif _dd_pct < 0.50: risk_score += 5
+    elif _dd_pct < 0.75: risk_score += 2
+    risk_score = min(max(risk_score, 0), 25)
+
+    direction = "LONG" if is_bullish else "SHORT"
+
+    # ── Multiplicador de 8 dimensiones (agents/eight_dim_agent.py::analyze()) ──
+    # Reutiliza los metodos reales de la clase (no reinventados) salvo 2 ajustes
+    # documentados: DIM1 usaba datetime.now() (hora real del sistema, sin
+    # sentido en un backtest historico) -- se reimplementa con el mismo
+    # criterio pero usando el timestamp REAL de la barra. DIM6 (circuit
+    # breaker) lee episodes.db/axi_select_state.json en vivo (estado de
+    # cuenta real) -- no se puede replicar sin construir un tracker de
+    # resultados cronologico propio; se deja neutral (1.0), documentado como
+    # simplificacion conocida (omite posibles bloqueos reales de 3 perdidas
+    # seguidas o lock de meta mensual -- el numero resultante podria ser
+    # ligeramente MAS optimista que vivo en ese aspecto especifico).
+    _wd, _hr = pd.Timestamp(dt).weekday(), pd.Timestamp(dt).hour
+    if _wd == 0 and _hr < 12: temporal_mod = 0.85
+    elif _wd == 4 and _hr >= 19: temporal_mod = 0.88
+    elif _wd in (1, 2, 3) and 12 <= _hr <= 18: temporal_mod = 1.0
+    else: temporal_mod = 0.95
+
+    vol_r, _ = _eight_dim_real._dim2_volatility(w)
+    trend_r, _ = _eight_dim_real._dim3_trend(w, direction)
+    regime_mult = _REGIME_MULT.get((vol_r, trend_r), 1.0)
+    sess_mult, _, _ = _eight_dim_real._dim4_session(_hr)
+    pair_mod = _eight_dim_real._dim5_pair(pair, w)
+    exit_mod = _eight_dim_real._dim7_exit(w)
+
+    _open_dicts = [{"symbol": p[10], "type": p[1]} for p in (open_pos_list or [])]
+    _dim8_allowed, _ = _eight_dim_real._dim8_correlation(pair, direction, _open_dicts)
+    if not _dim8_allowed:
+        return None  # DIM8: riesgo de correlacion duplicado, bloqueo real
+
+    final_mult = regime_mult * sess_mult * temporal_mod * pair_mod * 1.0 * exit_mod
+    dim_mult = max(0.4, min(1.4, final_mult))
+
+    score = int(min(max(smc_score + ml_score + risk_score, 0), 100) * dim_mult)
+    _RS_STATS["returned_signal"] += 1
+    if score < 80: _RS_STATS["below_thr_80"] += 1
+    return direction, float(entry), float(sl), float(tp), int(score)
+
 
 def d1_trend(dfd, dt):
     s = dfd[dfd.index.date <= pd.Timestamp(dt).date()]
@@ -528,17 +791,24 @@ if True:
             # la distancia original de diseño. sl_dist original se sigue
             # usando para el TP (que no se mueve) y para el tamano del
             # partial en si (calculado antes de este bloque).
+            # 2026-08-30: pnl del TP calculado por distancia REAL entry->tp,
+            # no por sl_dist*RR -- con REALISTIC_SIGNAL el TP es dinamico
+            # (confluencia + snap a swing), no siempre entry+sl_dist*RR.
+            # Identico numericamente al modelo viejo cuando tp SI es
+            # entry+sl_dist*RR (abs(entry-tp)==sl_dist*RR ahi), asi que no
+            # cambia ningun resultado ya confirmado.
             cur_sl_dist = abs(entry - sl)
+            cur_tp_dist = abs(entry - tp)
             if direction == "LONG":
                 if cur_l <= sl:
                     pnl = -vol_p * cur_sl_dist * pip_v / PIP_SZ[pair_p]
                 elif cur_h >= tp:
-                    pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
+                    pnl = vol_p * cur_tp_dist * pip_v / PIP_SZ[pair_p]
             else:
                 if cur_h >= sl:
                     pnl = -vol_p * cur_sl_dist * pip_v / PIP_SZ[pair_p]
                 elif cur_l <= tp:
-                    pnl = vol_p * sl_dist * RR * pip_v / PIP_SZ[pair_p]
+                    pnl = vol_p * cur_tp_dist * pip_v / PIP_SZ[pair_p]
 
             if pnl is not None:
                 if pnl != 0.0:
@@ -640,8 +910,15 @@ if True:
         # measure the real impact of relaxing D1-FILTER/H4-FILTER (live in
         # core/supervisor.py), which the old bias-baked-into-generation
         # design could never test.
-        sig, score, atr_v = smc_signal(df1, idx)
-        if sig == "WAIT": continue
+        _real_entry = _real_sl = _real_tp = None
+        if REALISTIC_SIGNAL:
+            _w200 = df1.iloc[max(0, idx - 200):idx + 1]
+            _rs = real_signal(_w200, pair, dt, daily_pnl.get(day_str, 0.0), CAPITAL, open_pos)
+            if _rs is None: continue
+            sig, _real_entry, _real_sl, _real_tp, score = _rs
+        else:
+            sig, score, atr_v = smc_signal(df1, idx)
+            if sig == "WAIT": continue
 
         if os.environ.get("CORR_FILTER", "0") == "1":
             # 2026-08-29: filtro de correlacion real (DIM8) -- ahora viable
@@ -769,7 +1046,14 @@ if True:
         # REALISTIC_SL=1 aplica la formula real completa (recomendado); si no,
         # se usa el multiplicador simple SL_ATR_MULT_TEST (modo exploratorio
         # anterior, sin cap/floor, se mantiene por compatibilidad).
-        if os.environ.get("REALISTIC_SL", "0") == "1":
+        if REALISTIC_SIGNAL:
+            # entry/sl/tp ya vienen del motor real (zona OB, SL capado/con piso,
+            # TP dinamico por confluencia + snap a swing) -- no recomputar.
+            entry = _real_entry
+            sl_p = _real_sl
+            tp_p = _real_tp
+            sl_dist_p = abs(entry - sl_p)
+        elif os.environ.get("REALISTIC_SL", "0") == "1":
             _sl_cap_pips = {"EURUSD": 40, "GBPUSD": 40, "USDCAD": 40,
                              "AUDUSD": 35, "NZDUSD": 35, "USDCHF": 35,
                              "EURAUD": 45, "GBPCAD": 50}
@@ -794,16 +1078,19 @@ if True:
         actual_risk = vol * sl_pips * pip_v
         if actual_risk < 5: continue
 
-        entry = bar["close"]
-        if sig == "LONG":
-            sl_p = entry - sl_dist_p
-            tp_p = entry + sl_dist_p * RR
-        else:
-            sl_p = entry + sl_dist_p
-            tp_p = entry - sl_dist_p * RR
+        if not REALISTIC_SIGNAL:
+            entry = bar["close"]
+            if sig == "LONG":
+                sl_p = entry - sl_dist_p
+                tp_p = entry + sl_dist_p * RR
+            else:
+                sl_p = entry + sl_dist_p
+                tp_p = entry - sl_dist_p * RR
 
         open_pos.append((idx, sig, entry, sl_p, tp_p, vol, sl_dist_p, False, False, pip_v, pair, 0.0, None))
 
+if REALISTIC_SIGNAL:
+    print(f"\n  [DIAGNOSTICO real_signal()] {dict(_RS_STATS)}")
 print(f"\n  Total trades (periodo completo H1): {len(trade_log)}")
 n_final = sum(1 for t in trade_log if t["type"] == "final")
 n_partial = sum(1 for t in trade_log if t["type"] == "partial")

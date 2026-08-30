@@ -147,7 +147,11 @@ SCALP_MAX_DOLLAR_RISK    = 50.0
 # 13:00 UTC = WR 29%, avg -$97/trade → SEÑALES RANCIAS overnight → BLOQUEAR
 # 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading → BLOQUEAR
 DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                             17, 18, 19}  # 15,16,20-23 UTC abiertas (unicas horas con edge real)
+                             15, 16, 17, 18, 19}  # 2026-08-30: 15 y 16 bloqueadas -- backtest
+                             # 16 años reales (motor global corregido, ver SESION_ACTUAL.md)
+                             # mostro hora 15 con WR=32-33% y avg P&L~$0-13 (volumen enorme,
+                             # EV≈0, diluia el resultado total). Solo 20-23 UTC queda activa,
+                             # unica ventana con edge real confirmado.
 
 
 
@@ -2245,14 +2249,19 @@ class TradingSupervisor(PositionGuardsMixin):
         # Swing: riesgo adaptativo según déficit diario
         _shortfall = DAILY_PROFIT_TARGET - self._daily_realized_pnl
         _now_h = __import__('datetime').datetime.utcnow().hour
+        # 2026-08-30: tiers escalados 1.5x ($100/$200/$400 -> $150/$300/$600),
+        # manteniendo la MISMA estructura adaptativa por progreso diario --
+        # backtest 16 años reales (motor corregido) con este escalado dio
+        # P(pasar Axi) 79.2%->80.6%, E[mensual] $17413->$21867, P(mes<-5%)
+        # solo +1pp (6%->7%). Ver SESION_ACTUAL.md.
         if _shortfall > 200 and _now_h >= 13:
             # Detrás de meta por >$200 en horario activo: escalar riesgo
-            MAX_DOLLAR_RISK = min(400.0, 200.0 + _shortfall * 0.3)
+            MAX_DOLLAR_RISK = min(600.0, 300.0 + _shortfall * 0.45)
             print(f"[ADAPTIVE-SIZE] Deficit=${_shortfall:.0f} → MAX_RISK=${MAX_DOLLAR_RISK:.0f}", flush=True)
         elif _shortfall <= 0:
-            MAX_DOLLAR_RISK = 100.0  # meta cumplida: proteger ganancias
+            MAX_DOLLAR_RISK = 150.0  # meta cumplida: proteger ganancias
         else:
-            MAX_DOLLAR_RISK = 200.0
+            MAX_DOLLAR_RISK = 300.0
         if not _is_scalp and volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
             _sym_info = None
