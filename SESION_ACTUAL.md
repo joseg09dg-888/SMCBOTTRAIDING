@@ -1547,3 +1547,11 @@ circuit breaker.
 la sesión (1.85-2.00). Este es el número final, más completo y honesto
 de los dos días de trabajo: motor de señal real, gestión real, entrada
 real, las 8 dimensiones reales -- no una aproximación.**
+
+**Límite de hardware confirmado**: 25,000 barras (~4 años) superó el
+timeout de 600s dos veces (20k también). 15,000 completó una sola vez
+(vía proceso huérfano tras un kill externo) con resultado peor (35% --
+alta varianza normal en ese rango, no representativo). **12,000 barras
+(~2 años) es el máximo práctico y confiable del motor real en este PC.**
+No se pudo confirmar con más historia por límite físico de hardware, no
+por falta de intento -- se probó repetidamente.
