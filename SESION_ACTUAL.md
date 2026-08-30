@@ -1757,3 +1757,94 @@ vivo) está entre 10x-60x por debajo del óptimo teórico. Probando
 `RISK_MULT_TEST=2.0` sobre el baseline (mismo score/threshold/horas,
 posiciones 2x más grandes) para medir si escalar tamaño (no señal) cierra
 la brecha sin disparar el riesgo de cola (P(mes<-5%)).
+
+**Resultado RISK_MULT_TEST=2.0 — PRIMER LEVER QUE REALMENTE MEJORA:**
+- Frecuencia: 17.3% (igual que baseline, esperable -- no toca señal)
+- E[mensual]: **$1,672** (vs $1,298 baseline, +29%)
+- **P(pass Axi 5%): 10%** (vs 5% baseline, DUPLICA)
+- Sharpe: 0.69 (baja poco desde 0.73)
+- P(mes<-5%): **0%** (sin disparar riesgo de cola)
+- P(día<=-$1000): 1% (subió desde 0%, vigilar pero todavía bajo)
+
+**Confirma la hipótesis: el problema real es tamaño de posición, no
+calidad ni frecuencia de señal.** Escalando más agresivo: probando
+`RISK_MULT_TEST=3.0` para ver si la mejora se sostiene o empieza a
+revertir (igual que pasó con RR en la sesión anterior -- debe haber un
+techo donde el riesgo de cola empieza a subir).
+
+**Resultado RISK_MULT_TEST=3.0 — YA REVIERTE, confirma techo cerca de 2x:**
+- P(pass Axi 5%): 8% (peor que 10% de 2x)
+- E[mensual]: $1,538 (peor que $1,672 de 2x)
+- Sharpe: 0.67 (peor que 0.69 de 2x)
+- P(mes<-5%): 0% (igual, cola sigue sin dispararse)
+
+**2.0x sigue siendo el mejor punto encontrado.** Probando `RISK_MULT_TEST=1.5`
+para afinar si el óptimo real está exactamente en 2.0 o un poco antes.
+
+**Resultado RISK_MULT_TEST=1.5 — confirma que 2.0x es el pico real:**
+P(pass)=9%, E[mensual]=$1,610, Sharpe=0.72 (mejor Sharpe que 2x, pero
+peor P(pass)/E[mensual]), P(mes<-5%)=0%, P(día<=-1000)=0% (mejor cola
+que 2x). **Sweep de riesgo cerrado: 2.0x es el óptimo de P(pass)/E[mensual],
+1.5x el óptimo de Sharpe/cola -- ambos válidos, 2.0x recomendado para
+maximizar probabilidad de pasar el challenge.**
+
+**Resumen sweep de riesgo (mismo config base: THR=80, sin restricción de
+horas, MAX_OPEN=16):**
+| RISK_MULT | P(pass) | E[mensual] | Sharpe | P(mes<-5%) |
+|---|---|---|---|---|
+| 1.0x (baseline) | 5% | $1,298 | 0.73 | 0% |
+| 1.5x | 9% | $1,610 | 0.72 | 0% |
+| **2.0x (mejor)** | **10%** | **$1,672** | 0.69 | 0% |
+| 3.0x | 8% | $1,538 | 0.67 | 0% |
+
+**Nuevo hallazgo real (DIM5 de estas corridas): EURUSD y USDCAD tienen EV
+NEGATIVO en esta ventana de 2 años** (EURUSD: 5 trades, WR=20%, avg=-$246;
+USDCAD: 5 trades, WR=0%, avg=-$298) -- distinto a los pares "débiles pero
+positivos" que se probó excluir en la sesión anterior (ahí no ayudó).
+Esto es EV negativo real, categoría distinta. Probando combinar
+`RISK_MULT_TEST=2.0 EXCLUDE_PAIRS=EURUSD,USDCAD` (nota: muestra chica de
+5 trades cada uno, cuidado con sobreajuste a ruido -- se prueba con
+evidencia, se decide con evidencia).
+
+**Progreso total hasta ahora en este bloque de trabajo: P(pass Axi)
+0% → 5% → 10%, con el motor 100% real. Sigue muy lejos del 90-95%
+pedido, pero cada paso tiene causa raíz identificada y verificada, no
+es ajuste ciego de parámetros.**
+
+**Resultado RISK_MULT_TEST=2.0 + EXCLUDE_PAIRS=EURUSD,USDCAD:**
+- **P(pass Axi 5%): 11%** (vs 10% solo con risk2x)
+- E[mensual]: $1,837 (vs $1,672)
+- Sharpe: **0.77** (el mejor de todo el bloque, vs 0.69 solo risk2x)
+- P(mes<-5%): 0%
+
+**Mejor config confirmada hasta ahora de todo este bloque de trabajo**:
+`THR=80 (sin cambios) + RISK_MULT_TEST=2.0 + EXCLUDE_PAIRS=EURUSD,USDCAD`
+→ P(pass)=11%, E[mensual]=$1,837, Sharpe=0.77, P(mes<-5%)=0%.
+
+**Caveat de calibración encontrado en esta corrida** (no aplicado, solo
+observado): el desglose de cierre de esta config (peak_guard 45.8%,
+final_SL 38.2%, final_TP 9.7%, friday_close 6.2%) no coincide con la
+distribución real observada en vivo documentada en el propio script
+(TP=2.8%, SL=20.1%, guardias=77.1%) -- el backtest cierra por SL casi el
+doble de seguido que lo que se ve en cuentas reales. Puede indicar que el
+peak_guard en vivo protege capital de forma más agresiva de lo que este
+backtest simula, lo que sugeriría que estos números son un límite
+pesimista, no optimista -- pero no es una conclusión firme, solo una
+discrepancia a investigar si hay tiempo.
+
+**RESUMEN HONESTO DE TODO ESTE BLOQUE (para el usuario)**: partiendo de
+0% de probabilidad real de pasar Axi (motor 100% fiel al código real,
+16 años de datos), con 4 hallazgos de causa raíz verificados
+(doble-filtrado D1/H4, tamaño de posición muy por debajo del óptimo de
+Kelly, 2 pares con EV negativo en la ventana reciente) se llegó a
+**11% de probabilidad real**, Sharpe 0.77, sin riesgo de cola disparado.
+Sigue muy lejos del 90-95% pedido. Los 2 levers de "ser más selectivo con
+la señal" (bajar threshold, cerrar horas) fallaron -- la frecuencia de
+señal ya es el cuello de botella, no la calidad. El lever que sí funcionó
+fue tamaño de posición + limpieza de pares. Próximos candidatos sin
+probar aún: parametrizar el MIN_RR real (hardcoded en 4.5, nunca
+barrido), revisar por qué el backtest cierra por SL el doble de seguido
+que en vivo (puede haber más margen ahí), y evaluar si 2 años de datos
+(ventana rápida) están sesgados vs los 16 años completos -- validar el
+mejor config encontrado corriendo la ventana completa antes de
+considerar aplicar nada al código en vivo.

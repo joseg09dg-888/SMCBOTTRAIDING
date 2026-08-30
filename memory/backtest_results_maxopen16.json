@@ -1,5 +1,5 @@
 {
-  "date": "2026-08-30T17:43:40.694707",
+  "date": "2026-08-30T18:13:12.896539",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -9,8 +9,6 @@
     "partial_tp": null,
     "kill_zone_utc": "14-16,20-23",
     "pairs": [
-      "EURUSD",
-      "USDCAD",
       "NZDUSD",
       "USDCHF",
       "EURAUD",
@@ -18,22 +16,23 @@
     ]
   },
   "stats": {
-    "total_trades": 61,
-    "total_days": 52,
+    "total_trades": 144,
+    "total_days": 85,
     "total_trading_days_real": 497,
-    "trade_frequency_pct": 10.46,
-    "wr_pct_final_only": 5.7,
-    "wr_pct_real": 36.1,
-    "avg_daily": 55.43,
-    "p_day_250": 3.1,
-    "p_pass_axi": 0.1,
-    "e_monthly": 129.66,
-    "sharpe": 0.138,
+    "trade_frequency_pct": 17.1,
+    "wr_pct_final_only": 20.3,
+    "wr_pct_real": 57.6,
+    "avg_daily": 487.81,
+    "p_day_250": 8.8,
+    "p_pass_axi": 11.0,
+    "e_monthly": 1836.68,
+    "sharpe": 0.766,
     "best_hours": [
+      15,
       23,
       20,
-      22,
-      21
+      21,
+      16
     ]
   }
 }
