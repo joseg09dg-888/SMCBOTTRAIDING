@@ -375,9 +375,12 @@ def _realistic_sl_dist(pair, atr_v):
 
 
 _RS_STATS = defaultdict(int)  # 2026-08-30: diagnostico temporal de real_signal()
+_RECENT_OUTCOMES = defaultdict(list)  # {pair: [(dt, "WIN"/"LOSS"), ...]} ultimos 5,
+# construido con el propio historial simulado del backtest (cronologico, sin
+# mirar al futuro) en vez de episodes.db real -- alimenta DIM6 (circuit breaker).
 
 
-def real_signal(w, pair, dt, daily_pnl_so_far, capital, open_pos_list=None):
+def real_signal(w, pair, dt, daily_pnl_so_far, capital, open_pos_list=None, daily_pnl_month=None):
     """Motor de señal REAL (no la aproximación smc_signal()) -- reimplementa
     fielmente core/supervisor.py::_run_smc_lite() + agents/signal_agent.py
     ::evaluate() + core/decision_filter.py::DecisionFilter, importando las
@@ -595,7 +598,24 @@ def real_signal(w, pair, dt, daily_pnl_so_far, capital, open_pos_list=None):
     if not _dim8_allowed:
         return None  # DIM8: riesgo de correlacion duplicado, bloqueo real
 
-    final_mult = regime_mult * sess_mult * temporal_mod * pair_mod * 1.0 * exit_mod
+    # DIM6 circuit breaker real (agents/eight_dim_agent.py::_dim6_circuit_breaker,
+    # reimplementado con el historial simulado propio en vez de episodes.db real
+    # -- mismo criterio: 3 perdidas seguidas en las ultimas 8h de simulacion =
+    # bloqueo total; WR<40% en las ultimas 5 = reduce a 0.6x).
+    dim6_mod = 1.0
+    _hist = _RECENT_OUTCOMES.get(pair, [])
+    if len(_hist) >= 3 and all(o == "LOSS" for _, o in _hist[-3:]):
+        _age_h = (pd.Timestamp(dt) - pd.Timestamp(_hist[-1][0])).total_seconds() / 3600.0
+        if _age_h < 8:
+            return None  # bloqueo duro, igual que en vivo
+    if len(_hist) >= 5:
+        _wr5 = sum(1 for _, o in _hist if o == "WIN") / len(_hist)
+        if _wr5 < 0.40:
+            dim6_mod = 0.60
+    if daily_pnl_month is not None and capital > 0 and daily_pnl_month / capital >= 0.04:
+        dim6_mod = min(dim6_mod, 0.30)  # meta mensual 4%+ ya cumplida: proteger
+
+    final_mult = regime_mult * sess_mult * temporal_mod * pair_mod * dim6_mod * exit_mod
     dim_mult = max(0.4, min(1.4, final_mult))
 
     score = int(min(max(smc_score + ml_score + risk_score, 0), 100) * dim_mult)
@@ -831,6 +851,9 @@ if True:
                         "win": pnl > 0, "hour": hour_utc, "year": year_str,
                         "vol_regime": vr, "trend_regime": tr,
                     })
+                    if REALISTIC_SIGNAL:
+                        _RECENT_OUTCOMES[pair_p].append((dt, "WIN" if pnl > 0 else "LOSS"))
+                        del _RECENT_OUTCOMES[pair_p][:-5]
                     regime_stats[(vr, tr)]["trades"] += 1
                     regime_stats[(vr, tr)]["wins"] += int(pnl > 0)
                     regime_stats[(vr, tr)]["pnl"] += pnl
@@ -897,6 +920,9 @@ if True:
                             "win": pnl > 0, "hour": hour_utc, "year": year_str,
                             "vol_regime": vr, "trend_regime": tr,
                         })
+                        if REALISTIC_SIGNAL:
+                            _RECENT_OUTCOMES[pair_p].append((dt, "WIN" if pnl > 0 else "LOSS"))
+                            del _RECENT_OUTCOMES[pair_p][:-5]
                         regime_stats[(vr, tr)]["trades"] += 1
                         regime_stats[(vr, tr)]["wins"] += int(pnl > 0)
                         regime_stats[(vr, tr)]["pnl"] += pnl
@@ -924,7 +950,9 @@ if True:
         _real_entry = _real_sl = _real_tp = None
         if REALISTIC_SIGNAL:
             _w200 = df1.iloc[max(0, idx - 200):idx + 1]
-            _rs = real_signal(_w200, pair, dt, daily_pnl.get(day_str, 0.0), CAPITAL, open_pos)
+            _month_prefix = day_str[:7]
+            _month_pnl = sum(v for k, v in daily_pnl.items() if k.startswith(_month_prefix))
+            _rs = real_signal(_w200, pair, dt, daily_pnl.get(day_str, 0.0), CAPITAL, open_pos, _month_pnl)
             if _rs is None: continue
             sig, _real_entry, _real_sl, _real_tp, score = _rs
         else:

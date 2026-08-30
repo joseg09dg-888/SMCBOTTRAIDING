@@ -1498,3 +1498,33 @@ distintas ventanas de tiempo (los ~5 meses extra que entran en 15k vs
 12k parecen haber sido un periodo mas dificil) -- no asumir que "mas
 historia = mejor" de forma lineal, es ruido de muestra normal. 12,000
 barras sigue siendo el mejor resultado confirmado hasta ahora.
+
+**MAX_OPEN=24 sobre 12k**: idéntico a MAX_OPEN=16 (143 trades, 51%,
+Sharpe 1.42) -- el motor real rara vez tiene tantas señales simultáneas,
+MAX_OPEN dejó de ser un lever relevante bajo el motor real.
+
+**Pieza real faltante encontrada y corregida: `MIN_RR=4.5`**
+(`core/supervisor.py:116`) -- el TP real se ajusta para garantizar RR≥4.5
+si el snap-a-swing lo deja corto; esto no estaba portado. Al agregarlo,
+sobre los mismos 12,000 barras: **726 trades (vs 143), WR=49.3%,
+E[mensual]=$7,910, P(pass)=71%, Sharpe=1.51.** Salto grande y coherente
+con la causa real (el `risk_score` premia RR≥3.0 con +9pts; sin el piso,
+muchos trades no llegaban a ese bonus y se quedaban bajo el umbral de
+score 80). **CONFIRMADO en ventana distinta (8,000 barras)**: 492 trades, WR=49.2%,
+E[mensual]=$7,723, **P(pass)=69%, Sharpe=1.43** -- consistente con 12k
+(71%/1.51), a diferencia de la varianza vista antes del fix de MIN_RR.
+Con el motor 100% real (estructura+BOS/CHoCH+OrderBlocks+FVG+premium/
+descuento+score DecisionFilter+multiplicador 8D+MIN_RR real), el
+resultado converge de forma estable en **P(pass)≈69-71%, Sharpe≈1.4-1.5,
+WR≈49%.** Verificado en dos ventanas de tiempo distintas. Reportado al
+usuario.
+
+**Combinado con riesgo adaptativo escalado 1.5x (ya aplicado en vivo)**:
+723 trades, P(pass)=68% (levemente peor), Sharpe=1.35 (peor), pero
+P(mes<-5%)=1% (mucho más bajo riesgo de cola). Neutral/ligeramente
+negativo para P(pass) bajo el motor real -- no aporta como sí lo hacía
+bajo el modelo simplificado. **Config final recomendada: motor real SIN
+el escalado de riesgo adicional** (69-71%/Sharpe 1.4-1.5 es mejor
+punto). El escalado de riesgo ($150/$300/$600) ya aplicado en vivo
+puede mantenerse o revertirse -- efecto marginal/mixto bajo el motor
+real, no es indispensable.
