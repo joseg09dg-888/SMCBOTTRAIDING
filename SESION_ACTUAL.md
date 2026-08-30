@@ -1207,6 +1207,26 @@ descartado; relanzado con datos completos) dio 80.7%/$22,754/Sharpe 1.116
 también está agotado como lever en esta base. 80.6-80.7% es el techo real
 confirmado por segunda vez con evidencia sólida.**
 
+**Guards de tiempo (STAGNANT_HOURS=8, MAX_HOLD=48) también probados**:
+resultado IDÉNTICO al default (80.6% exacto, mismo Sharpe). Confirma que
+tampoco es un lever disponible.
+
+## VEREDICTO FINAL: 80.6-80.7% es el techo real y verificado
+
+Se probaron y agotaron todos los parámetros razonables de bajo riesgo
+disponibles en el motor: MAX_OPEN (2→24), horas activas, RR (2→6),
+trailing-to-BE (0.5→1.5R), riesgo adaptativo (1.0x→2.0x), threshold
+(70→85), boost por par (4 pares probados individualmente), guards de
+tiempo, filtro de correlación, fórmula de SL, partial-close real. Cada
+uno con 16 años de datos MT5 reales y evidencia empírica. El resultado
+converge de forma consistente y repetida en **80.6-80.7%**, no en 90-95%.
+
+**No es falta de esfuerzo ni de tiempo -- es el techo real de lo que este
+motor de señales SMC/BOS/CHoCH puede lograr con tuning de parámetros.**
+Subir más allá requeriría cambiar el motor de señales mismo (features
+nuevas, modelar spread/slippage real, timeframes adicionales) -- un
+desarrollo distinto, no más backtesting del código actual.
+
 ---
 
 ## 🏁🏁 INFORME FINAL DE LA SESIÓN (2026-08-28 a 2026-08-30)
