@@ -1,5 +1,5 @@
 {
-  "date": "2026-08-31T01:12:10.598371",
+  "date": "2026-08-31T01:30:24.318312",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -17,157 +17,157 @@
     ]
   },
   "stats": {
-    "total_trades": 28444,
-    "total_days": 4124,
+    "total_trades": 28448,
+    "total_days": 4132,
     "total_trading_days_real": 4181,
-    "trade_frequency_pct": 98.64,
-    "wr_pct_final_only": 13.5,
-    "wr_pct_real": 36.9,
-    "avg_daily": 215.0,
-    "p_day_250": 36.5,
-    "p_pass_axi": 46.4,
-    "e_monthly": 4662.81,
-    "sharpe": 0.487,
+    "trade_frequency_pct": 98.83,
+    "wr_pct_final_only": 25.8,
+    "wr_pct_real": 36.2,
+    "avg_daily": 56.13,
+    "p_day_250": 35.7,
+    "p_pass_axi": 29.6,
+    "e_monthly": 1216.71,
+    "sharpe": 0.17,
     "best_hours": [
+      15,
       20,
       21,
       16,
-      15,
       22
     ]
   },
   "year_stats": {
     "2010": {
       "trades": 683,
-      "wr_pct": 39.7,
-      "pnl": 39001.81
+      "wr_pct": 38.8,
+      "pnl": 16063.51
     },
     "2011": {
       "trades": 1763,
-      "wr_pct": 38.0,
-      "pnl": 20835.49
+      "wr_pct": 36.6,
+      "pnl": -15654.95
     },
     "2012": {
-      "trades": 1693,
-      "wr_pct": 38.5,
-      "pnl": 95620.95
+      "trades": 1694,
+      "wr_pct": 37.5,
+      "pnl": 46904.41
     },
     "2013": {
-      "trades": 1625,
-      "wr_pct": 34.0,
-      "pnl": 21940.83
+      "trades": 1624,
+      "wr_pct": 33.3,
+      "pnl": -18572.74
     },
     "2014": {
       "trades": 1528,
-      "wr_pct": 35.8,
-      "pnl": 43411.7
+      "wr_pct": 34.8,
+      "pnl": 56.61
     },
     "2015": {
-      "trades": 1752,
-      "wr_pct": 39.7,
-      "pnl": 98589.89
+      "trades": 1753,
+      "wr_pct": 38.0,
+      "pnl": 25522.78
     },
     "2016": {
-      "trades": 1825,
-      "wr_pct": 38.2,
-      "pnl": 55464.69
+      "trades": 1824,
+      "wr_pct": 38.4,
+      "pnl": 38546.82
     },
     "2017": {
       "trades": 1764,
-      "wr_pct": 35.5,
-      "pnl": 34626.57
+      "wr_pct": 34.2,
+      "pnl": -2012.26
     },
     "2018": {
       "trades": 1752,
-      "wr_pct": 36.2,
-      "pnl": 52067.15
+      "wr_pct": 35.5,
+      "pnl": -4963.43
     },
     "2019": {
-      "trades": 1732,
-      "wr_pct": 35.6,
-      "pnl": 27329.78
+      "trades": 1733,
+      "wr_pct": 35.7,
+      "pnl": 16207.08
     },
     "2020": {
       "trades": 1829,
-      "wr_pct": 37.7,
-      "pnl": 26384.84
+      "wr_pct": 36.9,
+      "pnl": 5486.09
     },
     "2021": {
       "trades": 1772,
-      "wr_pct": 36.4,
-      "pnl": 41028.15
+      "wr_pct": 36.3,
+      "pnl": 16938.88
     },
     "2022": {
       "trades": 1709,
-      "wr_pct": 42.2,
-      "pnl": 155353.31
+      "wr_pct": 40.7,
+      "pnl": 87824.46
     },
     "2023": {
       "trades": 1958,
-      "wr_pct": 36.6,
-      "pnl": 67190.54
+      "wr_pct": 35.5,
+      "pnl": 15460.48
     },
     "2024": {
-      "trades": 1913,
-      "wr_pct": 35.0,
-      "pnl": 41851.22
+      "trades": 1914,
+      "wr_pct": 33.5,
+      "pnl": -12964.72
     },
     "2025": {
-      "trades": 1863,
-      "wr_pct": 34.4,
-      "pnl": 28619.91
+      "trades": 1865,
+      "wr_pct": 34.5,
+      "pnl": 1940.84
     },
     "2026": {
       "trades": 1283,
-      "wr_pct": 35.5,
-      "pnl": 37356.66
+      "wr_pct": 36.1,
+      "pnl": 15165.89
     }
   },
   "regime_stats": {
     "HIGH_STRONG_TREND": {
-      "trades": 7887,
-      "wr_pct": 44.0,
-      "avg_pnl": 127.06
+      "trades": 7598,
+      "wr_pct": 40.8,
+      "avg_pnl": 43.27
     },
     "NORMAL_CHOPPY": {
-      "trades": 2487,
-      "wr_pct": 21.6,
-      "avg_pnl": -144.26
+      "trades": 2458,
+      "wr_pct": 23.1,
+      "avg_pnl": -99.94
     },
     "NORMAL_STRONG_TREND": {
-      "trades": 6838,
-      "wr_pct": 41.6,
-      "avg_pnl": 82.42
+      "trades": 6867,
+      "wr_pct": 40.6,
+      "avg_pnl": 50.25
     },
     "HIGH_CHOPPY": {
-      "trades": 1657,
-      "wr_pct": 24.3,
-      "avg_pnl": -111.04
+      "trades": 1609,
+      "wr_pct": 24.4,
+      "avg_pnl": -91.78
     },
     "LOW_STRONG_TREND": {
-      "trades": 1870,
-      "wr_pct": 40.9,
-      "avg_pnl": 53.35
+      "trades": 1951,
+      "wr_pct": 41.2,
+      "avg_pnl": 52.6
     },
     "NORMAL_MILD_TREND": {
-      "trades": 2029,
-      "wr_pct": 38.0,
-      "avg_pnl": 55.51
+      "trades": 2086,
+      "wr_pct": 38.2,
+      "avg_pnl": 29.36
     },
     "LOW_MILD_TREND": {
-      "trades": 3605,
-      "wr_pct": 33.2,
-      "avg_pnl": -25.7
+      "trades": 3816,
+      "wr_pct": 34.6,
+      "avg_pnl": -8.21
     },
     "LOW_CHOPPY": {
-      "trades": 1830,
-      "wr_pct": 21.8,
-      "avg_pnl": -161.35
+      "trades": 1833,
+      "wr_pct": 23.1,
+      "avg_pnl": -106.99
     },
     "HIGH_MILD_TREND": {
-      "trades": 241,
-      "wr_pct": 46.5,
-      "avg_pnl": 162.78
+      "trades": 230,
+      "wr_pct": 42.2,
+      "avg_pnl": 65.15
     }
   }
 }
