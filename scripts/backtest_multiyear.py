@@ -155,6 +155,23 @@ SL_CAP_PIPS   = {"EURUSD": 40, "GBPUSD": 40, "USDCAD": 40,
                   "EURAUD": 45, "GBPCAD": 50}
 SL_FLOOR_PIPS = {"GBPCAD": 25}  # resto = 20 (default)
 
+# 2026-08-30 (noche 2): NINGUNA corrida de esta sesion (ni SMC ni breakout)
+# modelo jamas el costo de spread/slippage real -- omision conocida en todo
+# el script desde su creacion. Se vuelve critica ahora que el motor breakout
+# opera con mucha mas frecuencia (N chico = miles de entradas extra) --
+# verificar cuanto edge sobrevive con un spread tipico realista antes de
+# confiar en un resultado que depende de frecuencia extrema.
+ENABLE_SPREAD_COST = os.environ.get("ENABLE_SPREAD_COST", "0") == "1"
+SPREAD_PIPS = {"EURUSD": 0.8, "GBPUSD": 1.2, "AUDUSD": 1.0, "USDCAD": 1.5,
+               "NZDUSD": 1.5, "USDCHF": 1.5, "EURAUD": 2.5, "GBPCAD": 3.5,
+               "NAS100": 1.5}
+
+
+def _spread_cost(pair, vol):
+    if not ENABLE_SPREAD_COST or vol <= 0:
+        return 0.0
+    return vol * SPREAD_PIPS.get(pair, 2.0) * PIP_VAL.get(pair, 10.0)
+
 rng = np.random.default_rng(42)
 
 # Toggles para aislar el efecto de cada filtro nuevo 2026-07-09 (diagnostico
@@ -932,6 +949,7 @@ if True:
                     pnl = vol_p * cur_tp_dist * pip_v / PIP_SZ[pair_p]
 
             if pnl is not None:
+                pnl -= _spread_cost(pair_p, vol_p)
                 if pnl != 0.0:
                     daily_pnl[day_str] += pnl
                     vr = vol_regime(df1, idx)
@@ -1001,6 +1019,7 @@ if True:
                     close_type = "time_close"
 
                 if close_type is not None:
+                    pnl -= _spread_cost(pair_p, vol_p)
                     if pnl != 0.0:
                         daily_pnl[day_str] += pnl
                         vr = vol_regime(df1, idx)
