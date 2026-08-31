@@ -1458,7 +1458,28 @@ if len(daily_vals) >= 20:
             "e_monthly": round(float(e_monthly), 2),
             "sharpe": round(float(sharpe), 3),
             "best_hours": best_hours[:5],
-        }
+        },
+        # 2026-08-30: por-año/régimen -- para investigar si una ventana
+        # reciente (ej. 2024-2026) tiene un edge real distinto al resto
+        # del histórico, sin tener que rehacer el run para leer la consola.
+        "year_stats": {
+            yr: {
+                "trades": st["trades"],
+                "wr_pct": round(st["wins"] / st["trades"] * 100, 1),
+                "pnl": round(st["pnl"], 2),
+            }
+            for yr, st in sorted(year_stats.items())
+            if st["trades"] >= 5
+        },
+        "regime_stats": {
+            f"{vr}_{tr}": {
+                "trades": st["trades"],
+                "wr_pct": round(st["wins"] / st["trades"] * 100, 1),
+                "avg_pnl": round(st["pnl"] / st["trades"], 2),
+            }
+            for (vr, tr), st in regime_stats.items()
+            if st["trades"] >= 5
+        },
     }
     _out_path = f"memory/backtest_results_maxopen{MAX_OPEN_TEST}.json" if MAX_OPEN_TEST != 2 else "memory/backtest_results.json"
     with open(_out_path, "w") as f:
