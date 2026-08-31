@@ -1226,7 +1226,7 @@ if True:
         pip_s = PIP_SZ[pair]
         sl_pips = sl_dist_p / pip_s
         if sl_pips <= 0: continue
-        vol = min(2.0, (CAPITAL * r_pct) / (sl_pips * pip_v))
+        vol = min(float(os.environ.get("VOL_CAP_TEST", "2.0") or 2.0), (CAPITAL * r_pct) / (sl_pips * pip_v))
         actual_risk = vol * sl_pips * pip_v
         if actual_risk > max_r:
             vol = max_r / (sl_pips * pip_v)
