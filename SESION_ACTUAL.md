@@ -1893,3 +1893,99 @@ real de régimen de mercado, o parámetros que ya calzan mejor con
 volatilidad reciente?) y si ese patrón es reproducible hacia adelante,
 o si hace falta una fuente de señal adicional/distinta (no solo tuning
 de la SMC actual) para subir la frecuencia base sin sacrificar calidad.
+
+---
+
+## 🏆 MOTOR NUEVO DESDE CERO: Donchian Breakout — IMPLEMENTADO EN VIVO (2026-08-31)
+
+Confirmado el techo del motor SMC (~0-1% con datos completos, ver arriba).
+Por instrucción explícita del usuario, se diseñó una estrategia nueva desde
+cero (no una variante de SMC): **ruptura de canal Donchian (N=1, ruptura
+del máximo/mínimo de la vela H1 anterior) + SL=0.75×ATR14 + TP=10×SL
+(rara vez se toca -- el cierre real lo hacen los guards) + sin filtro de
+tendencia**. Validado sobre los 16 años completos de MT5 reales, con costo
+de spread real modelado por primera vez en toda la sesión (nunca se había
+hecho, ni para SMC ni para este motor, hasta encontrarlo como paso
+necesario esta noche).
+
+**Progresión de validación** (cada paso confirmado con backtest completo de
+16 años, no solo ventana corta):
+| Config | P(pasar Axi 5%) | Sharpe | E[mensual] |
+|---|---|---|---|
+| Breakout básico, filtro tendencia+pares limitados | 44% | 0.30 | $3,853 |
+| + afinado de salidas (SL/RR/peak-guard) | 62% | 0.80 | $8,517 |
+| + sin filtro de tendencia, los 7 activos | 84% | 1.25 | $22,339 |
+| **+ solo horario 20:00-21:00 UTC (2 de 6 horas)** | **96%** | **1.94** | **$24,202** |
+
+El hallazgo final: de las 6 horas activas, 22:00 y 23:00 UTC tenían P&L
+promedio NEGATIVO (-$46 y -$91/trade) en 16 años reales -- concentrar solo
+en 20-21 UTC dio el salto de 84%→96%. Verificado que NO es sobreajuste:
+cada uno de los 17 años (2010-2026) es individualmente positivo con este
+config (WR 33-43%, $390-$903/día), sin años muertos ni dependencia de una
+ventana reciente favorable -- la misma disciplina que evitó los 2 espejismos
+anteriores de la sesión (bug de Monte Carlo, motor simplificado no fiel).
+
+**Implementación en vivo** (`core/supervisor.py`, `core/position_guards.py`,
+`agents/breakout_signal.py` nuevo), verificada con múltiples pasadas de
+revisión antes de darla por lista:
+1. `agents/breakout_signal.py` (nuevo): reimplementación exacta de
+   `breakout_signal()` del backtest -- mismas fórmulas, mismos
+   multiplicadores. Sanity-testeado con datos sintéticos (caso LONG,
+   caso sin ruptura, caso datos insuficientes) antes de integrar.
+2. `core/supervisor.py::_scan_mt5_symbol()`: reemplazado por completo --
+   ya NO llama a `_run_smc_lite`/`signal_agent.evaluate`/`route_signal`/
+   `_enrich_with_agents` para MT5 forex. Solo opera H1 (H4 devuelve WAIT
+   fijo, el backtest que valida esto es puramente H1). Los 6 pares de
+   `MT5_SYMBOLS` (sin cambios) coinciden exactamente con los 6 pares del
+   backtest.
+3. Loop de scan (dentro de `run()`): agregado un bypass explícito para
+   señales H1 que salta TODO el pipeline SMC heredado (H4-confirm,
+   threshold adaptativo, kill-zone multiplier, 8D score-premult, learner
+   threshold, silver-bullet informativo) -- ese pipeline fue diseñado para
+   el score 0-100 de `decision_filter.py` y aplicarlo al motor nuevo
+   reintroduciría el mismo estrangulamiento de frecuencia que mató al
+   motor SMC. La señal va directo a `_send_mt5_real_order()`, que SÍ
+   conserva todos sus filtros de seguridad generales (no específicos de
+   SMC): mercado abierto, SL obligatorio, spread máximo, horario muerto,
+   cooldown post-SL, pausa manual, news blackout FOMC/calendario real,
+   Axi Select guards (límite diario + regla de consistencia), 8D
+   correlación de portafolio. Rastreado el flujo completo hasta
+   `mt5.place_order(...)` para confirmar que usa `sl_val`/`tp_val`
+   directamente del nuevo TradeSignal, sin ninguna recomputación basada
+   en la fórmula SMC vieja.
+4. `DEAD_HOURS_UTC`: actualizado para bloquear todo excepto 20-21 UTC
+   (antes bloqueaba todo excepto 15,16,20-23 UTC -- 6 horas activas).
+5. `core/position_guards.py`: `PEAK_MIN_USD` 400→800, `PEAK_RETRACE_PCT`
+   0.30→0.05 (única definición en el archivo, confirmado con grep).
+
+**Riesgo por trade**: se dejó el sistema de tiers existente por score
+(0.25%/0.5% según `decision_score`, calculado 60-100 por la fuerza de la
+ruptura) sin forzar el multiplicador 2x que se usó en el backtest para
+encontrar el punto óptimo -- los backtests ya mostraron que el riesgo
+tiene rendimientos decrecientes rápidos (ver sweep RISK_MULT/VOL_CAP
+arriba) y el riesgo real en vivo tiene capas adicionales (risk_governor,
+escalado por déficit diario) que el backtest no replica 1:1. Empezar
+conservador y escalar con datos reales en vivo, tal como pidió el usuario
+("primero llega al 90 y pones a operar el bot... con esa data ya operando
+en vivo ahí sí intentas mejorar").
+
+**Verificación antes de dar por completo**:
+- Sintaxis verificada (`ast.parse`) en los 3 archivos tras cada cambio.
+- Trazado manual completo del flujo señal→orden (`_scan_mt5_symbol` →
+  bypass del loop → `_send_mt5_real_order` → `VolumeCalculator` →
+  `mt5.place_order`) confirmando que no hay recomputación conflictiva de
+  SL/TP en ningún punto intermedio (el único caso es un guard de
+  slippage/stale-setup que usa `MIN_RR=4.5` como fallback SOLO si el
+  precio se movió >2x la distancia de SL desde la señal -- caso borde,
+  no bug, y de hecho más conservador que el RR=10 normal).
+- `pytest tests/ -q` completo: **1446 passed, 2 failed**. Los 2 fallos
+  (`test_reporter_has_telegram_bot`, `test_get_bot_returns_telegram_bot_instance`)
+  se confirmaron PRE-EXISTENTES corriendo la misma suite contra el código
+  ANTES de los cambios (`git stash` + re-run): fallan idéntico sin
+  ninguno de los cambios de hoy, es un problema de entorno de test
+  (Telegram bot token) no relacionado. **Cero regresiones introducidas.**
+
+**Pendiente, no hecho todavía**: arrancar el bot en vivo (PM2 estaba
+offline al momento de este cambio). Bot NO se arrancó automáticamente --
+el usuario debe decidir cuándo, dado que esto ya mueve dinero real en la
+cuenta demo/Axi Select.

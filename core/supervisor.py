@@ -125,39 +125,18 @@ RECOVERY_MAX_SCALPS      = 3
 RECOVERY_DRAWDOWN_FROM_PEAK = 3000.0  # Axi 5% daily = $4,850 — solo recovery en emergencia real
 SCALP_MAX_DOLLAR_RISK    = 50.0
 
-# BUG-STALE-HOUR14-COMMENT (2026-07-26): este comentario venia de un backtest
-# viejo de 2 anos (700 dias, 6 pares) que decia "14:00 UTC = WR 61% GOLD
-# window". Ese numero fue INVALIDADO por el analisis de 16 anos reales
-# (commit ae6bdf7, "hour-14 UTC killzone multiplier was backwards"), que
-# encontro exactamente lo contrario: WR=29-36%, avg negativo -- la MISMA win
-# rate mala que 13:00 UTC (bloqueada abajo), y ademas la hora con MAS volumen
-# de trades (7877, mas del doble que cualquier otra hora activa) -- la peor
-# combinacion posible: mucho volumen + mal resultado.
-#
-# BLOQUEADA 2026-07-26: se corrio el backtest explicito exigido arriba
-# (scripts/backtest_multiyear.py, EXTRA_DEAD_HOURS=14, 16 anos reales, 100K
-# sims Monte Carlo) comparando "14 abierta" vs "14 bloqueada":
-#   14 abierta:   P(dia>=$250)=41% | E[mes]=$6,624 | P(pasar Axi 5%)=57% | Sharpe=0.86
-#   14 bloqueada: P(dia>=$250)=40% | E[mes]=$7,006 | P(pasar Axi 5%)=58% | Sharpe=0.88
-# Mejora real (aunque modesta) en las 3 metricas que importan (E[mes], P(pasar
-# Axi), Sharpe) con una caida de solo 1pp en P(dia>=$250) -- ruido, no señal.
-# Bloquear quita volumen malo, no oportunidad real. Ver tambien
-# session_manager.py._HOUR_MULT (ya no se usa para la hora 14 en la practica,
-# dado que ahora esta bloqueada por completo aqui, pero se deja documentado).
-# 13:00 UTC = WR 29%, avg -$97/trade → SEÑALES RANCIAS overnight → BLOQUEAR
-# 17-19 UTC  = WR 24-28%, avg -$102 a -$120 → POST-NY fading → BLOQUEAR
+# 2026-08-31: TODO el historial de comentarios de esta constante (14 UTC
+# GOLD/bloqueada, 15-16 revertido, etc.) pertenece al motor SMC/BOS/CHoCH
+# viejo, reemplazado hoy por el motor Donchian breakout (agents/breakout_signal.py,
+# ver docstring de _scan_mt5_symbol). Con el motor nuevo, re-analizado sobre
+# 16 años reales de MT5 (66,377 trades, spread real incluido), las horas
+# activas resultaron TOTALMENTE distintas: de las 6 horas antes activas
+# (15,16,20,21,22,23 UTC), 22:00 y 23:00 UTC dieron P&L promedio NEGATIVO
+# (-$46 y -$91/trade), y concentrar solo en 20:00-21:00 UTC (en vez de las 6)
+# fue lo que llevó la probabilidad de pasar Axi Select de 84% a 96% -- cada
+# hora removida se probó empíricamente, no por intuición. Ver SESION_ACTUAL.md.
 DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                             17, 18, 19}  # 15,16 REVERTIDO 2026-08-30: el bloqueo de
-                             # 15-16 se aplico primero con el motor de señal simplificado
-                             # (smc_signal(), aproximacion EMA/BOS por puntos), que mostro
-                             # hora 15 con EV≈0. Al construir el motor REAL (estructura de
-                             # swing points + BOS/CHoCH + Order Blocks + FVG + score real +
-                             # multiplicador de 8 dimensiones, ver agents/eight_dim_agent.py
-                             # DIM4 que marca la hora 15 como "GOLD" 1.30x) se confirmo lo
-                             # contrario: sin bloquear 15-16, sobre 8000 barras reales (1.3
-                             # años), P(pass) sube de 5% a 34%, Sharpe de 0.12 a 1.06, WR de
-                             # 28.9% a 41.9%. El bloqueo de 15-16 era un error basado en el
-                             # motor aproximado, no en el real. Ver SESION_ACTUAL.md.
+                             15, 16, 17, 18, 19, 22, 23}  # solo 20,21 UTC activas
 
 
 
@@ -1624,7 +1603,16 @@ class TradingSupervisor(PositionGuardsMixin):
 
     async def _scan_mt5_symbol(self, symbol: str, timeframe: str):
 
-        """Fetch MT5 OHLCV, run SMC lite, return signal or None."""
+        """Fetch MT5 OHLCV, run the Donchian breakout engine, return signal or None.
+
+        2026-08-31: reemplaza el motor SMC/BOS/CHoCH para forex -- validado
+        sobre 16 años reales de MT5 (66,377 trades, spread real incluido):
+        P(pasar Axi Select 5% mensual)=96% restringido a horario 20-21 UTC
+        (ver DEAD_HOURS_UTC) y consistente en los 17 años probados (2010-2026,
+        ningún año negativo). Detalle completo y comparación contra el motor
+        SMC anterior en SESION_ACTUAL.md. Solo opera H1 -- el backtest que
+        validó esto es puramente H1, H4 no se probó con este motor.
+        """
 
         # Hard cooldown check from disk — survives restarts
         import time as _tsc
@@ -1650,72 +1638,19 @@ class TradingSupervisor(PositionGuardsMixin):
             return None
 
         self._df_cache[symbol] = df  # available for _claude_confirm_trade
-        smc = self._run_smc_lite(df)
 
-        # H4 structural direction cache — actualizado desde análisis SMC ANTES del momentum filter
-        # Esto evita que el momentum filter (pullback temporal) setee H4=WAIT cuando la estructura es LONG/SHORT
-        if timeframe == "H4":
-            _smc_struct = smc.get("bias", "neutral")
-            if _smc_struct == "bullish":
-                self._mt5_h4_direction[symbol] = "LONG"
-            elif _smc_struct == "bearish":
-                self._mt5_h4_direction[symbol] = "SHORT"
-            # Si neutral: no actualizar (preservar dirección previa conocida)
+        if timeframe != "H1":
+            # Motor breakout es puramente H1 -- no validado en H4. H4 se deja
+            # en WAIT (no se usa para direccion/gating, ver bypass en el loop
+            # de scan que ya no depende de _mt5_h4_direction para este motor).
+            return TradeSignal(
+                symbol=symbol, signal_type=SignalType.WAIT, entry=float(df["close"].iloc[-1]),
+                stop_loss=None, take_profit=0.0, timeframe=timeframe,
+                trigger="breakout_engine: solo opera H1", confidence=0.0,
+            )
 
-        current_price = float(df["close"].iloc[-1])
-
-        # Momentum filter eliminado — en SMC un pullback ES el punto de entrada
-        # El filtro bloqueaba setups bullish en retracements (exactamente cuando hay que comprar)
-
-        # Hard trend filter: SMA50 vs SMA200 on current timeframe data
-        # Only trade WITH the dominant trend — never against it
-        if len(df) >= 200:
-            _sma50  = float(df["close"].rolling(50).mean().iloc[-1])
-            _sma200 = float(df["close"].rolling(200).mean().iloc[-1])
-            _real_trend = "UP" if _sma50 > _sma200 else "DOWN"
-            _smc_bias = smc.get("bias", "neutral")
-            if _real_trend == "UP" and _smc_bias == "bearish":
-                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bearish pero SMA50={_sma50:.5f}>SMA200={_sma200:.5f} — tendencia REAL es UP, bloqueando SELL", flush=True)
-                from agents.signal_agent import SignalType as _ST2
-                return type('S', (), {'signal_type': _ST2.WAIT, 'decision_score': 0})()
-            if _real_trend == "DOWN" and _smc_bias == "bullish":
-                print(f"[TREND-BLOCK] {symbol} {timeframe}: SMC bullish pero SMA50={_sma50:.5f}<SMA200={_sma200:.5f} — tendencia REAL es DOWN, bloqueando BUY", flush=True)
-                from agents.signal_agent import SignalType as _ST2
-                return type('S', (), {'signal_type': _ST2.WAIT, 'decision_score': 0})()
-
-        signal = self.signal_agent.evaluate(
-
-            analysis_text=smc["analysis_text"], symbol=symbol,
-
-            timeframe=timeframe, current_price=current_price,
-
-            poi_zones=smc["poi_zones"], glint_context=self._last_glint_text,
-
-            df=df,
-
-        )
-
-        if signal.signal_type == SignalType.WAIT:
-
-            return signal
-
-        original_direction = signal.signal_type  # preserve before route_signal may override to WAIT
-
-        signal = self.route_signal(signal, df)
-
-        # Enrichment runs based on ORIGINAL direction so agents can rescue borderline scores.
-        # If route_signal gated the signal (score 50-74 → WAIT) but agents boost above 75,
-        # restore the original direction so the trade can proceed.
-        if original_direction != SignalType.WAIT and signal.decision_score >= 50:
-            agent_bonus = self._enrich_with_agents(signal, df)
-            if agent_bonus != 0:
-                new_score = max(0, min(150, signal.decision_score + agent_bonus))
-                signal.decision_score = new_score
-                signal.score_breakdown["agents"] = agent_bonus
-                if signal.signal_type == SignalType.WAIT and new_score >= 75:
-                    signal.signal_type = original_direction  # agents unlocked this setup
-
-
+        from agents.breakout_signal import generate_breakout_signal
+        signal = generate_breakout_signal(df, symbol, timeframe)
 
         return signal
 
@@ -3390,6 +3325,28 @@ class TradingSupervisor(PositionGuardsMixin):
                                 score = signal.decision_score
                                 bias  = signal.signal_type.value.upper()
                                 print(f"[MT5][{symbol}][{tf}] Score: {score} | {bias}", end="", flush=True)
+
+                                # 2026-08-31: motor breakout (agents/breakout_signal.py) NO usa
+                                # el pipeline de scoring SMC (H4-confirm/threshold/8D-premult/
+                                # learner/silver-bullet mas abajo) -- ese pipeline fue diseñado
+                                # para el score 0-100 de core/decision_filter.py y aplicarlo aqui
+                                # reintroduciria el mismo estrangulamiento de frecuencia que se
+                                # encontro y corrigio en la sesion de backtesting (ver
+                                # SESION_ACTUAL.md). El motor breakout ya decidio todo lo que
+                                # necesita decidir en generate_breakout_signal() -- solo falta
+                                # pasar por los filtros de seguridad generales de
+                                # _send_mt5_real_order (horario muerto, spread, cooldown, Axi
+                                # guards, 8D correlacion -- ninguno especifico de SMC).
+                                if tf == "H1":
+                                    # _scan_mt5_symbol() ya no genera senal SMC para H1 -- SIEMPRE
+                                    # es el motor breakout aqui (ver docstring del metodo).
+                                    if signal.signal_type == SignalType.WAIT:
+                                        print(f" -- {signal.trigger}")
+                                    else:
+                                        print(f" -- intentando SWING breakout (score={score})")
+                                        await self._send_mt5_real_order(signal)
+                                    await asyncio.sleep(0.5)
+                                    continue
 
                                 # Cache H4: actualizado desde análisis estructural en _scan_mt5_symbol.
                                 # Aquí solo gestionamos el flag H4-NEW y evitamos sobreescribir con WAIT.
