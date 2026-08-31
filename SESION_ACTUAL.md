@@ -1848,3 +1848,48 @@ que en vivo (puede haber más margen ahí), y evaluar si 2 años de datos
 (ventana rápida) están sesgados vs los 16 años completos -- validar el
 mejor config encontrado corriendo la ventana completa antes de
 considerar aplicar nada al código en vivo.
+
+---
+
+## 🔴 VALIDACIÓN EN 16 AÑOS COMPLETOS — EL 11% NO SE SOSTIENE, ERA
+## SOBREAJUSTE A UNA VENTANA RECIENTE FAVORABLE
+
+Se corrió el mismo config ganador (`THR=80 REQUIRE_D1=0 REQUIRE_H4=0
+MAX_OPEN=16 RISK_MULT_TEST=2.0 EXCLUDE_PAIRS=EURUSD,USDCAD`) pero sobre
+los 16 años completos en vez de la ventana rápida de 2 años
+(`MT5_H1_MAX_BARS=99999`). Resultado:
+
+- **102 trades en 16 años** (vs 144 en solo ~2 años de la ventana
+  rápida -- la ventana rápida por sí sola casi igualaba el total de todo
+  el historial)
+- Frecuencia real: **1.7%** (vs 17.3% en la ventana rápida -- 10x menos)
+- E[mensual]: **$195** (vs $1,837 en la ventana rápida)
+- **P(pass Axi 5%): 1%** (vs 11% en la ventana rápida)
+- Sharpe: 0.23 (vs 0.77)
+
+**El progreso de 0%→11% NO se sostiene con el historial completo -- era
+sobreajuste a una ventana reciente (2024-2026) inusualmente favorable
+para este motor SMC, no una mejora estructural real.** La propia DIM1
+(por año) ya venía advirtiendo esto: "algunos años >60% WR, otros <30%"
+-- el Monte Carlo de 16 años diluye los años buenos recientes con años
+malos del resto del historial, y el resultado neto vuelve a estar cerca
+del 0-1% original.
+
+**Esto es un hallazgo honesto y necesario, no un fracaso oculto**: exactamente
+la misma disciplina de verificación que ya evitó reportar el 82% falso
+(bug de Monte Carlo) y el 77-78% falso (modelo simplificado) esta vez
+evitó reportar un 11% que tampoco era real a largo plazo. **Con el motor
+100% real y 16 años de datos, el resultado más honesto y validado
+sigue siendo ~0-1% de probabilidad de pasar Axi Select, no 90%, no 11%.**
+
+**Implicación estructural, no solo de parámetros**: los 3 levers que sí
+ayudaron en la ventana chica (risk mult, exclusión de pares, corrección
+de doble-filtro) actúan sobre la MISMA escasez de señales de fondo --
+ninguno soluciona que el motor solo genera ~100-165 señales de calidad
+en 16 años. Seguir ajustando parámetros sobre este mismo motor de señal
+tiene un techo real bajo. El camino que falta explorar, no aún intentado
+esta sesión: por qué la ventana 2024-2026 sí funciona tan bien (¿cambio
+real de régimen de mercado, o parámetros que ya calzan mejor con
+volatilidad reciente?) y si ese patrón es reproducible hacia adelante,
+o si hace falta una fuente de señal adicional/distinta (no solo tuning
+de la SMC actual) para subir la frecuencia base sin sacrificar calidad.
