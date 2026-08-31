@@ -56,6 +56,22 @@ if REALISTIC_SIGNAL:
     _ml_predictor_real = MLPredictor()
     _eight_dim_real = EightDimensionAgent()
 
+# 2026-08-30 (noche 2): motor de señal NUEVO desde cero, NO una variante mas
+# de SMC/BOS/CHoCH -- el diagnostico de esta sesion (real_signal(), 16 años)
+# confirmo que la ESCASEZ de señales (102-163 trades en 16 años, 1.7-2.4% de
+# frecuencia) es el cuello de botella real, no la calidad (WR~50-60%, avg
+# win > avg loss). Estrategia Donchian breakout + filtro de tendencia + ATR
+# SL/TP -- genera señales por definicion mucho mas seguido (cada ruptura de
+# canal de N periodos), probada y documentada (Turtle Trading) en vez de
+# requerir la rara confluencia FVG/OB-OTE/BOS-desplazamiento de SMC.
+STRATEGY_MODE = os.environ.get("STRATEGY_MODE", "REAL" if REALISTIC_SIGNAL else "SMC")
+DONCHIAN_N       = int(os.environ.get("DONCHIAN_N", "20"))
+ATR_MULT_SL_BO   = float(os.environ.get("ATR_MULT_SL_BO", "2.0"))
+RR_MULT_BO       = float(os.environ.get("RR_MULT_BO", "2.5"))
+TREND_FILTER_BO  = os.environ.get("TREND_FILTER_BO", "0") == "1"
+THR_BREAKOUT     = float(os.environ.get("THR_BREAKOUT", "0"))
+_EXTERNAL_ENTRY  = REALISTIC_SIGNAL or STRATEGY_MODE == "BREAKOUT"  # entry/sl/tp vienen ya calculados del motor de señal, no se recomputan mas abajo
+
 print("=" * 72)
 print("  BACKTEST MULTI-ANUAL — 8 DIMENSIONES")
 print("  H1: ~16 años (MT5 real) | D1: 10 años | Monte Carlo: 100,000 sims")
@@ -624,6 +640,62 @@ def real_signal(w, pair, dt, daily_pnl_so_far, capital, open_pos_list=None, dail
     return direction, float(entry), float(sl), float(tp), int(score)
 
 
+_BO_STATS = defaultdict(int)  # diagnostico de frecuencia, mismo patron que _RS_STATS
+
+
+def breakout_signal(w, pair, dt):
+    """Motor de señal NUEVO (no SMC): ruptura de canal Donchian de N periodos
+    + SL/TP por ATR real del par. Diseñado para resolver el problema de
+    ESCASEZ encontrado en real_signal() (1.7-2.4% de frecuencia real en 16
+    años) -- una ruptura de canal ocurre con mucha mas frecuencia que la
+    confluencia FVG/OB-OTE/BOS-desplazamiento que exige el motor SMC.
+    Devuelve (direction, entry, sl, tp, score) o None.
+    """
+    _BO_STATS["calls"] += 1
+    if len(w) < DONCHIAN_N + 210:
+        return None
+    highs = w["high"].values
+    lows = w["low"].values
+    close_now = float(w["close"].values[-1])
+    if close_now <= 0:
+        return None
+
+    d_high = float(highs[-DONCHIAN_N - 1:-1].max())
+    d_low = float(lows[-DONCHIAN_N - 1:-1].min())
+    direction = None
+    if close_now > d_high:
+        direction = "LONG"
+    elif close_now < d_low:
+        direction = "SHORT"
+    if direction is None:
+        return None
+    _BO_STATS["breakout"] += 1
+
+    if TREND_FILTER_BO:
+        c = w["close"]
+        e_fast = ema(c, 50).iloc[-1]
+        e_slow = ema(c, 200).iloc[-1]
+        if direction == "LONG" and not (e_fast > e_slow):
+            return None
+        if direction == "SHORT" and not (e_fast < e_slow):
+            return None
+        _BO_STATS["trend_ok"] += 1
+
+    atr_v = atr14(w).iloc[-1]
+    if pd.isna(atr_v) or atr_v <= 0:
+        return None
+    sl_dist = ATR_MULT_SL_BO * atr_v
+    entry = close_now
+    sl = entry - sl_dist if direction == "LONG" else entry + sl_dist
+    tp = entry + sl_dist * RR_MULT_BO if direction == "LONG" else entry - sl_dist * RR_MULT_BO
+
+    channel_ref = d_high if direction == "LONG" else d_low
+    strength = abs(close_now - channel_ref) / atr_v
+    score = int(min(100, 60 + strength * 40))
+    _BO_STATS["returned_signal"] += 1
+    return direction, float(entry), float(sl), float(tp), score
+
+
 def d1_trend(dfd, dt):
     s = dfd[dfd.index.date <= pd.Timestamp(dt).date()]
     if len(s) < 50: return "UNKNOWN"
@@ -966,7 +1038,12 @@ if True:
         # core/supervisor.py), which the old bias-baked-into-generation
         # design could never test.
         _real_entry = _real_sl = _real_tp = None
-        if REALISTIC_SIGNAL:
+        if STRATEGY_MODE == "BREAKOUT":
+            _wbo = df1.iloc[max(0, idx - (DONCHIAN_N + 210)):idx + 1]
+            _bo = breakout_signal(_wbo, pair, dt)
+            if _bo is None: continue
+            sig, _real_entry, _real_sl, _real_tp, score = _bo
+        elif REALISTIC_SIGNAL:
             _w200 = df1.iloc[max(0, idx - 200):idx + 1]
             _month_prefix = day_str[:7]
             _month_pnl = sum(v for k, v in daily_pnl.items() if k.startswith(_month_prefix))
@@ -1040,7 +1117,10 @@ if True:
         # Threshold — actualizado 2026-07-05: MT5_SCORE_AUTO_REDUCE real=80 (core/supervisor.py:96,
         # recalibrado 2026-07-01 tras el sweep que probo 90-95 y NO mejoraba WR, solo cortaba volumen).
         # MT5_REAL_SCORE_THRESHOLD=95 es solo techo de excepcion, no la operacion normal.
-        thr = float(os.environ.get("THR_CONFIRMED_TEST", "80")) if h4_d != "WAIT" else float(os.environ.get("THR_WAIT_TEST", "90"))
+        if STRATEGY_MODE == "BREAKOUT":
+            thr = THR_BREAKOUT  # motor nuevo -- score 60-100 por diseño, umbral propio (default 0 = sin filtro extra)
+        else:
+            thr = float(os.environ.get("THR_CONFIRMED_TEST", "80")) if h4_d != "WAIT" else float(os.environ.get("THR_WAIT_TEST", "90"))
         # 2026-08-29: parametrizado -- el sweep 2026-07-01 que fijo 80/90 como
         # optimo predata el descubrimiento de "solo tarde 20-23 UTC" de esta
         # sesion (RR=3.0, todas las horas). Con el conjunto de trades distinto
@@ -1103,9 +1183,9 @@ if True:
         # REALISTIC_SL=1 aplica la formula real completa (recomendado); si no,
         # se usa el multiplicador simple SL_ATR_MULT_TEST (modo exploratorio
         # anterior, sin cap/floor, se mantiene por compatibilidad).
-        if REALISTIC_SIGNAL:
-            # entry/sl/tp ya vienen del motor real (zona OB, SL capado/con piso,
-            # TP dinamico por confluencia + snap a swing) -- no recomputar.
+        if _EXTERNAL_ENTRY:
+            # entry/sl/tp ya vienen del motor de señal (real_signal() o
+            # breakout_signal()) -- no recomputar.
             entry = _real_entry
             sl_p = _real_sl
             tp_p = _real_tp
@@ -1135,7 +1215,7 @@ if True:
         actual_risk = vol * sl_pips * pip_v
         if actual_risk < 5: continue
 
-        if not REALISTIC_SIGNAL:
+        if not _EXTERNAL_ENTRY:
             entry = bar["close"]
             if sig == "LONG":
                 sl_p = entry - sl_dist_p
@@ -1148,6 +1228,8 @@ if True:
 
 if REALISTIC_SIGNAL:
     print(f"\n  [DIAGNOSTICO real_signal()] {dict(_RS_STATS)}")
+if STRATEGY_MODE == "BREAKOUT":
+    print(f"\n  [DIAGNOSTICO breakout_signal()] {dict(_BO_STATS)}")
 print(f"\n  Total trades (periodo completo H1): {len(trade_log)}")
 n_final = sum(1 for t in trade_log if t["type"] == "final")
 n_partial = sum(1 for t in trade_log if t["type"] == "partial")
@@ -1342,7 +1424,7 @@ print("  MONTE CARLO — 100,000 simulaciones con distribución empírica REAL")
 print("=" * 72)
 
 daily_vals = list(daily_pnl.values())
-if REALISTIC_SIGNAL:
+if _EXTERNAL_ENTRY:
     # 2026-08-30: fix critico -- daily_pnl solo tiene dias-con-trade;
     # reconstruye la serie diaria REAL completa (con ceros en los dias
     # sin operacion) para que el Monte Carlo re-muestree con la frecuencia
@@ -1445,8 +1527,8 @@ if len(daily_vals) >= 20:
         "stats": {
             "total_trades": len(trade_log),
             "total_days": n_days,
-            "total_trading_days_real": len(ALL_TRADING_DAYS) if REALISTIC_SIGNAL else None,
-            "trade_frequency_pct": round(len(daily_pnl) / max(1, len(ALL_TRADING_DAYS)) * 100, 2) if REALISTIC_SIGNAL else None,
+            "total_trading_days_real": len(ALL_TRADING_DAYS) if _EXTERNAL_ENTRY else None,
+            "trade_frequency_pct": round(len(daily_pnl) / max(1, len(ALL_TRADING_DAYS)) * 100, 2) if _EXTERNAL_ENTRY else None,
             # 2026-08-28: wr_pct_final_only = solo cierres TP/SL puro (22.9% de
             # los cierres reales) -- sesgado, ver DIMENSION 6 (Kelly) mas abajo
             # para el WR real sobre TODOS los cierres (incluye guardias).
