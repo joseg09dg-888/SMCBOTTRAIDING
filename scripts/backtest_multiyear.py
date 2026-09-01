@@ -176,16 +176,15 @@ SL_FLOOR_PIPS = {"GBPCAD": 25}  # resto = 20 (default)
 # verificar cuanto edge sobrevive con un spread tipico realista antes de
 # confiar en un resultado que depende de frecuencia extrema.
 ENABLE_SPREAD_COST = os.environ.get("ENABLE_SPREAD_COST", "0") == "1"
-# 2026-08-31: CORREGIDO -- los valores originales de abajo eran estimaciones
-# a ojo, nunca medidas. Al arrancar el bot en vivo (cuenta Axi Demo real) se
-# encontro que el spread real es 3-6x mas ancho que lo asumido aqui (medido
-# 2 veces via mt5.symbol_info().spread, consistente): EURUSD=2.5 (vs 0.8
-# asumido), USDCAD=4.9 (vs 1.5), NZDUSD=9.3 (vs 1.5), USDCHF=7.7 (vs 1.5),
-# EURAUD=9.8 (vs 2.5), GBPCAD=18.5 (vs 3.5). El resultado de 96% de la
-# sesion anterior corria con estos costos subestimados -- ver re-validacion
-# en SESION_ACTUAL.md con los valores reales de abajo.
-SPREAD_PIPS = {"EURUSD": 2.5, "GBPUSD": 3.0, "AUDUSD": 2.5, "USDCAD": 4.9,
-               "NZDUSD": 9.3, "USDCHF": 7.7, "EURAUD": 9.8, "GBPCAD": 18.5,
+# 2026-08-31 (2da correccion): los valores de abajo (2.5-18.5 pips) venian
+# de la cuenta DEMO (Axi-US50-Demo, tipo Standard). Al medir la cuenta REAL
+# de Axi Select (60290663, Axi-US51-Live, simbolos con sufijo .sa) los
+# spreads reales son 3-11x MAS CHICOS: EURUSD=0.8, USDCAD=1.0, NZDUSD=1.0,
+# USDCHF=1.0, EURAUD=1.4, GBPCAD=1.7 (medido 2026-08-31, mt5.symbol_info().spread
+# en vivo). GBPCAD en particular pasa de inviable (18.5 pips en demo) a
+# spread minimo -- se re-incluye para volver a probar. Ver SESION_ACTUAL.md.
+SPREAD_PIPS = {"EURUSD": 0.8, "GBPUSD": 1.0, "AUDUSD": 1.0, "USDCAD": 1.0,
+               "NZDUSD": 1.0, "USDCHF": 1.0, "EURAUD": 1.4, "GBPCAD": 1.7,
                "NAS100": 1.5}
 
 
