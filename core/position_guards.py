@@ -7,12 +7,12 @@ from core.supervisor_constants import (
     MT5_REAL_SCORE_THRESHOLD,
     MT5_SCORE_AUTO_REDUCE,
     MAX_OPEN_POSITIONS,
-    DAILY_PROFIT_TARGET,
+    DAILY_PROFIT_TARGET_PCT,
     INITIAL_CAPITAL,
     RECOVERY_SCALP_TP,
     RECOVERY_SCALP_SL,
-    RECOVERY_TRIGGER_LOSS,
-    ACCEL_TRIGGER_PROFIT,
+    RECOVERY_TRIGGER_LOSS_PCT,
+    ACCEL_TRIGGER_PROFIT_PCT,
     ACCEL_SCALP_TP,
     ACCEL_SCALP_SL,
     ACCEL_MAX_SCALPS,
@@ -191,9 +191,9 @@ class PositionGuardsMixin:
                 self._axi_tracker.record_day(self._daily_realized_pnl, capital=bal)
                 # Si el PnL REAL está bajo el target (ej: ganó $277 luego NAS100 -$212 → $65)
                 # el flag se resetea para que el bot pueda seguir operando y llegar a $250
-                if self._daily_target_hit and self._daily_realized_pnl < DAILY_PROFIT_TARGET:
+                if self._daily_target_hit and self._daily_realized_pnl < self.daily_profit_target:
                     self._daily_target_hit = False
-                    print(f"[META-RESET] PnL=${self._daily_realized_pnl:.2f} bajo meta $250 — bot puede operar swings", flush=True)
+                    print(f"[META-RESET] PnL=${self._daily_realized_pnl:.2f} bajo meta ${self.daily_profit_target:.0f} — bot puede operar swings", flush=True)
 
             # ── Swing profit target: cierra SWINGS cuando llegan a $245 juntos ──
             # Los scalps siguen corriendo para acumular más ganancia.
@@ -208,11 +208,11 @@ class PositionGuardsMixin:
 
             # META = realizados + flotantes >= $250 — el bot incluye lo ya ganado hoy
             _total_combined = self._daily_realized_pnl + swing_float
-            if not self._daily_target_hit and _total_combined >= DAILY_PROFIT_TARGET:
+            if not self._daily_target_hit and _total_combined >= self.daily_profit_target:
                 self._daily_target_hit = True
                 print(
                     f"[META-SWING] realizado=${self._daily_realized_pnl:.2f} + float=${swing_float:.2f}"
-                    f" = ${_total_combined:.2f} >= ${DAILY_PROFIT_TARGET:.0f}"
+                    f" = ${_total_combined:.2f} >= ${self.daily_profit_target:.0f}"
                     f" — META CUMPLIDA, cerrando SWINGS",
                     flush=True,
                 )
@@ -248,12 +248,12 @@ class PositionGuardsMixin:
             # Recovery solo por pérdida real del día — _below_peak eliminado porque
             # risk-gate inicia current_balance=$100K causando falso drawdown desde día 1
             # La protección multi-día ya la cubre: RiskGovernor + risk-gate drawdown limits
-            _day_in_loss      = self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
+            _day_in_loss      = self._daily_realized_pnl <= _current_bal * RECOVERY_TRIGGER_LOSS_PCT
             _in_recovery      = _day_in_loss and not self._scalp_daily_hit
 
             # Estrategia 5: Modo Aceleración — dia muy bueno → maximizar
             _in_accel = (
-                self._daily_realized_pnl >= ACCEL_TRIGGER_PROFIT and
+                self._daily_realized_pnl >= _current_bal * ACCEL_TRIGGER_PROFIT_PCT and
                 _current_bal >= self.capital * 0.98 and
                 not _in_recovery and
                 not self._scalp_daily_hit
@@ -660,10 +660,14 @@ class PositionGuardsMixin:
                 # spread real -- al arrancar el bot en vivo se midio el
                 # spread real de esta cuenta (3-6x mas ancho que lo asumido)
                 # y se re-corrio TODO el barrido con el costo real: $1000/2%
-                # da el mejor punto real (P(pass)=75%, Sharpe=1.10,
-                # P(mes<-5%)=4-7%), no el 96% original (ese numero quedo
-                # invalidado, ver SESION_ACTUAL.md).
-                PEAK_MIN_USD      = 1000.0
+                # (sobre ~$97K, ~1% del capital) da el mejor punto real
+                # (P(pass)=75%, Sharpe=1.10, P(mes<-5%)=4-7%), no el 96%
+                # original (ese numero quedo invalidado, ver SESION_ACTUAL.md).
+                # Convertido a % del capital ACTUAL (no $ fijo) para que
+                # escale en cualquier etapa de Axi Select (Seed $5K a Pro M
+                # $1M) sin recalibrar manualmente.
+                _bal_pg = self._risk_gate_state.current_balance or self.capital
+                PEAK_MIN_USD      = _bal_pg * 0.01
                 PEAK_RETRACE_PCT  = 0.02    # close if profit drops 2% from peak
                 if pnl > 0:
                     peak = self._position_peaks.get(ticket, 0.0)

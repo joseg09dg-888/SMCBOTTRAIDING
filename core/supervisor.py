@@ -99,12 +99,12 @@ from core.supervisor_constants import (
     MT5_REAL_SCORE_THRESHOLD,
     MT5_SCORE_AUTO_REDUCE,
     MAX_OPEN_POSITIONS,
-    DAILY_PROFIT_TARGET,
+    DAILY_PROFIT_TARGET_PCT,
     INITIAL_CAPITAL,
     RECOVERY_SCALP_TP,
     RECOVERY_SCALP_SL,
-    RECOVERY_TRIGGER_LOSS,
-    ACCEL_TRIGGER_PROFIT,
+    RECOVERY_TRIGGER_LOSS_PCT,
+    ACCEL_TRIGGER_PROFIT_PCT,
     ACCEL_SCALP_TP,
     ACCEL_SCALP_SL,
     ACCEL_MAX_SCALPS,
@@ -240,6 +240,17 @@ class TradingSupervisor(PositionGuardsMixin):
 
     """
 
+    @property
+    def daily_profit_target(self) -> float:
+        """Meta diaria en dólares, como % del capital ACTUAL (no un fijo
+        $250 calibrado para $100K). 2026-08-31: convertido para que el
+        mismo código sirva en cualquier etapa de Axi Select (Seed $5K hasta
+        Pro M $1M) sin recalibrar manualmente cada vez que sube el capital
+        fondeado. DAILY_PROFIT_TARGET_PCT (0.25%/día ≈ 5% mensual en ~22
+        días de trading) es una regla propia del usuario para su plan de
+        capitalización, no un requisito publicado por Axi Select."""
+        _bal = self._risk_gate_state.current_balance if self._risk_gate_state.current_balance > 1000 else self.capital
+        return _bal * DAILY_PROFIT_TARGET_PCT
 
 
     def __init__(self, capital: float = 1000.0, demo_mode: bool = True):
@@ -866,11 +877,11 @@ class TradingSupervisor(PositionGuardsMixin):
 
             self._daily_pnl_date     = _today_str
             self._daily_realized_pnl = _realized_val if _realized_val is not None else 0.0
-            if self._daily_realized_pnl >= DAILY_PROFIT_TARGET:
+            if self._daily_realized_pnl >= self.daily_profit_target:
                 self._daily_target_hit = True
-                print(f"[STARTUP] Meta diaria ya cumplida: ${self._daily_realized_pnl:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — sin trades hoy", flush=True)
+                print(f"[STARTUP] Meta diaria ya cumplida: ${self._daily_realized_pnl:.2f} >= ${self.daily_profit_target:.0f} — sin trades hoy", flush=True)
             else:
-                print(f"[STARTUP] PnL realizado hoy: ${self._daily_realized_pnl:.2f} / meta ${DAILY_PROFIT_TARGET:.0f}", flush=True)
+                print(f"[STARTUP] PnL realizado hoy: ${self._daily_realized_pnl:.2f} / meta ${self.daily_profit_target:.0f}", flush=True)
 
             print(f"  MT5:           CONECTADO -- Balance ${bal:,.2f}")
 
@@ -1849,7 +1860,7 @@ class TradingSupervisor(PositionGuardsMixin):
         # Meta swing (DAILY_PROFIT_TARGET) cumplida → SOLO scalps (M15) el resto del día
         # Los swings ya aseguraron el mínimo — no abrir más swings que se coman la ganancia
         if self._daily_target_hit and not _is_scalp:
-            print(f"[MT5] {signal.symbol}: meta swing ${DAILY_PROFIT_TARGET:.0f} cumplida — solo scalps permitidos, skip swing", flush=True)
+            print(f"[MT5] {signal.symbol}: meta swing ${self.daily_profit_target:.0f} cumplida — solo scalps permitidos, skip swing", flush=True)
             return
 
         # ── FILTER 0: Mercado abierto ─────────────────────────────────────
@@ -2090,10 +2101,10 @@ class TradingSupervisor(PositionGuardsMixin):
         # Modo recuperación: permite más scalps simultáneos para recuperar más rápido
         _current_bal_r  = self._risk_gate_state.current_balance or self.capital
         _recovery_mode  = (
-            self._daily_realized_pnl <= RECOVERY_TRIGGER_LOSS
+            self._daily_realized_pnl <= _current_bal_r * RECOVERY_TRIGGER_LOSS_PCT
         ) and not self._daily_target_hit
         _accel_mode = (
-            self._daily_realized_pnl >= ACCEL_TRIGGER_PROFIT and
+            self._daily_realized_pnl >= _current_bal_r * ACCEL_TRIGGER_PROFIT_PCT and
             _current_bal_r >= self.capital * 0.98 and not _recovery_mode
         )
         _max_scalp_now = (RECOVERY_MAX_SCALPS if _recovery_mode
@@ -2204,21 +2215,23 @@ class TradingSupervisor(PositionGuardsMixin):
                 return
 
         # Swing: riesgo adaptativo según déficit diario
-        _shortfall = DAILY_PROFIT_TARGET - self._daily_realized_pnl
+        _shortfall = self.daily_profit_target - self._daily_realized_pnl
         _now_h = __import__('datetime').datetime.utcnow().hour
-        # 2026-08-30: tiers escalados 1.5x ($100/$200/$400 -> $150/$300/$600),
-        # manteniendo la MISMA estructura adaptativa por progreso diario --
-        # backtest 16 años reales (motor corregido) con este escalado dio
-        # P(pasar Axi) 79.2%->80.6%, E[mensual] $17413->$21867, P(mes<-5%)
-        # solo +1pp (6%->7%). Ver SESION_ACTUAL.md.
-        if _shortfall > 200 and _now_h >= 13:
-            # Detrás de meta por >$200 en horario activo: escalar riesgo
-            MAX_DOLLAR_RISK = min(600.0, 300.0 + _shortfall * 0.45)
+        # 2026-08-30: tiers escalados 1.5x ($100/$200/$400 -> $150/$300/$600
+        # sobre ~$100K), manteniendo la MISMA estructura adaptativa por
+        # progreso diario -- backtest 16 años reales (motor corregido) con
+        # este escalado dio P(pasar Axi) 79.2%->80.6%, E[mensual]
+        # $17413->$21867, P(mes<-5%) solo +1pp (6%->7%). Ver SESION_ACTUAL.md.
+        # 2026-08-31: convertido a % de live_capital (era $ fijo sobre $100K)
+        # para que escale sin recalibrar en cada etapa de Axi Select.
+        if _shortfall > live_capital * 0.002 and _now_h >= 13:
+            # Detrás de meta por >0.2% del capital en horario activo: escalar riesgo
+            MAX_DOLLAR_RISK = min(live_capital * 0.006, live_capital * 0.003 + _shortfall * 0.45)
             print(f"[ADAPTIVE-SIZE] Deficit=${_shortfall:.0f} → MAX_RISK=${MAX_DOLLAR_RISK:.0f}", flush=True)
         elif _shortfall <= 0:
-            MAX_DOLLAR_RISK = 150.0  # meta cumplida: proteger ganancias
+            MAX_DOLLAR_RISK = live_capital * 0.0015  # meta cumplida: proteger ganancias
         else:
-            MAX_DOLLAR_RISK = 300.0
+            MAX_DOLLAR_RISK = live_capital * 0.003
         if not _is_scalp and volume > 0 and sl_val > 0 and _entry_for_vol > 0:
             _sl_pips = abs(_entry_for_vol - sl_val)
             _sym_info = None
@@ -2868,9 +2881,9 @@ class TradingSupervisor(PositionGuardsMixin):
                     # ── META DIARIA: realizado + float >= $250 → solo cerrar SCALPS
                     # Los SWINGS continuan hasta su TP — son los que dan $247+ por trade
                     _neto_dia = self._daily_realized_pnl + total_pnl
-                    if not self._daily_target_hit and _neto_dia >= DAILY_PROFIT_TARGET:
+                    if not self._daily_target_hit and _neto_dia >= self.daily_profit_target:
                         self._daily_target_hit = True
-                        print(f"[META-DIA] Neto ${_neto_dia:.2f} >= ${DAILY_PROFIT_TARGET:.0f} — cerrando solo scalps, swings siguen al TP", flush=True)
+                        print(f"[META-DIA] Neto ${_neto_dia:.2f} >= ${self.daily_profit_target:.0f} — cerrando solo scalps, swings siguen al TP", flush=True)
                         for _p in list(positions):
                             # Solo cerrar scalps (vol <= 0.1L) — swings siguen corriendo
                             if _p.get("volume", 0) <= 0.10:

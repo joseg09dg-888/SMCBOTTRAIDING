@@ -24,14 +24,24 @@ MAX_OPEN_POSITIONS       = 16   # 2026-08-30: HALLAZGO CRITICO -- el backtest de
                                  # fuerza mas riesgo del que el propio flujo de señales genera.
                                  # Ver SESION_ACTUAL.md sección "VEREDICTO FINAL" para el
                                  # detalle completo del bug y el re-barrido.
-DAILY_PROFIT_TARGET      = 250.0  # $250/dia → 5% mensual Axi Select
 INITIAL_CAPITAL          = 100_000.0
+
+# 2026-08-31: TODOS los umbrales de riesgo de abajo estaban fijos en dólares,
+# calibrados para una cuenta de ~$100K -- rotos para cualquier otro tamaño
+# (el usuario piensa escalar por las 6 etapas reales de Axi Select: Seed
+# $5K, Incubation $20K, Acceleration $100K, Pro $200K, Pro 500 $500K, Pro M
+# $1M -- ver SESION_ACTUAL.md). Convertidos a PORCENTAJE del capital actual
+# (self.capital / balance real, no INITIAL_CAPITAL fijo) para que el mismo
+# codigo funcione sin re-calibrar manualmente en cada etapa. Los valores en
+# dolares de abajo quedan documentados solo como referencia historica de
+# donde salio cada porcentaje (todos calibrados sobre ~$100K real).
+DAILY_PROFIT_TARGET_PCT  = 0.0025   # era $250/dia fijo -- 5% mensual (~22 dias trading), regla PROPIA del usuario para su plan de capitalizacion, no un requisito publicado por Axi
+RECOVERY_TRIGGER_LOSS_PCT = -0.0015  # era -$150/dia fijo (antes -$50: demasiado agresivo)
+ACCEL_TRIGGER_PROFIT_PCT  = 0.0005   # era $50/dia fijo
 
 # Recovery — simplificado: solo para emergencias
 RECOVERY_SCALP_TP        = 10.0  # igual que normal
 RECOVERY_SCALP_SL        = -4.0  # igual que normal
-RECOVERY_TRIGGER_LOSS    = -150.0  # recovery si pierde $150 en el día (era -50: demasiado agresivo)
-ACCEL_TRIGGER_PROFIT     = 50.0   # aceleración si gana $50 en el día
 ACCEL_SCALP_TP           = 10.0
 ACCEL_SCALP_SL           = -4.0
 ACCEL_MAX_SCALPS         = 5
