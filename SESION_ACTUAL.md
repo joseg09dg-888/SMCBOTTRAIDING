@@ -2220,3 +2220,64 @@ crítico y no fue pedido; queda documentado como pendiente menor.
 Tarea activa: seguir observando el bot en demo durante la ventana
 20:00-21:00 UTC de hoy para auditar cómo entra/gestiona el próximo trade,
 sin tocar código de trading salvo que aparezca un bug real.
+
+---
+
+## 📍 AUDITORÍA EN VIVO VENTANA 20:00 UTC 2026-09-01 -- hallazgos
+
+**Trade real ejecutado y verificado línea por línea**: NZDUSD SELL ticket
+#103194381, vol=1.19L, SL=0.58937, TP=0.57749 (RR=20 confirmado), score=63.
+Flujo: breakout Donchian -> filtro RR OK -> auto-confirm (Claude API
+deshabilitada a propósito) -> [GOVERNOR] redujo riesgo x0.5 (drawdown 4.8%
+detectado ayer, mecanismo de protección funcionando correctamente, no es
+bug) -> orden enviada -> posición trackeada con PnL real. Duplicados
+bloqueados correctamente (`posicion ya abierta -- skip duplicado`). Filtro
+de correlación DIM8 bloqueó EURUSD SHORT por estar correlacionado con el
+NZDUSD SHORT ya abierto -- funcionando como está diseñado.
+
+**Bug #1 (cosmético, corregido)**: `core/supervisor.py` línea ~2283
+mostraba `@0.00000` como precio del ticket porque MT5 `order_send()`
+devuelve `price=0` en brokers de ejecución de mercado (Axi) -- el SL/TP
+real sí se calculó y envió bien con el tick real, esto NUNCA afectó
+riesgo/dinero, solo el texto del log. Fix: fallback a `requested_price` ya
+presente en el mismo dict. Commit `00a2ee4`.
+
+**Bug #2 (infraestructura, corregido)**: `ecosystem.config.js` tiene
+`ignore_watch: ['__pycache__', '*.pyc', ...]` pero confirmado en
+`C:\Users\JOSÉ\.pm2\pm2.log` que NO excluye rutas anidadas en Windows
+(`core\__pycache__\supervisor.cpython-314.pyc` sí disparó un restart). Cada
+cambio de código real generaba DOS restarts (el real + uno falso por el
+.pyc regenerado 1-2s después) -- y probablemente explica también un tercer
+restart sin causa visible que apareció 10 min después de mi propio cambio
+(`exited...via signal[SIGINT]` sin línea "Change detected" precedente, muy
+probablemente otro módulo compilando su primer .pyc en otra carpeta
+vigilada). Riesgo real: reinicios no controlados durante gestión de
+posiciones. Fix: `PYTHONDONTWRITEBYTECODE=1` en el env de PM2 -- elimina la
+causa raíz sin tocar ninguna lógica de trading. Aplicado con
+`pm2 restart ecosystem.config.js --update-env`, verificado reinicio limpio,
+posición NZDUSD abierta se mantuvo intacta y sincronizada (MT5 gestiona
+posiciones server-side). Commit `af60c0d`.
+
+**Bug #3 (encontrado, NO corregido aún -- cosmético/log únicamente,
+confirmado que no mueve dinero)**: al reiniciar con `capital=0.0` (arg
+`--capital` no se pasa en PM2, default 0), `self._balance_peak` se
+inicializa en `core/supervisor.py:540` con `self.capital` ANTES de que
+`startup.py::send_welcome()` lo corrija con el balance real de MT5 --
+además `core/position_guards.py:242` cae al placeholder no-sincronizado
+`_risk_gate_state.current_balance` (que arranca en $100K, ver comentario
+existente en línea 249 "risk-gate inicia current_balance=$100K"). Resultado
+observado: `[PEAK] Nuevo máximo histórico: $100,000.00` impreso con balance
+real de $95,124.19 -- contradice el propio comentario de la línea 539 ("no
+INITIAL_CAPITAL=$100K que nunca tuvimos"). Verificado con grep exhaustivo
+que `_balance_peak` SOLO se usa para decidir qué texto de log imprimir en
+la rama `[RECOVERY]` (no gatea ejecución, sizing, ni el PEAK-GUARD real de
+cierre de posiciones, que usa variables separadas `_bal_pg`/
+`_position_peaks[ticket]` correctamente sincronizadas). No se tocó esta
+sesión por prudencia (no urgente, cero riesgo de dinero, evitar más churn
+de código durante la ventana con posición abierta) -- queda documentado
+como pendiente para la próxima sesión: sincronizar `_balance_peak` desde
+`send_welcome()` cuando corrige `self.capital`.
+
+**Pendiente**: correr `pytest tests/ -q` completo (no se corrió durante la
+ventana por RAM limitada con el bot en vivo -- hacerlo la próxima vez que
+haya >1.5GB libres y el bot esté fuera de la ventana de trading).
