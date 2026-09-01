@@ -2281,3 +2281,26 @@ como pendiente para la próxima sesión: sincronizar `_balance_peak` desde
 **Pendiente**: correr `pytest tests/ -q` completo (no se corrió durante la
 ventana por RAM limitada con el bot en vivo -- hacerlo la próxima vez que
 haya >1.5GB libres y el bot esté fuera de la ventana de trading).
+
+**Corrección horario**: la ventana activa son 2 horas, 20:00-22:00 UTC
+(horas 20 y 21 activas en `DEAD_HOURS_UTC`), no 20:00-21:00 como se dijo
+antes -- corregido con el usuario.
+
+**Cierre de NZDUSD #103194381**: la posición cerró sola (no por ninguno de
+los guards propios del bot -- nunca estuvo en ganancia así que PEAK-GUARD
+nunca aplicó, más probable SL real tocado en MT5). Balance bajó de
+$95,124.19 a $95,005.98 (pérdida real ~$118.21). Verificado con
+`mt5.history_deals_get()` en una consulta Python independiente (fuera del
+bot) que el historial de deals de esta cuenta/servidor **no devuelve nada**
+para ese ticket ni para ninguna consulta en las últimas 6h -- confirma que
+el problema es de sincronización del lado de MT5/broker, no un bug del
+código del bot (el bot ya reintentó 30 veces y falló igual que mi consulta
+directa). El bot YA tiene un mecanismo de auto-recuperación para esto
+(`_recover_orphaned_episodes()`, corre en cada arranque, `core/
+supervisor.py:838`) que reintentará el backfill del ticket huérfano en el
+próximo restart -- no requiere fix de código, solo esperar al próximo
+restart natural (se hará al cerrar la ventana para correr pytest). Único
+impacto real: ese trade puede quedar temporalmente sin registrar en la
+base de aprendizaje (memory/episodes.db) hasta que se recupere -- el
+dinero/balance ya está correcto y confirmado en MT5, esto es solo el
+registro para el AutonomousLearner.
