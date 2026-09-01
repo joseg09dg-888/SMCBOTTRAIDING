@@ -2304,3 +2304,68 @@ impacto real: ese trade puede quedar temporalmente sin registrar en la
 base de aprendizaje (memory/episodes.db) hasta que se recupere -- el
 dinero/balance ya está correcto y confirmado en MT5, esto es solo el
 registro para el AutonomousLearner.
+
+---
+
+## 🔴 HALLAZGO IMPORTANTE -- SL rechazado por MT5 (Retcode 10016 Invalid
+## stops), confirmado sistémico en los 5 pares, NO corregido aún
+
+Al final de la ventana (21:5x UTC) el bot detectó una señal válida en
+USDCHF (score=71, RR=20 OK, Claude auto-confirm OK, governor aplicado) pero
+la orden fue **rechazada por MT5**: `Retcode 10016: Invalid stops`. Se
+repitió cada ciclo (~30s) hasta que la hora muerta 22:00 UTC lo detuvo.
+
+**Diagnóstico verificado con `mt5.order_check()` en vivo (no especulación)**:
+- Aislado que el TP nunca fue el problema (probado solo con TP: retcode=0
+  Done). El SL sí, aislado con binary search de distancia real:
+  7.8 pips → rechazado, 10 pips → rechazado, **15 pips → aceptado**.
+- El broker exige ~15 pips mínimos de distancia de SL en USDCHF, pero
+  `mt5.symbol_info('USDCHF').trade_stops_level` reporta **1 punto (~0.1
+  pip)** -- un valor claramente poco fiable/obsoleto que el código de
+  `connectors/metatrader_connector.py` (líneas 256-271, el buffer de
+  seguridad que ya existía) usa para decidir si necesita ensanchar el SL.
+  Su propio buffer de respaldo (`point*50` = 5 pips) TAMPOCO alcanza el
+  mínimo real (~15 pips).
+- **Confirmado sistémico, no solo USDCHF**: los 5 pares activos (USDCAD,
+  EURUSD, NZDUSD, USDCHF, EURAUD) reportan el mismo `trade_stops_level=1`
+  poco fiable -- muy probable que todos tengan el mismo problema real de
+  fondo con el broker.
+
+**Por qué NO se corrigió en el momento** (a diferencia de los bugs #1 y #2
+de hoy): esto no es un bug de ejecución/logging puro -- el SL=0.75×ATR14
+es parte del modelo de riesgo/RR=20 ya validado por el backtest de 16
+años. Ensanchar el SL a la fuerza para evitar el rechazo cambia el
+riesgo real por trade y, si no se ensancha el TP proporcionalmente,
+reduce el RR efectivo por debajo de 20 -- eso SÍ podría invalidar
+silenciosamente el 75%/97% ya validado si se aplica sin volver a
+backtestear. El backtest tampoco modeló nunca esta restricción de
+distancia mínima del broker, así que no sabemos hoy cuánto % de señales
+teóricamente válidas se están perdiendo por esto en la vida real vs. lo
+que asumió el backtest.
+
+**Impacto real ahora mismo**: SEGURO, no pierde dinero (MT5 rechaza ANTES
+de ejecutar nada, fail-safe) -- el único costo es una oportunidad de
+trade perdida cuando el ATR es lo bastante bajo como para que
+0.75×ATR14 caiga por debajo de ~15 pips.
+
+**Pendiente para la próxima sesión** (requiere decisión + revalidación,
+no un parche rápido):
+1. Medir con `scripts/backtest_multiyear.py` qué % de las señales
+   históricas tenían SL < ~15-20 pips (cuántas se habrían rechazado en
+   vivo si este mínimo hubiera existido siempre).
+2. Decidir la estrategia de fix: (a) ensanchar SL al mínimo real del
+   broker Y ensanchar TP proporcionalmente para preservar RR=20, o
+   (b) subir el floor de ATR_MULT_SL para que el SL casi nunca caiga
+   bajo el mínimo real, o (c) descartar la señal (comportamiento actual)
+   si el SL natural es demasiado ajustado.
+3. Re-correr el backtest con la opción elegida modelada explícitamente
+   antes de aplicarla en vivo -- exactamente el flujo de la sección 20 de
+   CLAUDE.md (nunca cambiar un parámetro de riesgo sin revalidar).
+
+**Cierre de ventana 20:00-22:00 UTC confirmado**: `hora muerta 22:00 UTC,
+skip` apareció puntual en el log. Restart count estable en 4 durante toda
+la ventana (sin nuevos restarts tras el fix del bug #2). RAM libre al
+cierre: ~850MB -- por debajo del umbral seguro de 1GB, así que el restart
+para `_recover_orphaned_episodes()` + `pytest tests/ -q` completo quedan
+diferidos a la próxima vez que haya RAM suficiente (no se ejecutaron esta
+sesión por prudencia, no por olvido).
