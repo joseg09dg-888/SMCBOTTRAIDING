@@ -2565,3 +2565,13 @@ implicaba el 75-97%.
 seguir iterando sobre la estrategia (mas hipotesis, mas parametros) para
 intentar subir este 42% real, o aceptarlo como el techo actual del motor
 breakout en la demo y evaluar otras vias.
+
+**Intento adicional (mismo dia, tras insistencia del usuario de seguir
+buscando)**: THR_BREAKOUT=75 (exigir rupturas mas fuertes, menos
+operaciones de mayor "calidad" nominal) -- comando exacto en
+`memory/bt_logs/EXACT_COMMAND_thr75.txt`. Resultado: **18%, Sharpe=0.44,
+2445 trades** (peor que el 43% baseline, no mejor). Confirma con datos
+reales de HOY lo que ya se habia visto en sesiones anteriores con el motor
+SMC viejo: ser mas selectivo con el umbral de señal empeora el resultado
+en vez de mejorarlo -- la frecuencia de señal es el cuello de botella real,
+no la calidad nominal del score. Otra hipotesis descartada honestamente.
