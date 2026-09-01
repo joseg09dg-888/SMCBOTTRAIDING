@@ -2187,3 +2187,36 @@ se daña, todo se recupera clonando el repo, sin perder nada.
 breakout construido y validado, conversión a % de capital, fix del
 VolumeCalculator, investigación completa de Axi Select) quedó terminado y
 verificado, no a medias.
+
+---
+
+## 📍 RETOMA 2026-09-01 ~17:22 UTC
+
+PM2 se había perdido al apagar el PC (daemon reinició vacío). Reactivado con
+`pm2 start ecosystem.config.js` -- `smc-bot` online, PID nuevo, working tree
+limpio (nada sin commitear, `.env` sigue en demo/AUTO como debía).
+
+**Verificado en el arranque:**
+- MT5 demo conectado: Balance $95,124.19 (refleja la pérdida de -$71.25 del
+  trade que el usuario cerró manualmente la sesión pasada).
+- Motor breakout activo, respetando la ventana horaria (skip fuera de
+  20:00-21:00 UTC, confirmado con `[MT5] NZDUSD: hora muerta 3:00 UTC, skip`).
+- Errores pre-existentes sin cambios: DNS Binance testnet, Telegram Bad
+  Gateway ocasional, Fear&Greed DNS (usa cache) -- ninguno nuevo, ninguno
+  afecta el trading.
+
+**Hallazgo nuevo (menor, no bloqueante):** `ResearchAgent` falla con
+`anthropic-workspace-id is required when authenticating with an
+identity-linked API key` -- la `ANTHROPIC_API_KEY` en `.env` parece ser una
+key identity-linked (requiere header de workspace) en vez de una key
+estándar `sk-ant-...`. Ya tiene cooldown de 24h (`_credit_fail_ts`, fix de
+sesión anterior) así que no hace spam. Confirmado que **no afecta la
+ejecución de órdenes reales**: `core/supervisor.py:1749` tiene la
+confirmación por Claude API deshabilitada explícitamente ("disabled to
+preserve credits") en el path de trading en vivo -- solo afecta el insight
+opcional de investigación del ResearchAgent. No se tocó porque no es
+crítico y no fue pedido; queda documentado como pendiente menor.
+
+Tarea activa: seguir observando el bot en demo durante la ventana
+20:00-21:00 UTC de hoy para auditar cómo entra/gestiona el próximo trade,
+sin tocar código de trading salvo que aparezca un bug real.
