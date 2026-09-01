@@ -295,6 +295,52 @@ class MT5Connector:
                 "type_time":    mt5.ORDER_TIME_GTC,
                 "type_filling": _fill_mode_order,
             }
+            # BUG-MT5-INVALID-STOPS-LIVE (2026-09-01): confirmado en vivo (cuenta
+            # demo, USDCHF, retcode 10016 "Invalid stops") que el ATR-based SL a
+            # veces queda mas cerca del precio que el minimo real que el broker
+            # exige en ESE momento -- verificado con mt5.order_check() que ese
+            # minimo NO es fijo (symbol_info().trade_stops_level no es confiable,
+            # reporta ~0.1 pip en los 5 pares activos) sino dinamico segun
+            # volatilidad/spread del momento (en calma bajo hasta <1 pip, en
+            # killzone activa subio a ~15 pips, medido con binary search real).
+            # Backtesteado un piso FIJO (ej. 15 pips siempre) contra 16 años
+            # reales: NO mejora nada, empeora levemente P(pass)/Sharpe (43%->41%,
+            # 0.62->0.55, mismo numero de trades) porque ensancha el SL incluso
+            # cuando no hace falta. En vez de eso: reintenta SOLO si el broker
+            # realmente lo rechaza, ensanchando lo minimo indispensable (pasos de
+            # ~1 pip) y ensanchando el TP en la misma proporcion para preservar
+            # el RR exacto con el que se diseño la señal -- no cambia nada en el
+            # caso normal (backtest sigue siendo valido), solo evita perder la
+            # operacion entera en el caso raro donde el broker exige mas margen.
+            if sl != 0.0 and tp != 0.0 and info is not None:
+                _sl_dist = abs(price - sl)
+                _rr = abs(tp - price) / _sl_dist if _sl_dist > 0 else 0.0
+                _widen_step = max(info.point * 10, 1e-5)  # ~1 pip
+                _attempts = 0
+                _chk = mt5.order_check(request)
+                while _chk is not None and _chk.retcode == 10016 and _attempts < 15:
+                    _sl_dist += _widen_step
+                    if ot == mt5.ORDER_TYPE_BUY:
+                        request["sl"] = round(price - _sl_dist, info.digits)
+                        request["tp"] = round(price + _sl_dist * _rr, info.digits)
+                    else:
+                        request["sl"] = round(price + _sl_dist, info.digits)
+                        request["tp"] = round(price - _sl_dist * _rr, info.digits)
+                    _chk = mt5.order_check(request)
+                    _attempts += 1
+                if _attempts > 0:
+                    sl, tp = request["sl"], request["tp"]
+                    if _chk is not None and _chk.retcode == 0:
+                        logger.info(
+                            f"MT5 {symbol}: SL ensanchado {_attempts} pip(s) para pasar "
+                            f"validacion del broker (sl={sl}, tp={tp}, RR preservado)"
+                        )
+                    else:
+                        logger.warning(
+                            f"MT5 {symbol}: SL sigue invalido tras {_attempts} intentos "
+                            f"de ensanche -- se envia igual, MT5 puede rechazarla"
+                        )
+
             result = mt5.order_send(request)
             if result is None:
                 return {"error": f"order_send None: {mt5.last_error()}"}

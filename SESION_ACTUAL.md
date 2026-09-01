@@ -2391,3 +2391,113 @@ purga el historial de la demo más agresivo de lo esperado). Sigue sin
 afectar dinero real (balance/posiciones abiertas se leen de una API MT5
 distinta, ya verificada correcta) -- solo afecta registros del
 AutonomousLearner para esos 3 tickets.
+
+---
+
+## ✅ RESOLUCIÓN COMPLETA -- fix del bug de SL rechazado (Retcode 10016),
+## validado con backtest ANTES de aplicar, más 2 hallazgos adicionales
+
+Usuario pidió arreglar todo lo pendiente pero validar con backtest primero.
+Trabajo completo, en orden:
+
+### 1. Backtest de validación -- ⚠️ hallazgo importante sobre paridad
+
+Al intentar reproducir el 75% documentado para comparar, se descubrió que
+el script (`scripts/backtest_multiyear.py`) usa por DEFECTO parámetros
+viejos del motor SMC (`PEAK_GUARD_MIN=400`/`PEAK_GUARD_RETRACE=0.30`) que
+NO coinciden con la config real validada del motor Donchian
+(`$1000/2%`) -- sin pasarlos explícitos como env vars, cualquier backtest
+del motor nuevo da resultados invalidos (primera corrida: P(pass)=22%,
+muy por debajo de lo esperado). Corregido pasando explícitamente
+`PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0
+MAX_OPEN_TEST=16` (recuperados de `memory/backtest_results_maxopen16.json`
+y menciones dispersas en este documento, no habia un comando unico
+guardado) -- con eso el resultado subio a P(pass)=43%, Sharpe=0.62 (aun no
+exactamente 75% -- probablemente por parametros historicos adicionales no
+documentados en ningun lado de sesiones anteriores, no se pudo reconciliar
+al 100% en el tiempo disponible). **Decision tomada**: usar este 43%/0.62
+como baseline de COMPARACION RELATIVA propia (A/B limpio, misma corrida
+base con/sin el fix), no como validacion absoluta del numero historico --
+valido para decidir SI el fix ayuda o no, que era la pregunta real.
+
+**Accidente evitado**: la primera corrida con `MAX_OPEN_TEST=16` sobrescribio
+`memory/backtest_results_maxopen16.json` (el archivo que guardaba el 97%
+original de la cuenta real) porque el nombre de archivo depende de ese
+parametro. Detectado antes de commitear (`git status` lo mostro modificado)
+y restaurado con `git checkout ca6f4ae -- memory/backtest_results_maxopen16.json`
+-- cero perdida de datos. Corridas experimentales posteriores usaron
+`MAX_OPEN_TEST=17` (numero sin usar) para no repetir el problema.
+
+### 2. Resultado A/B: piso de SL fijo NO ayuda -- descartado
+
+Con la misma config base (P(pass)=43%, Sharpe=0.62, 7201 trades), se probo
+`MIN_SL_PIPS_BO=15` (piso fijo de 15 pips, el peor caso medido en vivo) con
+TP ensanchado proporcionalmente para preservar RR=20 exacto:
+**P(pass)=41%, Sharpe=0.55** -- mismo numero de trades (7201, el piso nunca
+cambia CUALES señales se toman, solo su SL/TP), pero el resultado es
+ligeramente PEOR, no mejor. Conclusion: ensanchar el SL de forma fija,
+incluso cuando no hace falta, cuesta mas de lo que protege.
+
+### 3. Fix real aplicado: reintento adaptativo, NO un piso fijo
+
+En vez de un piso estatico, se implemento en
+`connectors/metatrader_connector.py::place_order()`: antes de enviar la
+orden real, se valida con `mt5.order_check()`; si el broker la rechaza con
+retcode 10016 (Invalid stops), se ensancha el SL en pasos minimos (~1 pip)
+-- ensanchando el TP en la MISMA proporcion para preservar el RR exacto de
+la señal original -- y se vuelve a validar, hasta 15 intentos (~15 pips
+maximo, el peor caso medido en vivo). Si el broker sigue rechazando tras
+15 intentos, se envia la orden igual (mismo comportamiento actual: MT5 la
+rechaza de forma segura, no se pierde dinero). **Diferencia clave con la
+opcion descartada**: esto SOLO modifica el SL en el caso raro donde el
+broker realmente lo exige (confirmado 1 vez en un dia de operacion real),
+usando el minimo ensanche indispensable -- en el caso normal (la inmensa
+mayoria de trades) el comportamiento es IDENTICO al validado por el
+backtest, a diferencia del piso fijo que lo cambiaba siempre.
+
+### 4. Bug #3 (balance_peak cosmetico) -- corregido y verificado
+
+`startup.py`: agregada la linea `supervisor._balance_peak = capital`
+justo donde `send_welcome()` corrige el capital real desde MT5 (antes
+`_balance_peak` quedaba con el valor viejo/placeholder de `__init__`).
+**Verificado en logs reales**: los restarts de ANTES del fix mostraban
+`[PEAK] Nuevo maximo historico: $100,000.00` con balance real ~$95K; los
+restarts de DESPUES del fix (lineas 21765+ de `smc-bot-out.log`) ya NO
+muestran ningun `[PEAK]` falso al arrancar -- confirmado que arranca ya
+sincronizado con el balance real.
+
+### 5. Verificacion final antes de dar todo por corregido
+
+- `pytest tests/ -q`: **1448 passed, 0 failed** (corrido DESPUES de los 2
+  cambios de codigo de esta ronda: `connectors/metatrader_connector.py` +
+  `startup.py`).
+- PM2 detecto los cambios de codigo y reinicio solo (file-watch) -- 0
+  crashes, 0 restarts extra sin explicacion (el fix del restart-storm de
+  antes sigue funcionando). Verificado en logs: sin tracebacks nuevos,
+  solo los errores pre-existentes documentados (Binance DNS, Telegram
+  network error ocasional).
+- No hay posicion abierta en este momento (NZDUSD ya habia cerrado antes
+  de esta ronda de fixes) -- restart limpio sin riesgo de interrumpir
+  gestion de posicion viva.
+- Todo commiteado a `origin/main`.
+
+### 6. Pendiente real, honesto, para la proxima sesion
+
+- El 43%/Sharpe=0.62 de este backtest (5 pares, spread demo, config
+  correcta) es MENOR al 75%/Sharpe=1.10 documentado anteriormente para el
+  mismo escenario -- no se pudo reconciliar la diferencia exacta en el
+  tiempo disponible (parametros historicos de alguna sesion anterior no
+  quedaron completamente registrados como comando unico). Esto NO invalida
+  el fix de hoy (la comparacion A/B fue limpia y valida para esa decision
+  puntual), pero SI es una alerta de que el numero "75%" que se referencia
+  en varias partes de este documento para la demo deberia re-confirmarse
+  con una corrida fresca y bien documentada (guardar el comando EXACTO
+  usado, no solo el resultado) antes de asumirlo como verdad para
+  decisiones futuras.
+- El problema de sincronizacion del historial de deals de MT5 (3 tickets
+  huerfanos) sigue sin resolverse -- confirmado que ningun deal despues de
+  la 01:55 UTC de hoy aparece en `history_deals_get()` pese a que el
+  balance si refleja los cambios reales. No se toco nada programaticamente
+  (regla del proyecto de no tocar MT5 con Python) -- se espera que se
+  resuelva solo cuando el servidor demo sincronice, o se investiga en la
+  proxima sesion si persiste.
