@@ -2501,3 +2501,67 @@ sincronizado con el balance real.
   (regla del proyecto de no tocar MT5 con Python) -- se espera que se
   resuelva solo cuando el servidor demo sincronice, o se investiga en la
   proxima sesion si persiste.
+
+---
+
+## 🔴🔴 EL 75% NO SE PUDO REPRODUCIR -- 4 INTENTOS HONESTOS, TODOS
+## CONVERGEN EN ~40-43%, NO EN 75-97%. NUMERO DE REFERENCIA ACTUALIZADO.
+
+Usuario exigio, con razon, re-correr el backtest y guardar el comando
+exacto (comandos guardados en `memory/bt_logs/EXACT_COMMAND_*.txt`, uno
+por hipotesis probada, todos con fecha 2026-09-01). Se probaron 4
+hipotesis honestas para explicar la brecha entre el 43% inicial (config
+base corregida) y el 75%/Sharpe=1.10 documentado en sesiones anteriores
+para "motor breakout + spread real de la demo":
+
+| # | Hipotesis probada | P(pass) | Sharpe | Trades |
+|---|---|---|---|---|
+| 1 | Config base (RR=20, GBPCAD excluido, riesgo x2.0, peak-guard 1000/2%) | 43% | 0.62 | 7201 |
+| 2 | Piso SL fijo 15 pips (descartado, ver seccion anterior) | 41% | 0.55 | 7201 |
+| 3 | RISK_MULT_TEST=1.0 (en vez de 2.0) | 37% | 0.57 | 7201 |
+| 4 | RR_MULT_BO=10 (en vez de 20 -- el valor documentado ORIGINALMENTE para
+    el 96%/75%, antes de subirlo a 20 solo para la cuenta real) | 42% | 0.60 | 7201 |
+| 5 | RR=10 + GBPCAD incluido (6 pares, no 5 -- hipotesis de que la
+    exclusion de GBPCAD fue una decision solo-en-vivo nunca backtesteada) | 41% | 0.52 | 8523 |
+
+**Ninguna combinacion probada se acerca al 75%.** Dato revelador: el
+numero de trades (7201) es IDENTICO en las 4 primeras corridas -- ninguno
+de los parametros que se probaron (peak-guard, riesgo, RR) cambia CUALES
+señales se toman, solo su $ o su forma de salida. Esto descarta que la
+brecha venga de esos parametros especificos.
+
+**Conclusion honesta, sin adornar**: tras 4 intentos genuinos con las
+hipotesis mas razonables disponibles, **el 75% documentado en la sesion
+anterior no se pudo reproducir**. No hay forma de saber con certeza si:
+(a) esa sesion uso una combinacion de parametros que nunca quedo guardada
+como comando exacto en ningun lado de este documento (lo mas probable,
+dado que esta sesion confirmo que NINGUN comando exacto habia quedado
+guardado antes de hoy -- ni siquiera para el resultado headline), o
+(b) hubo un error real en esa validacion que no se detecto en su momento
+pese a la disciplina aplicada esa noche (el propio documento menciona 2
+"espejismos" ya atrapados esa sesion -- bug de Monte Carlo y motor
+simplificado no fiel -- pudo haber un tercero no detectado).
+
+**NUEVO NUMERO DE REFERENCIA para el motor breakout + spread real de la
+demo (Axi-US50-Demo) + 5 pares activos (sin GBPCAD) + config actualmente
+desplegada en vivo (RR=20)**: **P(pass Axi Select 5% mensual) ≈ 42-43%**,
+Sharpe ≈ 0.55-0.62 -- NO el 75%/96%/97% de sesiones anteriores. Estos
+comandos SI quedan guardados exactos en `memory/bt_logs/` para que este
+numero sea reproducible por cualquiera en el futuro (a diferencia de
+todos los anteriores).
+
+**Que significa esto para el usuario**: el bot sigue ejecutando
+operaciones reales correctamente (verificado hoy, NZDUSD real), pero la
+probabilidad real y honesta de que alcance la meta personal de 5%
+mensual con la config actual en la cuenta DEMO es de aproximadamente
+40-43%, no la cifra mucho mas alta que se penso antes. Esto no cambia
+nada del trabajo tecnico de hoy (los 4 bugs corregidos siguen siendo
+reales y necesarios), pero SI cambia la expectativa de que el sistema
+esta "casi listo" para pasar a la cuenta real con alta confianza -- con
+este numero, seguiria siendo una apuesta significativa, no la certeza que
+implicaba el 75-97%.
+
+**Pendiente real para la proxima sesion**: decidir con el usuario si
+seguir iterando sobre la estrategia (mas hipotesis, mas parametros) para
+intentar subir este 42% real, o aceptarlo como el techo actual del motor
+breakout en la demo y evaluar otras vias.
