@@ -129,7 +129,11 @@ class VolumeCalculator:
             max_vol = (capital * self._MAXVOL_SAFETY_PCT) / (
                 self._MAXVOL_WORST_CASE_STOPS * self._MAXVOL_WORST_CASE_PIPS * pip_value
             )
-            max_vol = min(max_vol, self._MAX_VOL)  # nunca por encima del techo global
+            # Sin techo global fijo aqui a proposito: el propio calculo ya
+            # es un limite de riesgo real (4.5% del capital ACTUAL en el
+            # peor caso), asi que un tope plano de 2.0L volveria a romper
+            # el escalado en cuentas grandes (Pro 500/Pro M) tal como lo
+            # hacia el _MAX_VOL_BY_SYMBOL fijo que este bloque reemplazo.
         else:
             max_vol = self._MAX_VOL
         volume  = max(min_vol, min(max_vol, volume))

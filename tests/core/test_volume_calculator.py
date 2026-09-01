@@ -33,12 +33,18 @@ class TestVolumeCalculator:
 
     def test_volume_max_clamped(self):
         vc = VolumeCalculator()
-        # Very small SL -> huge calculated volume -> clamped to 1.25 for EURUSD
-        # (BUG-MAXVOL-CAP-MATH-WRONG, 2026-07-25: cap lowered from 2.0 so the
-        # worst-case-daily-loss formula this cap is meant to bound actually
-        # stays under the real Axi 5% daily limit)
-        vol = vc.calculate_volume(10_000_000, 1.1000, 1.0999, "EURUSD")
-        assert vol == 1.25
+        # Very small SL -> huge calculated volume -> clamped by the
+        # capital-scaled worst-case-daily-loss cap (BUG-MAXVOL-FIXED-DOLLARS,
+        # 2026-08-31: replaced the flat 1.25L constant -- which only made
+        # sense for a ~$97K account -- with the same formula solved for
+        # volume, so it scales through every Axi Select stage). At ~$97K it
+        # still reproduces ~1.25L (validates the formula matches the old
+        # calibration); at a much larger capital the cap scales up too.
+        vol_97k = vc.calculate_volume(97_000, 1.1000, 1.0999, "EURUSD")
+        assert 1.2 <= vol_97k <= 1.3
+
+        vol_10m = vc.calculate_volume(10_000_000, 1.1000, 1.0999, "EURUSD")
+        assert vol_10m > vol_97k * 50  # scales roughly linearly with capital
 
     def test_volume_rounds_to_2dp(self):
         vc = VolumeCalculator()
