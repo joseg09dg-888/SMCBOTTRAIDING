@@ -1,0 +1,7 @@
+Fecha: 2026-09-01
+Objetivo: sobre la config base honesta (42-43%, ver hallazgo anterior),
+probar si exigir mas fuerza de ruptura (THR_BREAKOUT=75, en vez de 0=sin
+filtro) mejora el resultado -- menos operaciones pero de mayor calidad.
+
+COMANDO EXACTO:
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 STRATEGY_MODE=BREAKOUT DONCHIAN_N=1 ATR_MULT_SL_BO=0.75 RR_MULT_BO=20 TREND_FILTER_BO=0 ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO EXTRA_DEAD_HOURS=15,16,22,23 EXCLUDE_PAIRS=GBPCAD PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0 MAX_OPEN_TEST=21 MIN_SL_PIPS_BO=0 THR_BREAKOUT=75 .venv/Scripts/python -u scripts/backtest_multiyear.py
