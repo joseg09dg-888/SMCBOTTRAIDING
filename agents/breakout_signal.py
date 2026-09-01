@@ -30,7 +30,12 @@ from agents.signal_agent import SignalType, TradeSignal
 
 DONCHIAN_N = 1
 ATR_MULT_SL = 0.75
-RR_MULT = 10.0
+# 2026-08-31 (2da correccion, con spread real): RR subido de 10.0 a 20.0 --
+# revalidado sobre 16 anios reales con el costo de spread REAL de esta
+# cuenta (medido en vivo, 3-6x mas ancho de lo asumido originalmente):
+# RR=10 daba P(pass)=72%, RR=20 dio 74-75% (RR=30 no mejoro mas, techo
+# confirmado). Ver SESION_ACTUAL.md.
+RR_MULT = 20.0
 MIN_BARS = DONCHIAN_N + 20  # margen de seguridad sobre el lookback de ATR14
 
 

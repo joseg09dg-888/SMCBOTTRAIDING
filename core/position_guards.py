@@ -655,17 +655,16 @@ class PositionGuardsMixin:
                 # Monotonically improves from $50 to ~$300-400 then
                 # plateaus. $400 wins on all 3 metrics.
                 # 2026-08-31: recalibrado para el motor breakout nuevo
-                # (agents/breakout_signal.py, reemplaza SMC) -- barrido
-                # completo sobre 16 anios reales con este motor: $400/30%
-                # (valores SMC) daban P(pass Axi 5%)=84% base; ajustar a
-                # $800/5% con TODO lo demas igual subio a Sharpe=1.94,
-                # P(mes<-5%)=0%, P(pass)=96% (combinado con horario 20-21
-                # UTC, ver DEAD_HOURS_UTC en core/supervisor.py). El retrace
-                # tan ajustado (5%) tiene sentido con el motor breakout: deja
-                # correr la ganancia sin taparla temprano, pero corta en
-                # cuanto empieza a revertir de verdad. Ver SESION_ACTUAL.md.
-                PEAK_MIN_USD      = 800.0
-                PEAK_RETRACE_PCT  = 0.05    # close if profit drops 5% from peak
+                # (agents/breakout_signal.py, reemplaza SMC). El primer
+                # barrido ($800/5% -> P(pass)=96%) NO modelaba el costo de
+                # spread real -- al arrancar el bot en vivo se midio el
+                # spread real de esta cuenta (3-6x mas ancho que lo asumido)
+                # y se re-corrio TODO el barrido con el costo real: $1000/2%
+                # da el mejor punto real (P(pass)=75%, Sharpe=1.10,
+                # P(mes<-5%)=4-7%), no el 96% original (ese numero quedo
+                # invalidado, ver SESION_ACTUAL.md).
+                PEAK_MIN_USD      = 1000.0
+                PEAK_RETRACE_PCT  = 0.02    # close if profit drops 2% from peak
                 if pnl > 0:
                     peak = self._position_peaks.get(ticket, 0.0)
                     if pnl > peak:

@@ -1,14 +1,14 @@
 {
-  "month": "2026-08",
+  "month": "2026-09",
   "records": [
     {
-      "date": "2026-08-31",
+      "date": "2026-09-01",
       "pnl": 0.0,
       "pnl_pct": 0.0
     }
   ],
   "capital": 95124.19,
-  "initial_month_balance": 100000.0,
+  "initial_month_balance": 95124.19,
   "guard_day_start_balance": 96013.0,
   "guard_day_start_date": "2026-07-14",
   "guard_paused_today": false

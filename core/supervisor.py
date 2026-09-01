@@ -157,7 +157,12 @@ SCAN_TIMEFRAMES = ["4h", "1h"]  # 4h first so H4 trend is cached before 1h filte
 # Universo completo de pares MT5 (usado para enrutar señales MT5 vs Binance).
 # La lista de pares ACTIVAMENTE escaneados la decide RiskGovernor en tiempo
 # real (self.risk_governor.active_symbols()) — ver core/risk_governor.py.
-MT5_SYMBOLS      = ["USDCAD", "EURUSD", "NZDUSD", "USDCHF", "EURAUD", "GBPCAD"]  # ampliado 2026-07-05: screening backtest 2y (scripts/backtest_new_pairs_screen.py) con las mismas reglas del bot (thr=80/90, RR=3.0, partial+BE@1R) mostro edge positivo real: USDCHF (+$7,296 WR=58%), EURAUD (+$3,828 WR=56%), GBPCAD (+$3,023 WR=58%) en 2 anos -- EURCAD/EURGBP/AUDCAD tambien probados y rechazados (negativos)
+MT5_SYMBOLS      = ["USDCAD", "EURUSD", "NZDUSD", "USDCHF", "EURAUD"]  # ampliado 2026-07-05: screening backtest 2y (scripts/backtest_new_pairs_screen.py) con las mismas reglas del bot (thr=80/90, RR=3.0, partial+BE@1R) mostro edge positivo real: USDCHF (+$7,296 WR=58%), EURAUD (+$3,828 WR=56%), GBPCAD (+$3,023 WR=58%) en 2 anos -- EURCAD/EURGBP/AUDCAD tambien probados y rechazados (negativos)
+# GBPCAD removido 2026-08-31: con el motor breakout nuevo, el spread REAL
+# medido en vivo (18.5 pips, mas ancho por lejos de los 6 pares) lo vuelve
+# neto NEGATIVO (-$22/trade en 16 anios) -- confirmado con backtest
+# revalidado usando el costo de spread real, no una suposicion. Ver
+# SESION_ACTUAL.md.
 # GBPUSD removido 2026-07-09: auditoria de episodes.db (591 trades reales, toda la historia)
 # mostro GBPUSD como el PEOR par activo -- 147 trades, WR=25.9%, PF=0.53, neto -$887.55 (la
 # mayor perdida individual de cualquier simbolo). EURUSD es el UNICO par con edge real
