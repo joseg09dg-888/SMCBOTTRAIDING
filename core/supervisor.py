@@ -1893,7 +1893,18 @@ class TradingSupervisor(PositionGuardsMixin):
                 if _sym_sp and _sym_sp.point > 0:
                     _spread_pips = _spread / (_sym_sp.point * 10)
                     _is_index = any(x in signal.symbol for x in ("NAS", "US30", "SPX", "DAX", "UK100"))
-                    _max_spread = 80.0 if _is_index else 3.0
+                    # 2026-08-31: el limite flat de 3.0 pips (heredado de la
+                    # epoca SMC) bloqueaba el 100% de las señales del motor
+                    # breakout nuevo -- el spread REAL medido en vivo en esta
+                    # cuenta (mt5.symbol_info().spread) es 3-6x mas ancho:
+                    # EURUSD=2.5, USDCAD=4.9, NZDUSD=9.3, USDCHF=7.7,
+                    # EURAUD=9.8 pips. Topes por par con margen sobre lo
+                    # medido (no un limite arbitrario) -- GBPCAD (18.5 pips
+                    # medido) no tiene tope propio a proposito: se removio de
+                    # MT5_SYMBOLS por ser neto negativo con ese spread real.
+                    _SPREAD_CAP_PIPS = {"EURUSD": 5.0, "USDCAD": 8.0, "NZDUSD": 13.0,
+                                        "USDCHF": 12.0, "EURAUD": 14.0}
+                    _max_spread = 80.0 if _is_index else _SPREAD_CAP_PIPS.get(signal.symbol, 3.0)
                     if _spread_pips > _max_spread:
                         print(f"[SPREAD] {signal.symbol}: spread={_spread_pips:.1f} > {_max_spread} max — skip", flush=True)
                         return
