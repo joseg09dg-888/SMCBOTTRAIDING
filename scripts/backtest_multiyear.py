@@ -67,6 +67,19 @@ if REALISTIC_SIGNAL:
 STRATEGY_MODE = os.environ.get("STRATEGY_MODE", "REAL" if REALISTIC_SIGNAL else "SMC")
 DONCHIAN_N       = int(os.environ.get("DONCHIAN_N", "20"))
 ATR_MULT_SL_BO   = float(os.environ.get("ATR_MULT_SL_BO", "2.0"))
+# 2026-08-31: multiplicador de SL POR PAR (nuevo, distinto al global de
+# arriba) -- hipotesis a probar: los pares con spread real mas ancho
+# (NZDUSD=9.3, USDCHF=7.7, EURAUD=9.8 pips medidos en vivo) podrian
+# necesitar un SL mas amplio para que el spread pese menos relativamente,
+# mientras que los de spread chico (EURUSD=2.5, USDCAD=4.9) podrian
+# aprovechar un SL mas ajustado para maximizar frecuencia. Formato:
+# "EURUSD:0.6,USDCAD:0.75,NZDUSD:1.0,USDCHF:1.0,EURAUD:1.0,GBPCAD:1.5"
+_PER_PAIR_SL_RAW = os.environ.get("PER_PAIR_SL_MULT", "")
+PER_PAIR_SL_MULT = {}
+if _PER_PAIR_SL_RAW:
+    for _kv in _PER_PAIR_SL_RAW.split(","):
+        _k, _v = _kv.split(":")
+        PER_PAIR_SL_MULT[_k.strip().upper()] = float(_v)
 RR_MULT_BO       = float(os.environ.get("RR_MULT_BO", "2.5"))
 TREND_FILTER_BO  = os.environ.get("TREND_FILTER_BO", "0") == "1"
 THR_BREAKOUT     = float(os.environ.get("THR_BREAKOUT", "0"))
@@ -709,7 +722,7 @@ def breakout_signal(w, pair, dt):
     atr_v = atr14(w).iloc[-1]
     if pd.isna(atr_v) or atr_v <= 0:
         return None
-    sl_dist = ATR_MULT_SL_BO * atr_v
+    sl_dist = PER_PAIR_SL_MULT.get(pair, ATR_MULT_SL_BO) * atr_v
     entry = close_now
     sl = entry - sl_dist if direction == "LONG" else entry + sl_dist
     tp = entry + sl_dist * RR_MULT_BO if direction == "LONG" else entry - sl_dist * RR_MULT_BO

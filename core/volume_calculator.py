@@ -59,10 +59,24 @@ class VolumeCalculator:
     # drawdown limit when, by its own math, it did not. Lowered to 1.25 lots
     # so the same worst-case formula actually lands under $4,500:
     # 8 x 1.25 x 45 x $10 = $4,500.
-    _MAX_VOL_BY_SYMBOL = {
-        "EURUSD": 1.25, "GBPUSD": 1.25, "USDCHF": 1.25,
-        "USDJPY": 1.25, "GBPJPY": 1.25, "EURJPY": 1.25,
-        "AUDUSD": 1.25, "NZDUSD": 1.25, "EURGBP": 1.25,
+    #
+    # BUG-MAXVOL-FIXED-DOLLARS (2026-08-31): the 1.25L figure above was
+    # itself only correct for a ~$95-97K account -- at $1M (Axi Select Pro
+    # M) it silently caps risk at ~0.008% of capital instead of the
+    # intended 0.5%, making the 5%-monthly target nearly unreachable; at
+    # $5K (Seed) it's irrelevant (never binds) but the constant carried no
+    # actual meaning at that size either. Replaced with the SAME worst-case
+    # formula (8 consecutive stops x 45 pips x pip_value <= 4.5% of
+    # capital), solved for volume instead of hardcoded per capital tier --
+    # reproduces 1.25L almost exactly at ~$97K (validates the formula) and
+    # scales automatically through every Axi Select stage (Seed $5K to Pro
+    # M $1M) without a manual re-tune each time the account grows.
+    _MAXVOL_SAFETY_PCT = 0.045   # Axi daily loss limit ~5%, small margin under it
+    _MAXVOL_WORST_CASE_STOPS = 8
+    _MAXVOL_WORST_CASE_PIPS = 45.0
+    _MAX_VOL_BY_SYMBOL_FIXED = {
+        # Indices: no es un cap de riesgo, es requisito mecanico del broker
+        # (Axi exige lote fijo para estos instrumentos) -- no escala con capital.
         "XAUUSD": 0.05,
         "NAS100": 1.0,
         "US30":   1.0,
@@ -105,7 +119,19 @@ class VolumeCalculator:
         volume   = risk_usd / (pips * pip_value)
 
         min_vol = self._MIN_VOL_BY_SYMBOL.get(base, self._MIN_VOL)
-        max_vol = self._MAX_VOL_BY_SYMBOL.get(base, self._MAX_VOL)
+        if base in self._MAX_VOL_BY_SYMBOL_FIXED:
+            max_vol = self._MAX_VOL_BY_SYMBOL_FIXED[base]
+        elif capital > 0 and pip_value > 0:
+            # cap = capital que sobreviviria _MAXVOL_WORST_CASE_STOPS
+            # perdidas seguidas de _MAXVOL_WORST_CASE_PIPS cada una, sin
+            # superar _MAXVOL_SAFETY_PCT del capital actual (ver comentario
+            # BUG-MAXVOL-FIXED-DOLLARS arriba)
+            max_vol = (capital * self._MAXVOL_SAFETY_PCT) / (
+                self._MAXVOL_WORST_CASE_STOPS * self._MAXVOL_WORST_CASE_PIPS * pip_value
+            )
+            max_vol = min(max_vol, self._MAX_VOL)  # nunca por encima del techo global
+        else:
+            max_vol = self._MAX_VOL
         volume  = max(min_vol, min(max_vol, volume))
 
         # Safety check: if broker minimum forces >2.5x allowed risk, skip the trade
