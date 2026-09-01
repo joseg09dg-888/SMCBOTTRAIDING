@@ -2369,3 +2369,25 @@ cierre: ~850MB -- por debajo del umbral seguro de 1GB, así que el restart
 para `_recover_orphaned_episodes()` + `pytest tests/ -q` completo quedan
 diferidos a la próxima vez que haya RAM suficiente (no se ejecutaron esta
 sesión por prudencia, no por olvido).
+
+**ACTUALIZACIÓN**: usuario autorizó explícitamente correr ambos con RAM
+ajustada (~850MB libres). Restart ejecutado (`pm2 restart smc-bot`) --
+limpio, bot online sin crash. `pytest tests/ -q` completo: **1448 passed,
+0 failed, 11 warnings (pre-existentes, deprecation warnings no
+relacionados)** en 162s -- confirma que los 3 fixes de hoy (log de precio,
+PYTHONDONTWRITEBYTECODE, y los cambios previos) no rompieron nada. Bot
+siguió estable durante y después del pytest (CPU pico 95% momentáneo,
+bajó a 58% en 5s, restart count sin cambios).
+
+**Hallazgo adicional en el restart**: `_recover_orphaned_episodes()`
+siguió sin encontrar el deal de NZDUSD #103194381 **incluso con lookback
+de 90 días** -- y aparecieron 2 tickets huérfanos MÁS con el mismo
+problema (#103217813, #103217860, de sesiones anteriores). Esto ya no
+parece un simple retraso de sincronización (como se documentó antes) sino
+un problema más persistente/estructural con el historial de deals de esta
+cuenta/servidor MT5 -- pendiente investigar en la próxima sesión (revisar
+si `history_deals_get()` tiene algún límite de la API, o si el broker
+purga el historial de la demo más agresivo de lo esperado). Sigue sin
+afectar dinero real (balance/posiciones abiertas se leen de una API MT5
+distinta, ya verificada correcta) -- solo afecta registros del
+AutonomousLearner para esos 3 tickets.
