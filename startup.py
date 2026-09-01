@@ -99,6 +99,18 @@ async def send_welcome(supervisor: TradingSupervisor, capital: float, auto: bool
             print(f"[WARN] Error leyendo MT5 balance: {e} — usando ${capital:,.0f}", flush=True)
 
     supervisor.capital = capital
+    # BUG-BALANCE-PEAK-STALE-INIT (2026-09-01): _balance_peak se fija en
+    # __init__ (core/supervisor.py) ANTES de que este bloque corrija
+    # self.capital con el balance real de MT5 -- en un restart con
+    # --capital=0 (el caso normal en PM2) eso dejaba _balance_peak
+    # arrancando desde 0 o desde el placeholder $100K de risk_gate_state
+    # (aun no sincronizado a esta altura), imprimiendo un falso "$100,000
+    # nuevo maximo historico" con balance real mas bajo. Confirmado con
+    # grep que _balance_peak solo afecta que texto de log se imprime en
+    # la rama [RECOVERY] (no gatea sizing/ejecucion/cierre real), pero el
+    # texto es enganoso -- sincronizar aqui, justo cuando el capital real
+    # ya se conoce, lo corrige de raiz sin tocar la logica de riesgo.
+    supervisor._balance_peak = capital
     supervisor.risk_manager.capital = capital
     supervisor._edge.capital = capital
 

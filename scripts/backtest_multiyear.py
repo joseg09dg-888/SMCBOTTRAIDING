@@ -186,6 +186,17 @@ ENABLE_SPREAD_COST = os.environ.get("ENABLE_SPREAD_COST", "0") == "1"
 SPREAD_PIPS = {"EURUSD": 0.8, "GBPUSD": 1.0, "AUDUSD": 1.0, "USDCAD": 1.0,
                "NZDUSD": 1.0, "USDCHF": 1.0, "EURAUD": 1.4, "GBPCAD": 1.7,
                "NAS100": 1.5}
+# 2026-09-01: SPREAD_PROFILE=DEMO restaura los valores medidos en la cuenta
+# Axi-US50-Demo (Standard, 3-11x mas anchos que la cuenta real de arriba) --
+# necesario para validar cambios contra lo que el bot en vivo experimenta
+# HOY (sigue en la demo, la cuenta real 60290663 aun no esta activada, ver
+# SESION_ACTUAL.md seccion "Estado actual y plan acordado"). No pisa el
+# dict de arriba (que documenta la cuenta real para cuando se active) --
+# solo lo sobreescribe en memoria si se pide explicitamente.
+if os.environ.get("SPREAD_PROFILE", "").upper() == "DEMO":
+    SPREAD_PIPS = {"EURUSD": 2.5, "GBPUSD": 3.0, "AUDUSD": 2.5, "USDCAD": 4.9,
+                   "NZDUSD": 9.3, "USDCHF": 7.7, "EURAUD": 9.8, "GBPCAD": 18.5,
+                   "NAS100": 1.5}
 
 
 def _spread_cost(pair, vol):
@@ -723,6 +734,25 @@ def breakout_signal(w, pair, dt):
     if pd.isna(atr_v) or atr_v <= 0:
         return None
     sl_dist = PER_PAIR_SL_MULT.get(pair, ATR_MULT_SL_BO) * atr_v
+    # 2026-09-01: BUG-MT5-INVALID-STOPS-LIVE -- confirmado en vivo (cuenta
+    # demo, USDCHF, 21:5x UTC) que MT5 rechaza ordenes con retcode 10016
+    # "Invalid stops" cuando el SL calculado por ATR queda demasiado cerca
+    # del precio. Verificado con mt5.order_check() en vivo que el minimo
+    # real NO es fijo (el campo symbol_info().trade_stops_level reporta un
+    # valor no confiable, ~0.1 pip, en los 5 pares activos) -- es dinamico,
+    # correlacionado con volatilidad/spread del momento: en hora muerta
+    # (calma) el minimo real bajo hasta <1 pip, pero durante la killzone
+    # activa (mult=1.20) subio a ~15 pips (7.8 rechazado, 15 aceptado,
+    # binary search exacto). MIN_SL_PIPS_BO modela un piso conservador fijo
+    # (el peor caso medido) -- se aplica ANTES de calcular tp para que el
+    # RR_MULT_BO se preserve EXACTO (tp = sl_dist_ajustado * RR, misma
+    # formula de siempre, sin logica extra). Default "0" = deshabilitado,
+    # no cambia el comportamiento existente a menos que se pida.
+    _min_sl_pips = float(os.environ.get("MIN_SL_PIPS_BO", "0") or 0)
+    if _min_sl_pips > 0:
+        _min_sl_dist = _min_sl_pips * PIP_SZ[pair]
+        if sl_dist < _min_sl_dist:
+            sl_dist = _min_sl_dist
     entry = close_now
     sl = entry - sl_dist if direction == "LONG" else entry + sl_dist
     tp = entry + sl_dist * RR_MULT_BO if direction == "LONG" else entry - sl_dist * RR_MULT_BO
