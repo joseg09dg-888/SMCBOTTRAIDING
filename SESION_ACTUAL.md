@@ -2142,3 +2142,48 @@ no hay nada pendiente de subir salvo este archivo. La contraseña de la
 cuenta real NUNCA se escribió en ningún archivo del repo (solo se usó en
 memoria, en comandos puntuales de verificación, y no queda guardada en
 disco en texto plano dentro del proyecto).
+
+---
+
+## 🔴 PUNTO EXACTO PARA RETOMAR (guardado 2026-09-01 ~03:10 UTC, antes de
+## apagar el PC a pedido del usuario)
+
+**Todo lo de hoy está commiteado y pusheado a `origin/main`** -- si el PC
+se daña, todo se recupera clonando el repo, sin perder nada.
+
+**Estado en el momento de apagar:**
+- Bot en PM2 (`smc-bot`) corriendo en la **cuenta DEMO** (`Axi-US50-Demo`,
+  login 10042896), modo **AUTO**, con el motor breakout nuevo, **2+ horas
+  estable sin caerse, sin bugs nuevos encontrados** en la auditoría en vivo
+  de hoy (los 2 únicos errores en el log son pre-existentes y ya
+  documentados: DNS de Binance testnet, un timeout puntual de Telegram --
+  ninguno relacionado con el motor breakout).
+- El bot **solo opera 20:00-21:00 UTC** -- fuera de esa ventana no hace
+  nada (correcto, por diseño).
+- Al apagar el PC, PM2 y la tarea de auto-commit se detienen -- se
+  reactivan solos cuando el usuario prenda la PC de nuevo y corra
+  `pm2 resurrect` o `pm2 start ecosystem.config.js` (ver sección 2 de
+  CLAUDE.md para el arranque completo).
+
+**Lo que falta hacer, en orden, la próxima sesión:**
+1. Verificar que el bot sigue corriendo bien en la demo (75% validado) --
+   seguir auditando en vivo cómo entra, cómo gestiona, cómo lee el
+   mercado, buscando cualquier bug real (esa es la tarea activa que pidió
+   el usuario: "revisa como ejecuta cada cosa que debe hacer").
+2. El usuario debe depositar el mínimo $500 en la cuenta real (60290663,
+   `Axi-US51-Live`) para activar Axi Select de verdad.
+3. Cuando esté depositado y el usuario confirme, aplicar los 6 pasos ya
+   documentados arriba (sección "Estado actual y plan acordado") para
+   mover el bot a la config del 97% en la cuenta real -- reincluir
+   GBPCAD, ajustar `_SPREAD_CAP_PIPS`, actualizar `.env` (login/servidor,
+   la contraseña la pega el usuario, nunca yo ni el repo), verificar
+   sufijo `.sa` en los símbolos, confirmar con soporte de Axi si el bot
+   cuenta como EA propio, correr `pytest tests/ -q` completo antes de dar
+   por bueno el cambio.
+4. NO se ha tocado la config de la demo hacia la de 97% -- sigue
+   correctamente calibrada para el spread ancho real de la demo (75%).
+
+**No hay nada más pendiente de esta sesión** -- todo lo demás (motor
+breakout construido y validado, conversión a % de capital, fix del
+VolumeCalculator, investigación completa de Axi Select) quedó terminado y
+verificado, no a medias.
