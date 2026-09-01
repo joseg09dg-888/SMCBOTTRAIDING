@@ -1989,3 +1989,156 @@ en vivo ahí sí intentas mejorar").
 offline al momento de este cambio). Bot NO se arrancó automáticamente --
 el usuario debe decidir cuándo, dado que esto ya mueve dinero real en la
 cuenta demo/Axi Select.
+
+---
+
+## 🏦 INVESTIGACIÓN AXI SELECT + CUENTA REAL + CONFIG 97% (2026-08-31, sesión larga)
+
+### 1. Reglas reales de Axi Select (investigado vía WebSearch, no supuesto)
+
+- **NO existe cuenta demo para Axi Select** -- el programa completo es con
+  dinero real desde el día 1: depositas mínimo $500 en una cuenta MT5 real
+  de Axi, cierras 20 operaciones, y si tu "Edge Score" supera 50 desbloqueas
+  la etapa Seed. La cuenta `Axi-US50-Demo` que usa el bot NO cuenta para el
+  progreso real hacia Axi Select -- es solo para probar que el bot funciona
+  sin arriesgar dinero, decisión correcta del usuario.
+- **6 etapas reales con capital fondeado**: Seed $5,000 → Incubation
+  $20,000 → Acceleration $100,000 → Pro $200,000 → Pro 500 $500,000 → Pro M
+  $1,000,000. Profit split escala 40%→90%.
+- **Pérdida máxima real**: -7% (Seed a Pro 500), -10% en Pro M (sube en la
+  última etapa, no baja) -- distinto del ~4-5% asumido en partes viejas de
+  este documento.
+- **El "Edge Score" NO es "pasar 5% mensual"** -- es una fórmula ponderada
+  no pública de 4 factores (Skill/Risk/Consistency/Experience). El "5%
+  mensual"/"96%" que se ha optimizado toda la sesión es la REGLA PROPIA del
+  usuario para su plan personal de capitalización/inversión/pago mensual,
+  no un requisito publicado por Axi -- él lo confirmó explícitamente.
+- **Bots automáticos**: Axi permite "Expert Advisors de construcción
+  propia" (no de terceros). Nuestro bot en Python (vía librería
+  MetaTrader5, no un .ex5 compilado) debería calificar por ser
+  autoconstruido, pero la regla no aclara explícitamente bots externos vía
+  API -- **pendiente de confirmar directamente con soporte de Axi antes de
+  operar la cuenta real**, no asumido.
+- Fuentes: help.axi.com/hc/en-us/articles/38852611020569 (etapas),
+  support.axi.com/hc/en-us/articles/38954749331737 (EA rules),
+  help.axi.com/hc/en-us/articles/38852752289433 (depósito mínimo).
+
+### 2. Cuenta real de Axi Select del usuario (datos de conexión, NUNCA la contraseña aquí)
+
+- **Login**: 60290663 | **Servidor**: `Axi-US51-Live` | Apalancamiento 1:1000
+- Balance actual: **$0.00** (sin fondos depositados todavía -- falta el
+  mínimo $500 para activar Axi Select de verdad)
+- Símbolos en este servidor llevan sufijo **`.sa`** (ej. `EURUSD.sa`, NO
+  `EURUSD` a secas como en la demo) -- IMPORTANTE si se conecta el bot aquí
+  en el futuro, los símbolos en `core/supervisor.py::MT5_SYMBOLS` tendrían
+  que ajustarse a esta convención de nombres.
+- La contraseña de trading vive SOLO en la memoria del usuario y en su
+  gestor de contraseñas -- nunca se guarda en este repo ni en `.env` de
+  ejemplo. Si hace falta reconectar, pedírsela de nuevo.
+
+### 3. Spread real medido -- HALLAZGO CRÍTICO que cambió todo el resultado
+
+Se midió con `mt5.symbol_info().spread` en vivo, 2 veces cada cuenta
+(consistente):
+
+| Par | Demo (`Axi-US50-Demo`, tipo Standard) | **Cuenta REAL (60290663)** |
+|---|---|---|
+| EURUSD | 2.5 pips | **0.8 pips** |
+| USDCAD | 4.9 pips | **1.0 pips** |
+| NZDUSD | 9.3 pips | **1.0 pips** |
+| USDCHF | 7.7 pips | **1.0 pips** |
+| EURAUD | 9.8 pips | **1.4 pips** |
+| GBPCAD | 18.5 pips | **1.7 pips** |
+
+La demo tiene spreads 3-11x más anchos que la cuenta real -- confirma la
+hipótesis del usuario de que las cuentas demo son deliberadamente más
+anchas (para practicantes) y las reales son más ajustadas. GBPCAD, que se
+había excluido por ser neto negativo con el spread de la demo (18.5 pips),
+**vuelve a ser viable y rentable** con el spread real (1.7 pips).
+
+`scripts/backtest_multiyear.py::SPREAD_PIPS` fue actualizado a estos
+valores reales (reemplazando los de la demo).
+
+### 4. Bug crítico encontrado y corregido en `core/volume_calculator.py`
+
+El tope de tamaño de posición (`_MAX_VOL_BY_SYMBOL`, antes fijo en 1.25
+lotes para todos los pares mayores) estaba calibrado SOLO para ~$97K. A
+$1M (Axi Select Pro M) esto limitaba el riesgo real a ~0.02% del capital
+en vez del 0.5% pretendido -- hacía la meta del 5% mensual casi imposible
+en la etapa más alta, justo la que el usuario quiere alcanzar. Corregido:
+la misma fórmula de "peor caso" (8 pérdidas seguidas de 45 pips ≤ 4.5% del
+capital) ahora se resuelve para el volumen en vez de usar una constante
+fija -- reproduce ~1.25L a ~$97K (valida contra la calibración original) y
+escala automáticamente en las 6 etapas. Ya commiteado y con tests
+actualizados (`tests/core/test_volume_calculator.py`).
+
+### 5. RESULTADO FINAL VALIDADO -- config para la cuenta REAL (NO la demo)
+
+Backtest completo, 16 años reales H1 MT5 (verificado 2 veces que los 6
+pares bajaron el histórico completo, no un fallback corto de yfinance --
+la primera corrida falló silenciosamente a un fallback de solo 1.3 años
+por un problema de conexión, detectado y corregido antes de confiar en el
+número), 21,682 trades, **consistente en los 17 años (2010-2026, ningún
+año negativo) y en los 6 pares (todos positivos, incluyendo GBPCAD ahora)**:
+
+**Config**: Donchian N=1, sin filtro de tendencia, SL=0.75×ATR14,
+RR=20×SL, peak-guard $1000(→%)/2% retrace, riesgo x2.0, horario 20-21 UTC
+únicamente, **los 6 pares** (GBPCAD incluido), spread real de la cuenta
+60290663.
+
+| Métrica | Valor |
+|---|---|
+| **P(pasar Axi Select 5% mensual)** | **97%** |
+| Sharpe mensual | **2.00** |
+| E[mensual] | $27,088 |
+| P(mes < -5%) | **0%** |
+| WR real | 37.4% (avg win $1,069 / avg loss $261) |
+
+Guardado en `memory/backtest_results_maxopen16.json` (con `year_stats`/
+`regime_stats` incluidos).
+
+### 6. Progresión completa de todo el trabajo con el motor breakout (referencia)
+
+| Config | P(pass) | Sharpe |
+|---|---|---|
+| Breakout básico (sin costo de spread modelado) | 96% (INVÁLIDO, spread subestimado) | 1.94 |
+| + spread real de la DEMO (Standard) | 75% | 1.10 |
+| **+ spread real de la CUENTA REAL (60290663)** | **97%** | **2.00** |
+
+### 7. Estado actual y plan acordado con el usuario (2026-08-31)
+
+- **El bot en PM2 sigue corriendo en la cuenta DEMO** con la config de 75%
+  (GBPCAD excluido, límites de spread anchos calibrados para la demo,
+  RR=20, peak-guard 1000/2%) -- así debe quedarse por ahora. Objetivo:
+  observar que opere sin bugs y confirme el ~75% esperado en la demo antes
+  de mover nada.
+- **NO se ha cambiado la config del bot en vivo hacia la de 97%** (esa
+  necesita GBPCAD reincluido + límites de spread mucho más ajustados,
+  calibrados para la cuenta real, no la demo -- aplicarla en la demo
+  rompería todo porque el spread real de la demo sigue siendo ancho).
+- **Cuando el usuario deposite los $500 mínimos y decida activar la cuenta
+  real**: pasos pendientes, no hechos todavía:
+  1. Reincluir GBPCAD en `core/supervisor.py::MT5_SYMBOLS`.
+  2. Ajustar `_SPREAD_CAP_PIPS` en `core/supervisor.py` a topes mucho más
+     chicos (spread real 0.8-1.7 pips, no 2.5-18.5) -- con margen razonable.
+  3. Actualizar `.env`: `MT5_LOGIN=60290663`, `MT5_SERVER=Axi-US51-Live`,
+     `MT5_PASSWORD=` (la contraseña real, que el usuario debe pegar él
+     mismo, nunca commitear).
+  4. Verificar si los símbolos necesitan el sufijo `.sa` en el conector
+     MT5 para este servidor especifico (confirmado que existe en
+     `connectors/metatrader_connector.py` o si hace falta un mapeo nuevo).
+  5. Confirmar con soporte de Axi si el bot en Python cuenta como "EA de
+     construcción propia" antes de operar dinero real (punto 1, sección
+     de reglas de Axi arriba -- no confirmado todavía).
+  6. Reiniciar PM2 y volver a correr `pytest tests/ -q` completo antes de
+     dar por bueno el cambio a producción real.
+
+### 8. Backup -- todo lo de hoy confirmado subido a GitHub
+
+Cada cambio de código de esta sesión (implementación del motor breakout,
+conversión a % de capital, fix de VolumeCalculator, spreads corregidos)
+fue commiteado y pusheado a `origin/main` en el momento en que se hizo --
+no hay nada pendiente de subir salvo este archivo. La contraseña de la
+cuenta real NUNCA se escribió en ningún archivo del repo (solo se usó en
+memoria, en comandos puntuales de verificación, y no queda guardada en
+disco en texto plano dentro del proyecto).
