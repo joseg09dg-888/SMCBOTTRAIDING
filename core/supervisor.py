@@ -2280,7 +2280,11 @@ class TradingSupervisor(PositionGuardsMixin):
 
         if "ticket" in result:
 
-            print(f"[MT5 REAL] {signal.symbol} {order_type} #{result['ticket']} @{result.get('price', 0):.5f} score={signal.decision_score}", flush=True)
+            # Market-execution brokers (Axi) often return price=0 in the deal
+            # result — fall back to the pre-fill requested price for logging
+            # accuracy only; SL/TP were already computed and sent from real ticks.
+            _log_price = result.get("price") or result.get("requested_price", 0)
+            print(f"[MT5 REAL] {signal.symbol} {order_type} #{result['ticket']} @{_log_price:.5f} score={signal.decision_score}", flush=True)
 
             # BUG-LOSS-LIMIT-FLAT (2026-07-21, risk-management expert panel):
             # the software backstop that force-closes a losing position
