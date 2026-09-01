@@ -74,6 +74,7 @@ ATR_MULT_SL_BO   = float(os.environ.get("ATR_MULT_SL_BO", "2.0"))
 # mientras que los de spread chico (EURUSD=2.5, USDCAD=4.9) podrian
 # aprovechar un SL mas ajustado para maximizar frecuencia. Formato:
 # "EURUSD:0.6,USDCAD:0.75,NZDUSD:1.0,USDCHF:1.0,EURAUD:1.0,GBPCAD:1.5"
+_EXCLUDE_WEEKDAYS = {int(x) for x in os.environ.get("EXCLUDE_WEEKDAYS", "").split(",") if x.strip()}  # 0=Lunes..4=Viernes
 _PER_PAIR_SL_RAW = os.environ.get("PER_PAIR_SL_MULT", "")
 PER_PAIR_SL_MULT = {}
 if _PER_PAIR_SL_RAW:
@@ -807,6 +808,7 @@ if True:
         dfd = d1_data.get(pair, pd.DataFrame())
         bar = df1.iloc[idx]
         if pd.Timestamp(dt).weekday() >= 5: continue
+        if pd.Timestamp(dt).weekday() in _EXCLUDE_WEEKDAYS: continue
         hour_utc = pd.Timestamp(dt).hour
         # Bug found 2026-07-07: this used to keep hours 13-19 UTC, which is NOT
         # what the live bot trades. Real DEAD_HOURS_UTC (core/supervisor.py:121)
