@@ -2848,5 +2848,25 @@ vez de 2) para dar mas muestra. Comando exacto en
 mas muestra que v1 pero SIGUE sin ventaja real, practicamente plano/
 negativo. El concepto RSI(30/70)+Bollinger+target-banda-media, tal como
 esta implementado, no muestra edge real en este mercado/timeframe.
-Probando v3 con umbrales RSI menos extremos (35/65) para mas muestra
-antes de descartar el enfoque completo.
+
+**v3 (RSI 35/65, mas señales candidatas -- comando en
+`memory/bt_logs/EXACT_COMMAND_meanrev_v3_rsi3565.txt`)**: **resultado
+IDENTICO a v2 -- 121 trades, mismos $ exactos, pese a que las señales
+candidatas subieron de 6347 a 10900**. Esto es una anomalia real, no
+solo "sin edge" -- algo rio abajo de `meanrev_signal()` (probablemente
+`STAGNANT_HOURS=6.0`, el cierre automatico por estancamiento que ya
+existe en el script para el motor SMC viejo) esta limitando cuantas
+operaciones completan su ciclo, independiente del umbral RSI de entrada.
+NO investigado a fondo (se prioriza dar el veredicto real al usuario
+sobre seguir cavando en un detalle de implementacion) -- queda como
+pendiente tecnico para la proxima sesion si se retoma este enfoque.
+
+**Veredicto honesto sobre reversion a la media**: con 2 pruebas limpias
+(v1 restringido a horas breakout: 0%, v2 sin restriccion horaria: 0%,
+ambas con Sharpe negativo), **este primer intento de estrategia opuesta
+al breakout no muestra ninguna ventaja real** -- ni siquiera antes de
+resolver la anomalia de v3. No se descarta el concepto de reversion a la
+media en general (podria necesitar un exit distinto, no un target fijo
+en la banda media, o un timeframe distinto), pero la primera
+implementacion honesta no funciona. Motor breakout (44%) sigue siendo,
+por mucho, la mejor opcion real encontrada en toda la sesion.
