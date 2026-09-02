@@ -2618,3 +2618,9 @@ se llegue al 5% mensual real (no un backtest) -- instruccion honrada:
 este resultado se documenta aqui, en silencio, sin notificar en el chat,
 tal como se pidio. Si el usuario vuelve a escribir, este documento tiene
 todo el contexto para retomar sin repetir nada.
+
+**ATR_MULT_SL_BO=1.0** (SL un poco mas ancho que 0.75 -- comando exacto en
+`memory/bt_logs/EXACT_COMMAND_atrsl1.txt`): **40%, Sharpe=0.52, 7201
+trades** -- mismo numero de trades que el baseline (logico, el ancho de SL
+no cambia cuales barras rompen el canal), pero resultado peor. Octava
+variable probada, octava sin mejora.
