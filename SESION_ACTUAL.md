@@ -2788,3 +2788,31 @@ ambas horas). P(pass) baja (menos volumen = menos "tiros" mensuales para
 el Monte Carlo) pero el Sharpe sube fuerte (0.69->0.81, +17%) -- sugiere
 que la hora 20 es mas "limpia" por trade que la 21. Probando hora 21 sola
 para comparar el cuadro completo.
+
+**Hora 21 UTC sola (sin 20)** -- comando en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_rr25_hour21only.txt`: **41%,
+Sharpe=0.87 (mejor de toda la sesion), E[mes]=$4663, 3721 trades**. Casi
+el mismo E[mes] que las 2 horas combinadas ($4778) con LA MITAD de
+trades -- hora 21 sola es mas eficiente por operacion que la combinacion.
+Pero P(pass) (41%) sigue por debajo del combinado (44%) porque el Monte
+Carlo premia mas operaciones/mes, no solo mejor calidad por operacion.
+
+**Conclusion de este sub-experimento**: hay un trade-off real entre
+P(pass) (favorece combinar ambas horas, mas volumen mensual) y Sharpe/
+calidad por trade (favorece hora 21 sola). Para el objetivo primario del
+usuario (P(pass) del 5% mensual), **combinar ambas horas (44%) sigue
+siendo mejor que cualquier hora sola** -- este experimento no cambia la
+config recomendada, pero revela que la hora 21 es estructuralmente mejor
+que la 20, informacion util si en el futuro se agregan mas pares/horas y
+hay que decidir donde concentrar riesgo.
+
+**MEJOR CONFIG FINAL DE TODA LA SESION (2026-09-01/02)**: ATR_MULT_SL_BO=
+0.5, RR_MULT_BO=25, RISK_MULT_TEST=2.0-3.0 (equivalentes), resto igual al
+baseline (N=1, sin filtro tendencia, GBPCAD excluido, horas 20-21 UTC
+ambas, peak-guard 1000/2%) -> **P(pass)=44%, Sharpe=0.69-0.70,
+E[mes]=~$4770**. Mejora real sobre el baseline de ayer (43%/0.62) pero
+modesta -- de 18 variables probadas en total (13 anoche + 5 hoy), esta es
+la mejor combinacion encontrada. Sigue lejos del 75-98% que el usuario
+necesita. NO aplicado aun al codigo en vivo -- pendiente decision del
+usuario y verificacion de consistencia por año/par de la combinacion
+final antes de tocar `agents/breakout_signal.py`.
