@@ -2575,3 +2575,8 @@ reales de HOY lo que ya se habia visto en sesiones anteriores con el motor
 SMC viejo: ser mas selectivo con el umbral de señal empeora el resultado
 en vez de mejorarlo -- la frecuencia de señal es el cuello de botella real,
 no la calidad nominal del score. Otra hipotesis descartada honestamente.
+
+**TREND_FILTER_BO=1** (exigir que la ruptura vaya a favor de EMA50/EMA200 --
+comando exacto en `memory/bt_logs/EXACT_COMMAND_trendfilter.txt`):
+**40%, Sharpe=0.58, 6392 trades** -- practicamente igual al baseline (43%),
+levemente peor. El filtro de tendencia clasico tampoco ayuda aqui.
