@@ -1,0 +1,10 @@
+Fecha: 2026-09-02
+Objetivo: probar SL escalado por par segun el spread real medido en la
+demo (EURUSD=2.5, USDCAD=4.9, NZDUSD=9.3, USDCHF=7.7, EURAUD=9.8 pips) --
+hipotesis: pares con spread ancho necesitan SL mas amplio para que el
+spread pese menos proporcionalmente. Escalado: base 0.5 (mejor hallazgo
+de anoche) para EURUSD (spread mas chico), proporcional al resto por
+ratio de spread. Sobre RR=25 (tambien mejor hallazgo de anoche).
+
+COMANDO EXACTO:
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 STRATEGY_MODE=BREAKOUT DONCHIAN_N=1 ATR_MULT_SL_BO=0.5 PER_PAIR_SL_MULT=EURUSD:0.5,USDCAD:1.0,NZDUSD:1.85,USDCHF:1.55,EURAUD:1.95 RR_MULT_BO=25 TREND_FILTER_BO=0 ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO EXTRA_DEAD_HOURS=15,16,22,23 EXCLUDE_PAIRS=GBPCAD PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0 MAX_OPEN_TEST=32 MIN_SL_PIPS_BO=0 .venv/Scripts/python -u scripts/backtest_multiyear.py
