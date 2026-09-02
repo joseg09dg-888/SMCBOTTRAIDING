@@ -2773,3 +2773,10 @@ Sharpe=0.42** -- MUCHO peor que el uniforme 0.5 (44%/0.69). La hipotesis
 de "SL mas ancho compensa spread mas ancho" no se sostiene con datos
 reales -- descartada. El SL uniforme sigue siendo mejor que cualquier
 version escalada por par probada hasta ahora.
+
+**RISK_MULT_TEST=3.0** (sobre ATR=0.5+RR=25, re-optimizando el
+multiplicador de riesgo que se habia fijado con el SL viejo -- comando en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_rr25_risk3.txt`): **44%/Sharpe=0.70/
+E[mes]=$4778** -- practicamente igual a riesgo x2.0 (44%/0.69/$4761),
+diferencia dentro del ruido. Confirma que 2.0-3.0 es una meseta amplia,
+no hay ganancia real subiendo mas el riesgo.
