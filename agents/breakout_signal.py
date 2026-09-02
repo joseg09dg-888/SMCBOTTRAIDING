@@ -29,13 +29,22 @@ import pandas as pd
 from agents.signal_agent import SignalType, TradeSignal
 
 DONCHIAN_N = 1
-ATR_MULT_SL = 0.75
-# 2026-08-31 (2da correccion, con spread real): RR subido de 10.0 a 20.0 --
-# revalidado sobre 16 anios reales con el costo de spread REAL de esta
-# cuenta (medido en vivo, 3-6x mas ancho de lo asumido originalmente):
-# RR=10 daba P(pass)=72%, RR=20 dio 74-75% (RR=30 no mejoro mas, techo
-# confirmado). Ver SESION_ACTUAL.md.
-RR_MULT = 20.0
+# 2026-09-02: ATR_MULT_SL bajado de 0.75 a 0.5 tras barrido de 18
+# variables sobre la config real desplegada (5 pares, spread demo medido,
+# horas 20-21 UTC) -- unico hallazgo positivo real de toda la sesion:
+# mismo P(pass)=43->44% pero Sharpe +11% (0.62->0.69), verificado
+# consistente en los 17 años (2010-2026, ningun año negativo). Ver
+# SESION_ACTUAL.md seccion "RESUMEN FINAL DE LA NOCHE" y
+# memory/bt_logs/EXACT_COMMAND_atrsl05.txt (comando exacto reproducible).
+ATR_MULT_SL = 0.5
+# 2026-08-31 (2da correccion, con spread real): RR subido de 10.0 a 20.0
+# -- revalidado sobre 16 anios reales con el costo de spread REAL de esta
+# cuenta. 2026-09-02: subido otra vez a 25.0 -- sobre el ATR=0.5 nuevo,
+# RR=25 dio la misma mejora marginal que RR=30 (meseta confirmada, sin
+# seguir subiendo) sobre RR=20 (44% vs 43%, Sharpe igual). Verificado
+# consistente en los 17 años. Ver SESION_ACTUAL.md y
+# memory/bt_logs/EXACT_COMMAND_atrsl05_rr25.txt.
+RR_MULT = 25.0
 MIN_BARS = DONCHIAN_N + 20  # margen de seguridad sobre el lookback de ATR14
 
 

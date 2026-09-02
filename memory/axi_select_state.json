@@ -9,10 +9,10 @@
     {
       "date": "2026-09-02",
       "pnl": -424.7,
-      "pnl_pct": -0.004484712642063859
+      "pnl_pct": -0.0044871557148687775
     }
   ],
-  "capital": 94699.49,
+  "capital": 94647.93,
   "initial_month_balance": 95124.19,
   "guard_day_start_balance": 96013.0,
   "guard_day_start_date": "2026-07-14",

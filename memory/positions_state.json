@@ -1,0 +1,23 @@
+{
+  "saved_at": 1788380138.286592,
+  "positions": [
+    {
+      "symbol": "EURUSD",
+      "entry": 1.15892,
+      "direction": "long",
+      "size": 1.18,
+      "ticket": 103932894,
+      "sl": 1.15839,
+      "tp": 1.17098
+    },
+    {
+      "symbol": "USDCHF",
+      "entry": 0.81268,
+      "direction": "short",
+      "size": 1.18,
+      "ticket": 103932908,
+      "sl": 0.81321,
+      "tp": 0.79939
+    }
+  ]
+}
