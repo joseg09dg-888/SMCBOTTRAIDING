@@ -2634,3 +2634,29 @@ ATR_MULT_SL_BO: 0.5->43%/0.69 (mejor) | 0.75->43%/0.62 (base) |
 1.0->40%/0.52 (peor) -- sugiere que SL mas ajustado (dentro de este rango)
 mejora la calidad del resultado sin sacrificar frecuencia. Vale la pena
 seguir explorando valores aun mas bajos (0.3-0.4) en la proxima sesion.
+
+**ATR_MULT_SL_BO=0.4** (seguir el barrido en la misma direccion -- comando
+exacto en `memory/bt_logs/EXACT_COMMAND_atrsl04.txt`): **41%, Sharpe=0.68,
+E[mes]=$4372**. Confirma que 0.5 es un pico local: 0.4 empieza a perder
+P(pass) (43%->41%) sin ganar Sharpe (0.69->0.68, practicamente igual).
+Barrido completo: **0.4->41%/0.68 | 0.5->43%/0.69 (MEJOR) | 0.75->43%/0.62
+(base/vivo) | 1.0->40%/0.52**.
+
+### 🏁 CIERRE DE LA RONDA DE OPTIMIZACION DE HOY (10 variables probadas)
+
+**Unico hallazgo positivo real de todas las pruebas de hoy**:
+`ATR_MULT_SL_BO=0.5` (en vez de 0.75, el valor actualmente en vivo) --
+mismo P(pass)=43%, pero Sharpe +11% (0.62->0.69) y E[mes] +3% ($4569->
+$4703). Modesto, real, verificable, NO aplicado todavia al codigo en vivo
+(`agents/breakout_signal.py::ATR_MULT_SL`) -- pendiente de una segunda
+confirmacion (ej. verificar consistencia por año/por par, como se hizo
+para los resultados que SI se dieron por buenos anteriormente) antes de
+tocar el codigo desplegado, seguiendo la misma disciplina que evito los
+errores de sesiones pasadas.
+
+**Estado real de la estrategia, honesto, a la fecha**: techo de ~43%
+P(pass)/Sharpe~0.69 con la configuracion actual (5 pares, spread demo,
+ventana 20-21 UTC) tras 10 variables probadas hoy sin encontrar nada que
+lo supere significativamente. Muy lejos del 75-97% documentado en
+sesiones anteriores, que no se pudo reproducir pese al esfuerzo genuino
+de esta sesion.
