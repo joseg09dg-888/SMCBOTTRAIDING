@@ -2843,3 +2843,10 @@ restringirla a solo 2 horas/dia la vuelve casi inexistente.
 "killzone" -- usando solo el bloqueo base del script, 6 horas activas en
 vez de 2) para dar mas muestra. Comando exacto en
 `memory/bt_logs/EXACT_COMMAND_meanrev_v2_allhours.txt`.
+
+**v2 resultado**: **121 trades, E[mes]=-$17, Sharpe=-0.03, P(pass)=0%** --
+mas muestra que v1 pero SIGUE sin ventaja real, practicamente plano/
+negativo. El concepto RSI(30/70)+Bollinger+target-banda-media, tal como
+esta implementado, no muestra edge real en este mercado/timeframe.
+Probando v3 con umbrales RSI menos extremos (35/65) para mas muestra
+antes de descartar el enfoque completo.
