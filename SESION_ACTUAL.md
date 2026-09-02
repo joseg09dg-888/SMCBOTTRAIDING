@@ -2816,3 +2816,30 @@ la mejor combinacion encontrada. Sigue lejos del 75-98% que el usuario
 necesita. NO aplicado aun al codigo en vivo -- pendiente decision del
 usuario y verificacion de consistencia por año/par de la combinacion
 final antes de tocar `agents/breakout_signal.py`.
+
+---
+
+## 🆕 ESTRATEGIA NUEVA: REVERSION A LA MEDIA (2026-09-02, a pedido
+## explicito del usuario tras estancamiento del breakout en 44%)
+
+Usuario pidio explicitamente probar "todas las estrategias necesarias,
+armar el bot de 0 lo que sea" tras ver que 18 variables del motor
+breakout no superaron el 44%. Se construyo `meanrev_signal()` en
+`scripts/backtest_multiyear.py` (nueva funcion, no toca `breakout_signal()`
+existente): RSI(14) extremo (<=30 sobreventa, >=70 sobrecompra) + precio
+tocando la banda de Bollinger(20,2.0) correspondiente -> entra a favor de
+la reversion, target=banda media (la tesis real, no un RR fijo), SL=1.0x
+ATR14. Nuevo `STRATEGY_MODE=MEANREV`, reusa toda la infraestructura
+existente (costo de spread real, Monte Carlo, gestion de posiciones).
+
+**v1** (mismas horas 20-21 UTC que el breakout ganador, comando en
+`memory/bt_logs/EXACT_COMMAND_meanrev_v1.txt`): **FALLO por escasez
+extrema -- 24 trades en 16 años** (vs miles del breakout), E[mes]=-$10,
+Sharpe=-0.05, P(pass)=0%. La condicion RSI+Bollinger ya es rara de por si;
+restringirla a solo 2 horas/dia la vuelve casi inexistente.
+
+**v2 en curso**: quitando la restriccion horaria especifica del breakout
+(reversion a la media no tiene por que compartir la misma logica de
+"killzone" -- usando solo el bloqueo base del script, 6 horas activas en
+vez de 2) para dar mas muestra. Comando exacto en
+`memory/bt_logs/EXACT_COMMAND_meanrev_v2_allhours.txt`.

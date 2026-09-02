@@ -84,7 +84,15 @@ if _PER_PAIR_SL_RAW:
 RR_MULT_BO       = float(os.environ.get("RR_MULT_BO", "2.5"))
 TREND_FILTER_BO  = os.environ.get("TREND_FILTER_BO", "0") == "1"
 THR_BREAKOUT     = float(os.environ.get("THR_BREAKOUT", "0"))
-_EXTERNAL_ENTRY  = REALISTIC_SIGNAL or STRATEGY_MODE == "BREAKOUT"  # entry/sl/tp vienen ya calculados del motor de señal, no se recomputan mas abajo
+# 2026-09-02: motor MEANREV (reversion a la media) -- enfoque opuesto al
+# breakout, pedido explicitamente por el usuario tras que el barrido de
+# parametros del motor breakout se estancara en ~44% (18 variables
+# probadas). RSI extremo + toque de banda de Bollinger, target = banda
+# media (la tesis real de reversion, no un RR fijo arbitrario).
+RSI_OVERSOLD     = float(os.environ.get("RSI_OVERSOLD", "30"))
+RSI_OVERBOUGHT   = float(os.environ.get("RSI_OVERBOUGHT", "70"))
+ATR_MULT_SL_MR   = float(os.environ.get("ATR_MULT_SL_MR", "1.0"))
+_EXTERNAL_ENTRY  = REALISTIC_SIGNAL or STRATEGY_MODE in ("BREAKOUT", "MEANREV")  # entry/sl/tp vienen ya calculados del motor de señal, no se recomputan mas abajo
 
 print("=" * 72)
 print("  BACKTEST MULTI-ANUAL — 8 DIMENSIONES")
@@ -764,6 +772,58 @@ def breakout_signal(w, pair, dt):
     return direction, float(entry), float(sl), float(tp), score
 
 
+_MR_STATS = defaultdict(int)
+
+
+def meanrev_signal(w, pair, dt):
+    """Motor de señal ALTERNATIVO (no breakout): reversion a la media --
+    RSI extremo (sobrecompra/sobreventa) + precio tocando/cruzando la
+    banda de Bollinger correspondiente. Target = banda media (la tesis
+    real de reversion), SL = ATR-based. Enfoque opuesto al breakout
+    (fade en vez de chase), pedido explicitamente por el usuario tras
+    que el barrido de parametros del motor breakout se estancara.
+    Devuelve (direction, entry, sl, tp, score) o None.
+    """
+    _MR_STATS["calls"] += 1
+    if len(w) < 220:
+        return None
+    close_now = float(w["close"].values[-1])
+    if close_now <= 0:
+        return None
+
+    mi = MomentumIndicators(w)
+    rsi_v = mi.rsi(14)
+    bb_upper, bb_mid, bb_lower = mi.bollinger_bands(20, 2.0)
+
+    direction = None
+    if rsi_v <= RSI_OVERSOLD and close_now <= bb_lower:
+        direction = "LONG"
+    elif rsi_v >= RSI_OVERBOUGHT and close_now >= bb_upper:
+        direction = "SHORT"
+    if direction is None:
+        return None
+    _MR_STATS["extreme"] += 1
+
+    atr_v = atr14(w).iloc[-1]
+    if pd.isna(atr_v) or atr_v <= 0:
+        return None
+    sl_dist = ATR_MULT_SL_MR * atr_v
+    entry = close_now
+    sl = entry - sl_dist if direction == "LONG" else entry + sl_dist
+    tp = bb_mid  # tesis real de reversion: vuelve a la media, no un RR fijo arbitrario
+
+    # Descarta señales donde el target (banda media) ya esta mas cerca que
+    # el propio SL -- RR invalido/invertido, no vale la pena el trade.
+    tp_dist = abs(tp - entry)
+    if tp_dist < sl_dist * 0.5:
+        return None
+
+    extreme = abs(rsi_v - 50.0)
+    score = int(min(100, 60 + extreme * 0.8))
+    _MR_STATS["returned_signal"] += 1
+    return direction, float(entry), float(sl), float(tp), score
+
+
 def d1_trend(dfd, dt):
     s = dfd[dfd.index.date <= pd.Timestamp(dt).date()]
     if len(s) < 50: return "UNKNOWN"
@@ -1114,6 +1174,11 @@ if True:
             _bo = breakout_signal(_wbo, pair, dt)
             if _bo is None: continue
             sig, _real_entry, _real_sl, _real_tp, score = _bo
+        elif STRATEGY_MODE == "MEANREV":
+            _wmr = df1.iloc[max(0, idx - 220):idx + 1]
+            _mr = meanrev_signal(_wmr, pair, dt)
+            if _mr is None: continue
+            sig, _real_entry, _real_sl, _real_tp, score = _mr
         elif REALISTIC_SIGNAL:
             _w200 = df1.iloc[max(0, idx - 200):idx + 1]
             _month_prefix = day_str[:7]
@@ -1301,6 +1366,8 @@ if REALISTIC_SIGNAL:
     print(f"\n  [DIAGNOSTICO real_signal()] {dict(_RS_STATS)}")
 if STRATEGY_MODE == "BREAKOUT":
     print(f"\n  [DIAGNOSTICO breakout_signal()] {dict(_BO_STATS)}")
+if STRATEGY_MODE == "MEANREV":
+    print(f"\n  [DIAGNOSTICO meanrev_signal()] {dict(_MR_STATS)}")
 print(f"\n  Total trades (periodo completo H1): {len(trade_log)}")
 n_final = sum(1 for t in trade_log if t["type"] == "final")
 n_partial = sum(1 for t in trade_log if t["type"] == "partial")

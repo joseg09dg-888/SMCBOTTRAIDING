@@ -1,0 +1,10 @@
+Fecha: 2026-09-02
+Objetivo: v1 fallo por escasez extrema (24 trades en 16 años, restringido
+a solo horas 20-21 UTC igual que el breakout). Reversion a la media no
+tiene por que compartir la misma logica de "killzone" -- quitar
+EXTRA_DEAD_HOURS (usar solo el bloqueo base del script: 0-14,17-19,
+dejando 15,16,20-23 activas, 6 horas en vez de 2) para dar mas
+oportunidad de que la condicion RSI+Bollinger ocurra.
+
+COMANDO EXACTO:
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 STRATEGY_MODE=MEANREV ATR_MULT_SL_MR=1.0 RSI_OVERSOLD=30 RSI_OVERBOUGHT=70 ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO EXCLUDE_PAIRS=GBPCAD PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0 MAX_OPEN_TEST=37 .venv/Scripts/python -u scripts/backtest_multiyear.py
