@@ -2761,3 +2761,15 @@ acerque al 75-97% documentado en sesiones anteriores, y no se pudo
 determinar con certeza si ese numero fue un error o simplemente se perdio
 la configuracion exacta que lo produjo -- las dos son posibles, ninguna
 se puede descartar con la evidencia disponible.
+
+---
+
+## 2026-09-02 -- continuacion tras despertar el usuario, mas variables
+
+**SL escalado por par segun spread real** (EURUSD:0.5, USDCAD:1.0,
+NZDUSD:1.85, USDCHF:1.55, EURAUD:1.95 -- comando exacto en
+`memory/bt_logs/EXACT_COMMAND_perpairSL.txt`, sobre RR=25): **35%,
+Sharpe=0.42** -- MUCHO peor que el uniforme 0.5 (44%/0.69). La hipotesis
+de "SL mas ancho compensa spread mas ancho" no se sostiene con datos
+reales -- descartada. El SL uniforme sigue siendo mejor que cualquier
+version escalada por par probada hasta ahora.
