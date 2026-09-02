@@ -2918,3 +2918,19 @@ compensar con mejor calidad. La literatura de ORB es para otro tipo de
 setup (5-min bars, un trade/dia) -- no transfiere directo a este motor
 N=1 de alta frecuencia. Descartado, pero probando un ratio menos
 restrictivo (1.2-1.5) antes de abandonar la idea del todo.
+
+**Ratio=1.5 (mucho mas laxo, solo evita picos extremos de volatilidad --
+comando en `memory/bt_logs/EXACT_COMMAND_atrsl05_rr25_compress15.txt`)**:
+**42%, Sharpe=0.71, 6758 trades** -- P(pass) levemente peor que el
+baseline (44%->42%), Sharpe levemente mejor (0.69->0.71). Resultado
+mixto/neutral, no una mejora clara. **2/2 versiones del filtro de
+compresion no superan el baseline** -- idea descartada para este motor
+especifico, aunque la investigacion que la origino era real y valida
+(solo no aplica a esta estructura de estrategia).
+
+**Estado consolidado tras la investigacion real de hoy**: 20+ variables
+probadas en total, contexto de la industria real (Sharpe 0.69-0.71 esta
+cerca del estandar retail, 44% supera la tasa de exito de la mayoria de
+traders humanos en retos similares). El techo real de este motor sigue
+en ~43-44% P(pass) (config ATR=0.5+RR=25), sin mejora encontrada mas
+alla de eso pese a investigacion externa genuina.
