@@ -741,6 +741,26 @@ def breakout_signal(w, pair, dt):
     atr_v = atr14(w).iloc[-1]
     if pd.isna(atr_v) or atr_v <= 0:
         return None
+
+    # 2026-09-02: FILTRO DE COMPRESION DE VOLATILIDAD -- pedido explicito
+    # del usuario ("usa toda tu inteligencia/investigacion real, no
+    # adivines"), investigado via WebSearch: literatura de trading
+    # cuantitativo (Opening Range Breakout, "range compression") reporta
+    # que las rupturas rinden mejor cuando ocurren DESPUES de un periodo
+    # de rango comprimido (baja volatilidad relativa a su propio
+    # historial reciente) -- la volatilidad tiende a expandirse tras
+    # contraerse. Nunca probado en esta sesion (18+ variables probadas
+    # eran todas sobre SL/TP/riesgo/horas, ninguna sobre la CALIDAD del
+    # contexto de volatilidad antes de la ruptura). COMPRESSION_RATIO_BO=0
+    # (default) desactiva el filtro -- no cambia el comportamiento
+    # existente a menos que se pida.
+    _compress_ratio = float(os.environ.get("COMPRESSION_RATIO_BO", "0") or 0)
+    if _compress_ratio > 0:
+        _atr_series = atr14(w)
+        _atr_avg20 = _atr_series.iloc[-20:].mean()
+        if pd.isna(_atr_avg20) or _atr_avg20 <= 0 or atr_v > _atr_avg20 * _compress_ratio:
+            return None  # no estaba comprimido -- no es el setup que la literatura respalda
+
     sl_dist = PER_PAIR_SL_MULT.get(pair, ATR_MULT_SL_BO) * atr_v
     # 2026-09-01: BUG-MT5-INVALID-STOPS-LIVE -- confirmado en vivo (cuenta
     # demo, USDCHF, 21:5x UTC) que MT5 rechaza ordenes con retcode 10016
