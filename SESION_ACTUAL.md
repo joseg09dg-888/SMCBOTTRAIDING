@@ -2693,3 +2693,9 @@ mes, aunque el promedio por trade mejore). Descartado.
 E[mes]=$4694** -- practicamente identico a ATR=0.5 solo. El peak-guard
 retrace ya estaba cerca de su optimo (afinado en sesiones anteriores),
 no es un lever sensible en este rango. Sin cambio, no se adopta.
+
+**ATR=0.5 + RR_MULT_BO=25** (mas lejos que 20, comando en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_rr25.txt`): **44%/Sharpe=0.69/
+E[mes]=$4746** -- mejora marginal en P(pass) (43->44%), Sharpe igual.
+Pequeña pero real. Nuevo mejor resultado de la noche. Sigo probando en
+esta direccion (RR=30).
