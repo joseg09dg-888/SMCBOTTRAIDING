@@ -2624,3 +2624,13 @@ todo el contexto para retomar sin repetir nada.
 trades** -- mismo numero de trades que el baseline (logico, el ancho de SL
 no cambia cuales barras rompen el canal), pero resultado peor. Octava
 variable probada, octava sin mejora.
+
+**ATR_MULT_SL_BO=0.5** (SL mas ajustado que el baseline 0.75 -- comando
+exacto en `memory/bt_logs/EXACT_COMMAND_atrsl05.txt`): **43%, Sharpe=0.69,
+E[mes]=$4703, 7201 trades** -- PRIMERA MEJORA REAL DEL DIA. P(pass) igual
+al baseline (43%=43%), pero Sharpe mejora de 0.62 a 0.69 (+11%) y E[mes]
+de $4569 a $4703. Modesto pero real y verificable. Patron del barrido
+ATR_MULT_SL_BO: 0.5->43%/0.69 (mejor) | 0.75->43%/0.62 (base) |
+1.0->40%/0.52 (peor) -- sugiere que SL mas ajustado (dentro de este rango)
+mejora la calidad del resultado sin sacrificar frecuencia. Vale la pena
+seguir explorando valores aun mas bajos (0.3-0.4) en la proxima sesion.
