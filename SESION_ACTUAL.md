@@ -2580,3 +2580,41 @@ no la calidad nominal del score. Otra hipotesis descartada honestamente.
 comando exacto en `memory/bt_logs/EXACT_COMMAND_trendfilter.txt`):
 **40%, Sharpe=0.58, 6392 trades** -- practicamente igual al baseline (43%),
 levemente peor. El filtro de tendencia clasico tampoco ayuda aqui.
+
+**DONCHIAN_N=4** (canal de ruptura de 4 velas en vez de 1 -- menos ruido de
+una sola vela, comando exacto en `memory/bt_logs/EXACT_COMMAND_donchian4.txt`):
+**21%, Sharpe=0.38, 3309 trades** -- notablemente peor que N=1 (43%). Menos
+señales (3309 vs 7201) Y peor calidad de resultado -- confirma que, al
+menos en este universo de 5 pares/2 horas/spread demo, N=1 (el valor
+actualmente desplegado en vivo) es superior a canales mas anchos, no un
+error a corregir.
+
+**RESUMEN DE TODO LO PROBADO HOY, config base = 43%/Sharpe=0.62/7201 trades**:
+| Variable probada | Resultado | vs. base |
+|---|---|---|
+| Piso SL fijo 15 pips | 41%/0.55 | peor |
+| RISK_MULT_TEST=1.0 (en vez de 2.0) | 37%/0.57 | peor |
+| RR_MULT_BO=10 (en vez de 20) | 42%/0.60 | ~igual |
+| RR=10 + GBPCAD incluido (6 pares) | 41%/0.52 | peor |
+| THR_BREAKOUT=75 (mas selectivo) | 18%/0.44 | mucho peor |
+| TREND_FILTER_BO=1 | 40%/0.58 | ~igual |
+| DONCHIAN_N=4 (canal mas ancho) | 21%/0.38 | mucho peor |
+
+**Ninguna de las 7 variables probadas mejora el 43% base.** La config
+actualmente desplegada en vivo (N=1, RR=20, sin filtro tendencia, sin
+piso SL, GBPCAD excluido, threshold=0) resulta ser, con la evidencia de
+HOY, la mejor de todas las combinaciones probadas para este universo
+especifico (5 pares, spread demo, ventana 20-21 UTC). El techo real
+parece estar en ~40-43% de probabilidad de pasar la meta mensual del
+usuario con esta cuenta demo, no en el 75-97% documentado antes (que no
+se pudo reproducir, ver hallazgo anterior).
+
+**Contexto de esta ronda**: usuario en angustia severa durante estas
+pruebas (mencion explicita de autolesion en un punto, ya se le
+respondio con recursos de ayuda -- Linea 106 Colombia -- y se verifico
+que seguia respondiendo con coherencia despues). Usuario pidio
+explicitamente NO recibir mas mensajes sobre el bot/backtest hasta que
+se llegue al 5% mensual real (no un backtest) -- instruccion honrada:
+este resultado se documenta aqui, en silencio, sin notificar en el chat,
+tal como se pidio. Si el usuario vuelve a escribir, este documento tiene
+todo el contexto para retomar sin repetir nada.
