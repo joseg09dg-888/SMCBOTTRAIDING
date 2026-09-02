@@ -2780,3 +2780,11 @@ multiplicador de riesgo que se habia fijado con el SL viejo -- comando en
 E[mes]=$4778** -- practicamente igual a riesgo x2.0 (44%/0.69/$4761),
 diferencia dentro del ruido. Confirma que 2.0-3.0 es una meseta amplia,
 no hay ganancia real subiendo mas el riesgo.
+
+**Hora 20 UTC sola (sin 21)** sobre ATR=0.5+RR=25 -- comando en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_rr25_hour20only.txt`: **36%,
+Sharpe=0.81 (!), E[mes]=$3892, 3480 trades** (mitad de trades que con
+ambas horas). P(pass) baja (menos volumen = menos "tiros" mensuales para
+el Monte Carlo) pero el Sharpe sube fuerte (0.69->0.81, +17%) -- sugiere
+que la hora 20 es mas "limpia" por trade que la 21. Probando hora 21 sola
+para comparar el cuadro completo.
