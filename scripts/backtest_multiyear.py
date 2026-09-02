@@ -810,7 +810,15 @@ def meanrev_signal(w, pair, dt):
     sl_dist = ATR_MULT_SL_MR * atr_v
     entry = close_now
     sl = entry - sl_dist if direction == "LONG" else entry + sl_dist
-    tp = bb_mid  # tesis real de reversion: vuelve a la media, no un RR fijo arbitrario
+    # 2026-09-02: RR_MULT_MR=0 (default) usa la tesis real (target=banda
+    # media); RR_MULT_MR>0 fuerza un RR fijo en su lugar -- para aislar si
+    # el problema de v1/v2/v3 (sin edge real) viene del target movil o de
+    # la premisa de entrada en si.
+    _rr_mr = float(os.environ.get("RR_MULT_MR", "0") or 0)
+    if _rr_mr > 0:
+        tp = entry + sl_dist * _rr_mr if direction == "LONG" else entry - sl_dist * _rr_mr
+    else:
+        tp = bb_mid  # tesis real de reversion: vuelve a la media, no un RR fijo arbitrario
 
     # Descarta señales donde el target (banda media) ya esta mas cerca que
     # el propio SL -- RR invalido/invertido, no vale la pena el trade.

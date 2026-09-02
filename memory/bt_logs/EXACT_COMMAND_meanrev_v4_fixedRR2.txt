@@ -1,0 +1,8 @@
+Fecha: 2026-09-02
+Objetivo: aislar si el problema de v1/v2/v3 (sin edge real) viene del
+target movil (banda media) o de la premisa de entrada. Probar RR fijo=2.0
+(modesto, tipico de reversion a la media que suele tener WR mas alto/RR
+mas bajo que breakout) en vez de target=banda media.
+
+COMANDO EXACTO:
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 STRATEGY_MODE=MEANREV ATR_MULT_SL_MR=1.0 RSI_OVERSOLD=30 RSI_OVERBOUGHT=70 RR_MULT_MR=2.0 ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO EXCLUDE_PAIRS=GBPCAD PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0 MAX_OPEN_TEST=39 .venv/Scripts/python -u scripts/backtest_multiyear.py
