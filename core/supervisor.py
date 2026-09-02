@@ -3373,8 +3373,19 @@ class TradingSupervisor(PositionGuardsMixin):
                                 if tf == "H1":
                                     # _scan_mt5_symbol() ya no genera senal SMC para H1 -- SIEMPRE
                                     # es el motor breakout aqui (ver docstring del metodo).
+                                    #
+                                    # BUG-PAUSED-MODE-NOT-CHECKED (2026-09-02): este bypass salta
+                                    # directo a _send_mt5_real_order() sin pasar por route_signal()
+                                    # (linea ~708), que es donde el pipeline SMC viejo SI revisaba
+                                    # self.mode antes de ejecutar. Confirmado en vivo: con
+                                    # OPERATION_MODE=paused el bot igual abrio una orden real
+                                    # (#103938557 USDCAD) porque el motor breakout activo hoy nunca
+                                    # pasa por ese chequeo. Agregado aqui explicitamente -- unico
+                                    # punto de entrada real a ordenes de mercado para el motor H1.
                                     if signal.signal_type == SignalType.WAIT:
                                         print(f" -- {signal.trigger}")
+                                    elif self.mode == "paused":
+                                        print(f" -- señal real pero modo PAUSED, no se ejecuta (score={score})")
                                     else:
                                         print(f" -- intentando SWING breakout (score={score})")
                                         await self._send_mt5_real_order(signal)
