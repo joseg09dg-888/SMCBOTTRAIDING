@@ -2870,3 +2870,17 @@ media en general (podria necesitar un exit distinto, no un target fijo
 en la banda media, o un timeframe distinto), pero la primera
 implementacion honesta no funciona. Motor breakout (44%) sigue siendo,
 por mucho, la mejor opcion real encontrada en toda la sesion.
+
+**v4 (RR fijo=2.0 en vez de banda media -- comando en
+`memory/bt_logs/EXACT_COMMAND_meanrev_v4_fixedRR2.txt`)**: **121 trades
+otra vez (identico a v2/v3), E[mes]=-$41, Sharpe=-0.09** -- PEOR aun.
+Confirma que el techo de 121 trades es estructural (independiente del
+tipo de target), casi seguro `STAGNANT_HOURS=6.0` (cierre automatico por
+estancamiento, heredado del motor SMC viejo) dominando el cierre de
+posiciones antes de que el SL/TP real decida el resultado -- pendiente
+tecnico real, no investigado a fondo por prioridad de tiempo.
+
+**4/4 variantes de reversion a la media fallaron** (0%, 0%, 0%, 0% de
+probabilidad). Veredicto: este enfoque, con esta implementacion, no
+aporta nada -- el motor breakout (44%) sigue siendo la unica opcion real
+de la sesion completa.
