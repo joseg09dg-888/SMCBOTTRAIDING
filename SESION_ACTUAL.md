@@ -2699,3 +2699,9 @@ no es un lever sensible en este rango. Sin cambio, no se adopta.
 E[mes]=$4746** -- mejora marginal en P(pass) (43->44%), Sharpe igual.
 Pequeña pero real. Nuevo mejor resultado de la noche. Sigo probando en
 esta direccion (RR=30).
+
+**ATR=0.5 + RR_MULT_BO=30** (comando en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_rr30.txt`): **44%/Sharpe=0.69/
+E[mes]=$4761** -- practicamente identico a RR=25 (44%/0.69/$4746), la
+mejora se aplano. RR=25-30 es la meseta -- no hace falta seguir subiendo
+RR, rendimientos decrecientes confirmados.
