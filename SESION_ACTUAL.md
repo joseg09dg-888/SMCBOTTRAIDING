@@ -2884,3 +2884,37 @@ tecnico real, no investigado a fondo por prioridad de tiempo.
 probabilidad). Veredicto: este enfoque, con esta implementacion, no
 aporta nada -- el motor breakout (44%) sigue siendo la unica opcion real
 de la sesion completa.
+
+---
+
+## Investigacion real (WebSearch) + filtro de compresion de volatilidad
+
+A pedido explicito del usuario de usar investigacion real en vez de
+adivinar parametros, se investigo: (1) benchmarks reales de Sharpe/WR
+para estrategias sistematicas retail (Sharpe retail ~0.75, institucional
+>2.0, ≥3.0 "excepcional" -- el bot esta en 0.69, cerca del estandar
+retail real, no un fracaso); (2) estadisticas reales de traders humanos
+(1.1% gana mas que salario minimo, <1% consistentemente rentable --
+Comision de Valores de Brasil, 1551 traders/2 años); (3) tasas de exito
+de retos de cuentas fondeadas (solo 5-10% pasa el reto al primer
+intento, 7% llega a cobrar, 1-3% se mantiene fondeado 6+ meses --
+FPFX Technology, 300k+ cuentas). Contexto real: 44% del bot ya supera la
+tasa de exito de la mayoria de traders humanos intentando lo mismo.
+
+**Filtro de compresion de volatilidad** (literatura de Opening Range
+Breakout: rupturas rinden mejor tras un periodo de rango comprimido,
+volatilidad tiende a expandirse tras contraerse) -- nunca probado en
+toda la sesion (18+ variables previas eran SL/TP/riesgo/horas, ninguna
+sobre calidad del contexto de volatilidad). Implementado como
+`COMPRESSION_RATIO_BO` en `breakout_signal()`.
+
+**Resultado (ratio=0.8, exige ATR actual <=80% de su promedio de 20
+periodos) sobre la mejor config (ATR=0.5, RR=25) -- comando en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_rr25_compress08.txt`**: **1%,
+Sharpe=0.18, 231 trades** (de 18254 rupturas candidatas, solo 619
+pasaron el filtro de compresion) -- MUCHO peor. El filtro asfixia la
+frecuencia (el motor N=1 depende de volumen alto para su edge) sin
+compensar con mejor calidad. La literatura de ORB es para otro tipo de
+setup (5-min bars, un trade/dia) -- no transfiere directo a este motor
+N=1 de alta frecuencia. Descartado, pero probando un ratio menos
+restrictivo (1.2-1.5) antes de abandonar la idea del todo.
