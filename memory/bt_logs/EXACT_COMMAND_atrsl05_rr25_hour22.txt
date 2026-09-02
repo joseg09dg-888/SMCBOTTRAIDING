@@ -1,0 +1,7 @@
+Fecha: 2026-09-01 (nocturno)
+Objetivo: sobre el mejor combo (ATR=0.5, RR=25, 44%/0.69), probar
+reincluir la hora 22 UTC (antes excluida junto con 15,16,23) -- ver si
+con la nueva config de SL/RR el ranking de horas cambio.
+
+COMANDO EXACTO:
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 STRATEGY_MODE=BREAKOUT DONCHIAN_N=1 ATR_MULT_SL_BO=0.5 RR_MULT_BO=25 TREND_FILTER_BO=0 ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO EXTRA_DEAD_HOURS=15,16,23 EXCLUDE_PAIRS=GBPCAD PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0 MAX_OPEN_TEST=31 MIN_SL_PIPS_BO=0 .venv/Scripts/python -u scripts/backtest_multiyear.py
