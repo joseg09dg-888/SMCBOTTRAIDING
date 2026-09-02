@@ -2660,3 +2660,30 @@ ventana 20-21 UTC) tras 10 variables probadas hoy sin encontrar nada que
 lo supere significativamente. Muy lejos del 75-97% documentado en
 sesiones anteriores, que no se pudo reproducir pese al esfuerzo genuino
 de esta sesion.
+
+---
+
+## 🌙 CONTINUACION NOCTURNA (usuario pidio seguir trabajando toda la
+## noche sin hablar hasta llegar al 5% -- documentando todo en silencio)
+
+**Año-por-año de ATR=0.5 verificado**: los 17 años (2010-2026) dan P&L
+positivo individualmente (WR 25-36%, sin años muertos) -- buena señal de
+que no es sobreajuste a una ventana favorable, misma disciplina aplicada
+en hallazgos anteriores que si se confirmaron.
+
+**Desglose por regimen (mismo run) reveló CHOPPY como toxico**: WR 8-10%,
+avg P&L -$213 a -$237 en los 3 niveles de volatilidad, ~23% de todos los
+trades (1646 de 7201).
+
+**ATR_MULT_SL_BO=0.5 + EXCLUDE_CHOPPY=1** (comando exacto en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_exchoppy.txt`): **39%, Sharpe=0.68,
+5986 trades** -- PEOR que ATR=0.5 solo (43%/0.69), pese a que CHOPPY se ve
+toxico en el promedio por trade. Confirma (con el motor breakout nuevo)
+el mismo hallazgo que ya se habia visto con el motor SMC viejo
+(`EXCLUDE_CHOPPY ❌ 65.4%` en sesion anterior) -- quitar trades
+individualmente malos no necesariamente mejora la distribucion MENSUAL
+completa que alimenta el Monte Carlo (menos trades = mas varianza mes a
+mes, aunque el promedio por trade mejore). Descartado.
+
+**Mejor resultado de la noche sigue siendo ATR_MULT_SL_BO=0.5 solo:
+43%/Sharpe=0.69/E[mes]=$4703.**
