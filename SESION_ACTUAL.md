@@ -2687,3 +2687,9 @@ mes, aunque el promedio por trade mejore). Descartado.
 
 **Mejor resultado de la noche sigue siendo ATR_MULT_SL_BO=0.5 solo:
 43%/Sharpe=0.69/E[mes]=$4703.**
+
+**ATR=0.5 + PEAK_GUARD_RETRACE=0.03** (mas holgado que 0.02, comando en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_peak03.txt`): **43%/Sharpe=0.69/
+E[mes]=$4694** -- practicamente identico a ATR=0.5 solo. El peak-guard
+retrace ya estaba cerca de su optimo (afinado en sesiones anteriores),
+no es un lever sensible en este rango. Sin cambio, no se adopta.
