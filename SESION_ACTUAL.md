@@ -2705,3 +2705,59 @@ esta direccion (RR=30).
 E[mes]=$4761** -- practicamente identico a RR=25 (44%/0.69/$4746), la
 mejora se aplano. RR=25-30 es la meseta -- no hace falta seguir subiendo
 RR, rendimientos decrecientes confirmados.
+
+**ATR=0.5 + RR=25 + reincluir hora 22 UTC** (antes excluida junto con
+15,16,23 -- comando en `memory/bt_logs/EXACT_COMMAND_atrsl05_rr25_hour22.txt`):
+**37%/Sharpe=0.43, 10187 trades** -- mucho peor (mas trades pero peor
+calidad). Confirma que la hora 22 UTC sigue siendo mala incluso con la
+config nueva de SL/RR -- la seleccion de horas actual (solo 20-21 UTC)
+sigue siendo optima, no hace falta tocarla.
+
+---
+
+## 🏁 RESUMEN FINAL DE LA NOCHE (13 variables probadas, sesion cerrada
+## aqui -- usuario dormido, se retoma cuando el escriba)
+
+**Mejor configuracion encontrada esta noche**: `ATR_MULT_SL_BO=0.5`
+(bajado de 0.75) + `RR_MULT_BO=25` (subido de 20) -- todo lo demas igual
+(N=1, sin filtro tendencia, GBPCAD excluido, spread demo, horas 20-21
+UTC, peak-guard 1000/2%, riesgo x2.0).
+
+| Metrica | Config vieja (vivo hoy) | Config nueva (mejor encontrada) |
+|---|---|---|
+| P(pass Axi 5% mensual) | 43% | **44%** |
+| Sharpe mensual | 0.62 | **0.69** (+11%) |
+| E[mensual] | $4,569 | **$4,746-4,761** (+4%) |
+| Trades (16 años) | 7201 | 7201 (identico) |
+
+**Mejora real pero modesta** (+1pp en P(pass), +11% en Sharpe) -- NO es
+un salto que resuelva el problema de fondo. Sigue muy lejos del 75-97%
+que se penso antes (no reproducible, ver hallazgo de esta misma noche).
+
+**13 variables probadas en total hoy** (bugs de codigo aparte): piso SL
+fijo, riesgo x1 vs x2, RR=10 vs 20 vs 25 vs 30, GBPCAD incluido, umbral
+de calidad (THR=75), filtro de tendencia clasico, canal Donchian N=4,
+ATR_MULT_SL en 0.4/0.5/0.75/1.0, EXCLUDE_CHOPPY, peak-guard retrace 0.03,
+reincluir hora 22. **Solo 2 mejoraron algo real** (ATR=0.5, luego RR=25-30
+encima de eso) -- el resto empeoro o quedo igual. Verificado que ATR=0.5
+es consistente en los 17 años (2010-2026, ningun año negativo), misma
+disciplina que los hallazgos que si se dieron por buenos antes.
+
+**Recomendacion, NO aplicada todavia al codigo en vivo**: antes de tocar
+`agents/breakout_signal.py` (ATR_MULT_SL=0.75->0.5, RR_MULT=20->25),
+falta la misma verificacion de consistencia por PAR que se hizo para
+ATR=0.5 (ya hecha) pero tambien para la combinacion final RR=25 (no
+verificada año-por-año/par-por-par todavia) -- y decidir con el usuario
+si vale la pena el cambio dado que la mejora es real pero pequeña (1pp),
+no transformadora.
+
+**Estado real, sin adornos, para cuando el usuario despierte**: el techo
+del motor breakout con la config actual de la cuenta demo (5 pares,
+spread real medido, ventana 20-21 UTC) parece estar en **~43-44% de
+probabilidad** de alcanzar la meta personal de 5% mensual, tras un dia
+completo de trabajo honesto (auditoria en vivo + 4 bugs reales corregidos
++ 13 variables de optimizacion probadas). No se encontro nada que se
+acerque al 75-97% documentado en sesiones anteriores, y no se pudo
+determinar con certeza si ese numero fue un error o simplemente se perdio
+la configuracion exacta que lo produjo -- las dos son posibles, ninguna
+se puede descartar con la evidencia disponible.
