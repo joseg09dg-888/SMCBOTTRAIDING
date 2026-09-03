@@ -3050,3 +3050,10 @@ mantiene como el valor recomendado (no hay razon para subirlo mas).
 comando en `memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_atr04.txt`):
 **80%, Sharpe=1.46, E[mes]=$11,480** -- MEJOR que 0.5 (77%/1.36). Sigo
 bajando el SL para ver donde esta el optimo real.
+
+**ATR=0.3** (comando en
+`memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_atr03.txt`): **82%,
+Sharpe=1.59, E[mes]=$11,626** -- sigue mejorando. Continuando a valores
+mas bajos (0.2, 0.15) para encontrar el verdadero optimo antes de que
+revierta (como paso en el barrido anterior con valores muy bajos de
+otros parametros).
