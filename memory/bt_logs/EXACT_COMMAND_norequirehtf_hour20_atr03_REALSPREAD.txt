@@ -1,0 +1,10 @@
+Fecha: 2026-09-02
+Objetivo: usuario pregunto explicitamente cuanto seria en la cuenta REAL
+(60290663) vs la demo. Mismo mejor config (ATR=0.3, RR=25, hora20 sola,
+sin D1/H4) pero SIN SPREAD_PROFILE=DEMO -- usa el default del script, que
+son los valores REALES medidos en la cuenta 60290663 (0.8-1.7 pips, no
+2.5-18.5 de la demo). Ademas incluye GBPCAD (viable con spread real,
+inviable en demo) para dar el numero completo de 6 pares en la real.
+
+COMANDO EXACTO:
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 STRATEGY_MODE=BREAKOUT REQUIRE_D1=0 REQUIRE_H4=0 DONCHIAN_N=1 ATR_MULT_SL_BO=0.3 RR_MULT_BO=25 TREND_FILTER_BO=0 ENABLE_SPREAD_COST=1 EXTRA_DEAD_HOURS=15,16,21,22,23 PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0 MAX_OPEN_TEST=50 .venv/Scripts/python -u scripts/backtest_multiyear.py
