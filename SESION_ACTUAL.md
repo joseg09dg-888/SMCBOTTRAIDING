@@ -3039,3 +3039,9 @@ activas en `core/supervisor.py::DEAD_HOURS_UTC` -- agregar 21 al set de
 horas bloqueadas). Pendiente de decision del usuario antes de aplicar,
 dado que el bot esta actualmente APAGADO a pedido explicito del
 usuario.
+
+**RR=35** (sobre la nueva mejor config -- comando en
+`memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_rr35.txt`): **77%,
+Sharpe=1.37, E[mes]=$11,120** -- identico a RR=25 (77%/1.36/$11,024),
+confirma meseta RR=25-35 tambien en este universo nuevo. RR=25 se
+mantiene como el valor recomendado (no hay razon para subirlo mas).
