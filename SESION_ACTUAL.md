@@ -3045,3 +3045,8 @@ usuario.
 Sharpe=1.37, E[mes]=$11,120** -- identico a RR=25 (77%/1.36/$11,024),
 confirma meseta RR=25-35 tambien en este universo nuevo. RR=25 se
 mantiene como el valor recomendado (no hay razon para subirlo mas).
+
+**ATR=0.4** (mas ajustado que 0.5, sobre RR=25/hora20/sin D1/H4 --
+comando en `memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_atr04.txt`):
+**80%, Sharpe=1.46, E[mes]=$11,480** -- MEJOR que 0.5 (77%/1.36). Sigo
+bajando el SL para ver donde esta el optimo real.
