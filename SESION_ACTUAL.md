@@ -3075,3 +3075,32 @@ MAS seguido, ensanchando el SL real por encima de lo que el backtest
 asume. Esto podria significar que el numero real en vivo con SL=0.2-0.3
 sea mas bajo que lo que muestra este backtest (que asume 0 rechazos).
 Pendiente de considerar antes de aplicar el valor final en vivo.
+
+**ATR=0.15** (comando en
+`memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_atr015.txt`): **78%
+(BAJA de 82%), Sharpe=1.66 (baja de 1.68), E[mes]=$9,317 (baja mas)** --
+CONFIRMA REVERSION. El optimo real del barrido ATR esta en 0.2-0.3, no
+mas abajo.
+
+### 🏆🏆 CONFIG FINAL DEFINITIVA DE TODA LA SESION (verificada, con
+### advertencia practica incluida)
+
+`STRATEGY_MODE=BREAKOUT REQUIRE_D1=0 REQUIRE_H4=0 DONCHIAN_N=1
+ATR_MULT_SL_BO=0.3 RR_MULT_BO=25` + horario **SOLO 20 UTC** + 5 pares
+(GBPCAD excluido) + spread real demo + peak-guard 1000/2% + riesgo x2.0:
+
+**P(pass Axi Select 5% mensual) = 82% | Sharpe = 1.59 | E[mensual] =
+$11,626**
+
+Progresion completa del dia: 44% (bug D1/H4 sin descubrir) -> 77%
+(bug corregido) -> 80% (ATR 0.5->0.4) -> **82%** (ATR 0.4->0.3, techo
+confirmado -- 0.2 da lo mismo pero peor $, 0.15 ya revierte).
+
+**Recomendacion de aplicar en vivo, con una condicion**: antes de subir
+esto a `agents/breakout_signal.py`, verificar en vivo (no solo en
+backtest) que un SL=0.3xATR no dispara el bug de distancia minima del
+broker (retcode 10016) con mas frecuencia de lo manejable -- el
+mecanismo de reintento adaptativo ya deployado deberia cubrirlo, pero no
+se ha medido su tasa de activacion real con un SL tan ajustado. Sugerido:
+aplicar y observar 1-2 dias en demo antes de confiar en el 82% como
+numero de produccion.
