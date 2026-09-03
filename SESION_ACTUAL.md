@@ -3057,3 +3057,21 @@ Sharpe=1.59, E[mes]=$11,626** -- sigue mejorando. Continuando a valores
 mas bajos (0.2, 0.15) para encontrar el verdadero optimo antes de que
 revierta (como paso en el barrido anterior con valores muy bajos de
 otros parametros).
+
+**ATR=0.2** (comando en
+`memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_atr02.txt`): **82%
+(igual que 0.3), Sharpe=1.68 (sigue subiendo), pero E[mes]=$10,746 (BAJA
+desde $11,626 de 0.3)** -- primera señal de que P(pass) empieza a
+aplanarse mientras el $ mensual esperado ya empieza a caer. Probando 0.15
+para confirmar el techo antes de decidir el valor final.
+
+**⚠️ ADVERTENCIA IMPORTANTE (auto-impuesta, no ignorar)**: valores de SL
+tan ajustados (0.2-0.3xATR) aumentan el riesgo de chocar con el bug
+BUG-MT5-INVALID-STOPS-LIVE ya documentado (retcode 10016, minimo real de
+~15 pips en la killzone activa) -- el mecanismo de reintento adaptativo ya
+implementado en `connectors/metatrader_connector.py` deberia manejarlo,
+pero un SL objetivo MAS ajustado significa que el mecanismo se activara
+MAS seguido, ensanchando el SL real por encima de lo que el backtest
+asume. Esto podria significar que el numero real en vivo con SL=0.2-0.3
+sea mas bajo que lo que muestra este backtest (que asume 0 rechazos).
+Pendiente de considerar antes de aplicar el valor final en vivo.
