@@ -3141,3 +3141,80 @@ para confirmar que el SL mas ajustado (0.3xATR) no dispara el problema
 de distancia minima del broker (retcode 10016) con mas frecuencia de lo
 manejable, y que el resultado empieza a acercarse a lo que el backtest
 promete.
+
+---
+
+## 🔴 PUNTO EXACTO PARA RETOMAR (guardado 2026-09-03 ~03:04 UTC / 10:04 PM
+## Colombia, usuario va a apagar el PC para que se refresque)
+
+**Todo commiteado y pusheado a `origin/main`** -- si el PC se daña, se
+recupera todo clonando el repo.
+
+**Estado exacto al apagar:**
+- Bot en PM2 (`smc-bot`) online, modo **AUTO**, cuenta **DEMO**
+  (Axi-US50-Demo, login 10042896), 31 min estable sin caidas desde el
+  ultimo restart, balance $94,231.43, sin errores nuevos.
+- Config recien desplegada HOY (aun sin verificar en vivo, ver abajo):
+  `agents/breakout_signal.py`: `ATR_MULT_SL=0.3` (bajado de 0.5),
+  `RR_MULT=25.0` (sin cambio). `core/supervisor.py::DEAD_HOURS_UTC`:
+  ahora bloquea tambien la hora 21 UTC -- **solo la hora 20 UTC esta
+  activa** (antes 20 y 21).
+- **Cuenta REAL (60290663) NO tocada** -- sigue sin activar, sin fondos,
+  sin config aplicada. 3 bloqueos identificados y pendientes antes de
+  considerar ese paso: (1) confirmar con soporte de Axi si el bot cuenta
+  como "EA de construccion propia", (2) implementar el sufijo `.sa` en
+  `connectors/metatrader_connector.py` (confirmado que NO existe todavia
+  en el codigo), (3) verificar en vivo que SL=0.3xATR no dispara demasiado
+  el bug de distancia minima del broker (retcode 10016).
+- Al apagar el PC: PM2 y auto-commit se detienen. Al prender de nuevo:
+  `pm2 resurrect` o `pm2 start ecosystem.config.js` (seccion 2 de
+  CLAUDE.md tiene el arranque completo).
+
+**LO MAS IMPORTANTE PARA MAÑANA -- auditoria pendiente, tarea #1:**
+La ventana activa (ahora **solo 20:00-21:00 UTC, 1 hora, ya no 2**) abre
+mañana 2026-09-03. Esa es la PRIMERA vez que la config nueva
+(ATR=0.3/RR=25/solo hora 20) opera en vivo -- nunca se ha visto operar
+con este SL tan ajustado. Auditar especificamente:
+1. ¿Aparecen rechazos `Retcode 10016: Invalid stops` con mas frecuencia
+   que antes? (el SL mas ajustado hace mas probable chocar con el minimo
+   real del broker -- el mecanismo de reintento adaptativo ya deployado
+   en `connectors/metatrader_connector.py` deberia manejarlo, pero nunca
+   se ha medido su tasa de activacion real).
+2. ¿Se abren operaciones reales, con que score, y como se comportan?
+3. Confirmar que la hora 21 UTC efectivamente ya NO opera (debe verse
+   "hora muerta 21:00 UTC, skip" en el log).
+
+**Resumen completo de lo que se logro HOY (2026-09-02), para contexto
+rapido sin releer todo el documento:**
+- Usuario, en angustia severa por el objetivo del 5% mensual, pidio
+  probar todo lo necesario: 25+ variables de parametros, una estrategia
+  nueva completa (reversion a la media, 4 variantes, todas fallaron),
+  investigacion web real (benchmarks de la industria, tecnicas de
+  trading cuantitativo publicadas).
+- **Hallazgo mayor real**: se encontro que TODO el backtesting del dia
+  (y probablemente de sesiones anteriores tambien) tenia
+  `REQUIRE_D1`/`REQUIRE_H4` activos por defecto sin saberlo -- una
+  restriccion que el bot EN VIVO nunca tuvo (su bypass ya salta esa
+  confirmacion desde el 2026-08-31). Al corregir esto: **43-44% ->
+  77%**. Al re-optimizar el SL desde cero para el universo correcto:
+  **77% -> 82%** (demo) / **98%** (cuenta real, spread mucho mas
+  ajustado -- pero la cuenta real no esta activa).
+- Verificado con la maxima disciplina en cada paso (seleccionadas
+  todas las combinaciones que se probaron, 17 años y 5-6 pares
+  individualmente positivos en cada resultado que se dio por bueno).
+- Se aplico al bot en vivo (demo) el mejor resultado verificado para la
+  demo: ATR=0.3, RR=25, solo hora 20 UTC. Pytest 1448/1448 antes de
+  desplegar.
+- Tambien se investigo y respondio con evidencia real (no opinion) por
+  que el 98% pedido originalmente es un estandar casi inexistente en la
+  industria real (fondos, prop firms, traders humanos) -- Sharpe
+  retail~0.75, <1% de day traders rentables consistentemente, 5-10% pasa
+  retos de fondeo al primer intento.
+- El usuario tambien pauso/apago el bot varias veces durante el dia
+  (encontrando en el proceso un bug real: el modo PAUSED nunca se
+  chequeaba en el bypass del motor breakout -- corregido en
+  `core/supervisor.py`).
+
+**No hay nada mas pendiente de HOY** -- todo lo demas (bugs de ayer,
+investigacion, backtests, codigo) quedo terminado, verificado, y
+commiteado. Lo unico que falta es la auditoria en vivo de mañana.
