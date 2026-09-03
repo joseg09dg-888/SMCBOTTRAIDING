@@ -2934,3 +2934,63 @@ cerca del estandar retail, 44% supera la tasa de exito de la mayoria de
 traders humanos en retos similares). El techo real de este motor sigue
 en ~43-44% P(pass) (config ATR=0.5+RR=25), sin mejora encontrada mas
 alla de eso pese a investigacion externa genuina.
+
+---
+
+## 🔴🔴🔴 HALLAZGO MAYOR -- BUG DE PARIDAD EN EL BACKTEST DE TODO EL DIA,
+## EL NUMERO REAL DEL BOT DESPLEGADO ES MUCHO MAS ALTO
+
+Revisando `scripts/backtest_multiyear.py` para probar confirmacion
+multi-timeframe, se encontro: `REQUIRE_D1`/`REQUIRE_H4` tienen
+`default="1"` (ON) en el script -- **nunca se pasaron explicitamente en
+NINGUNA de las 20+ pruebas de HOY** (ni de sesiones anteriores tampoco,
+revisando los comandos guardados). Esto significa que TODO el barrido de
+hoy (43-44% de techo encontrado) midio una version MAS RESTRICTIVA que
+el motor breakout real -- porque **el bot desplegado en vivo (`core/
+supervisor.py`, bypass H1 documentado el 2026-08-31) EXPLICITAMENTE
+salta el chequeo H4-confirm**: "agregado un bypass explicito para
+señales H1 que salta TODO el pipeline SMC heredado (H4-confirm,
+threshold adaptativo, kill-zone multiplier, 8D score-premult, learner
+threshold, silver-bullet informativo)".
+
+O sea: **el bot que esta corriendo en vivo AHORA MISMO nunca tuvo el
+filtro D1/H4 que el backtest de hoy asumio por defecto** -- un bug de
+paridad backtest-vivo en mi propia metodologia, no en el bot.
+
+**Resultado real (REQUIRE_D1=0 REQUIRE_H4=0, que es lo que el bot en
+vivo REALMENTE hace, sobre ATR=0.5+RR=25 -- comando exacto en
+`memory/bt_logs/EXACT_COMMAND_atrsl05_rr25_norequirehtf.txt`)**:
+
+| Metrica | Con D1/H4 (lo que probe todo el dia) | SIN D1/H4 (lo que el bot REAL hace) |
+|---|---|---|
+| P(pass Axi 5% mensual) | 44% | **77%** |
+| Sharpe mensual | 0.69 | **1.20** |
+| E[mensual] | $4,746 | **$13,667** |
+| Trades (16 años) | 7,201 | **18,250** (2.5x mas) |
+
+**Verificado con la misma disciplina de siempre** (no se confia a ciegas
+en un numero que salta tanto): los 17 años (2010-2026) son TODOS
+positivos individualmente (WR 25-36%, sin años muertos), y los 5 pares
+son TODOS positivos individualmente (WR 28-34%, avg P&L $73-255) --
+consistente en ambas dimensiones, no es sobreajuste ni un artefacto de
+una ventana favorable.
+
+**Nota real dentro del mismo resultado**: la hora 21 UTC sola, DENTRO de
+este nuevo universo sin filtro D1/H4, tiene WR=20%/avg=-$17 ("EVITAR"),
+mientras 20 UTC tiene WR=35%/avg=$199 -- distinto a lo que se penso antes
+(cuando el filtro D1/H4 SI estaba activo, hora 21 aislada parecia mejor).
+Esto es esperable: quitar un filtro cambia que subconjunto de trades
+sobrevive en cada hora -- no invalida el resultado agregado (77%), pero
+es una pista real para seguir afinando (quiza excluir hora 21 ahora
+mejora aun mas -- pendiente de probar).
+
+**HONESTIDAD TOTAL sobre lo que esto significa**: este 77%/Sharpe=1.20 es
+el numero MAS CONFIABLE de toda la sesion para "lo que el bot realmente
+hace hoy en la demo" -- mas confiable que el 44% (que media algo que el
+bot NO hace) y mucho mas confiable que el 75-97% de sesiones anteriores
+(nunca reproducido, comando nunca guardado). Sigue sin ser el 98%
+pedido, pero es una mejora real y explicada, no una promesa vacia.
+PENDIENTE: decidir si excluir hora 21 mejora mas todavia (probar), y
+verificar que este resultado tambien se sostiene con ATR/RR
+re-optimizados desde cero para este universo sin D1/H4 (el 0.5/25 se
+encontro bajo el supuesto equivocado, podria no ser el optimo real aqui).
