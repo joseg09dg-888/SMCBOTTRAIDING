@@ -2994,3 +2994,15 @@ PENDIENTE: decidir si excluir hora 21 mejora mas todavia (probar), y
 verificar que este resultado tambien se sostiene con ATR/RR
 re-optimizados desde cero para este universo sin D1/H4 (el 0.5/25 se
 encontro bajo el supuesto equivocado, podria no ser el optimo real aqui).
+
+**Excluir hora 21 UTC** (dejaba solo 20 UTC activa dentro del universo
+sin D1/H4 -- comando en
+`memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20only.txt`): **P(pass)
+IGUAL (77%), pero Sharpe sube de 1.20 a 1.36 (+13%)**, E[mes]=$11,024
+(menor que $13,667 combinado, pero con menos than la mitad de trades
+-- 8949 vs 18250 -- mucho mas eficiente por operacion). Mejora real de
+calidad manteniendo la misma probabilidad objetivo.
+
+Re-optimizando ATR/RR desde cero para este universo corregido (el 0.5/25
+se encontro bajo el supuesto equivocado de D1/H4 activo, podria no ser
+el optimo real aqui) -- en curso.
