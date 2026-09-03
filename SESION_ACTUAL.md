@@ -3218,3 +3218,76 @@ rapido sin releer todo el documento:**
 **No hay nada mas pendiente de HOY** -- todo lo demas (bugs de ayer,
 investigacion, backtests, codigo) quedo terminado, verificado, y
 commiteado. Lo unico que falta es la auditoria en vivo de mañana.
+
+---
+
+## 🔴 PUNTO EXACTO PARA RETOMAR (guardado 2026-09-03 ~22:56 UTC / 5:56 PM
+## Colombia, usuario cierra terminal/ventanas para trabajar en otra cosa
+## -- la PC queda ENCENDIDA, solo se cierra Claude Code)
+
+**La auditoria de HOY (2026-09-03) de la ventana 20:00-21:00 UTC ya se
+hizo -- resultado: la config nueva (ATR=0.3/RR=25/solo hora 20) sigue
+SIN probarse en vivo, un dia mas.**
+
+**Causa raiz encontrada y verificada, no es un bug de la config:**
+- El guard de drawdown total estilo Axi Select (`core/supervisor.py`
+  ~429-432: `initial_balance=100_000.0`, `max_total_drawdown_pct=0.08`,
+  freno de seguridad al 70% de eso = 5.60%) esta bloqueando CUALQUIER
+  entrada swing nueva, sin importar el score, porque el drawdown actual
+  ya cruzo ese freno: **balance/equity real verificado contra MT5 =
+  $94,231.43 (sin posiciones abiertas), drawdown = 5.769% > 5.60%**.
+  Log real: `[RISK-GATE] USDCAD: BLOQUEADO -- Approaching drawdown
+  limit: 5.77% (safety stop at 5.60%)` -- esto paso con una señal
+  USDCAD score 62-63 SHORT que SI paso el filtro 8D y el RR-OK
+  (RR=25.00), confirmando que la logica de señal/SL/TP de la config
+  nueva esta bien, solo nunca llego a ejecutarse.
+- Verificado con un poll directo a MT5 (balance/equity, no solo logs)
+  durante ~35 min dentro de la ventana: el balance quedo COMPLETAMENTE
+  PLANO en $94,231.43 todo ese tiempo -- cero movimiento, cero trades
+  (ni ganadores ni perdedores).
+- La hora 21 UTC SI quedo bloqueada correctamente al cerrar la ventana
+  (`[MT5] NZDUSD: hora muerta 21:00 UTC, skip` visto en vivo) -- ese
+  fix de ayer funciona bien.
+- **Cero apariciones de `Retcode 10016`** hoy -- pero eso es SOLO
+  porque nunca se intento ninguna orden real (el guard bloqueo antes de
+  llegar a `place_order`), no porque el retry adaptativo haya sido
+  puesto a prueba. Sigue sin validarse en vivo.
+
+**Para desbloquear el guard**: necesita que el balance suba ~$169 (de
+$94,231.43 a ~$94,400, el 5.60% exacto de $100,000) via un trade
+ganador -- pero ningun trade nuevo puede abrir mientras el guard este
+activo, asi que en la practica esta trabado hasta que: (a) pase algo
+externo que mueva el balance (poco probable en demo sin trading), o (b)
+se decida ajustar/resetear manualmente este guard para efectos de
+seguir validando la config en la cuenta DEMO (el usuario no ha dado esa
+instruccion todavia -- NO tocar sin que el lo pida).
+
+**Bot al cerrar esta sesion**: PM2 `smc-bot` online, modo AUTO, cuenta
+DEMO, restart_time=0 (nunca se ha caido desde el ultimo arranque de hoy
+~15:33 UTC), memoria 16MB, CPU 0%. **La PC queda encendida** -- a
+diferencia de ayer, el usuario NO va a apagarla, solo cierra la
+terminal/Claude Code para trabajar en otra cosa. Eso significa que PM2
+sigue corriendo el bot de fondo sin supervision hasta que se retome la
+sesion -- no hace falta `pm2 resurrect` mañana, solo revisar que sigue
+online.
+
+**Tarea #1 para la proxima sesion (mañana, ventana de las 20 UTC)**:
+1. Verificar primero si el guard de drawdown se libero solo (poco
+   probable sin trades, pero revisar balance real contra MT5 antes de
+   asumir).
+2. Si sigue trabado, esa es la conversacion pendiente con el usuario:
+   decidir si se ajusta el guard para la demo (ya que aqui no hay
+   dinero real en juego y el proposito actual es VALIDAR la config, no
+   proteger capital real) o si se espera a que se libere solo.
+3. Si se libera (por cualquier via) y entra un trade real, ESA es la
+   primera vez que se puede auditar: frecuencia real de `Retcode
+   10016` y si el retry adaptativo lo resuelve -- sigue siendo la
+   pregunta de validacion mas importante, sin responder aun despues de
+   2 dias de intentarlo.
+
+**Nota operativa**: los procesos de fondo lanzados por Claude Code
+(Bash `run_in_background`, Monitor) mueren cuando se cierra la sesion --
+no sobreviven de una sesion a otra. Solo PM2 (que corre como servicio
+de Windows, no depende de Claude Code) sigue vivo. Cualquier
+"vigilancia en vivo" (poll de balance, tail de logs) hay que
+relanzarla al retomar.
