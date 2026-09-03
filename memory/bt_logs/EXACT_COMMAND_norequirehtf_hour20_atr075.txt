@@ -1,0 +1,8 @@
+Fecha: 2026-09-02
+Objetivo: re-optimizar ATR_MULT_SL_BO desde cero para el universo
+corregido (sin D1/H4, solo hora 20). Probar el valor ORIGINAL 0.75 (antes
+de "mejorarlo" a 0.5 bajo el supuesto equivocado) para ver si con 2.5x
+mas volumen de trades el optimo cambio.
+
+COMANDO EXACTO:
+PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 STRATEGY_MODE=BREAKOUT REQUIRE_D1=0 REQUIRE_H4=0 DONCHIAN_N=1 ATR_MULT_SL_BO=0.75 RR_MULT_BO=20 TREND_FILTER_BO=0 ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO EXTRA_DEAD_HOURS=15,16,21,22,23 EXCLUDE_PAIRS=GBPCAD PEAK_GUARD_MIN=1000 PEAK_GUARD_RETRACE=0.02 RISK_MULT_TEST=2.0 MAX_OPEN_TEST=44 .venv/Scripts/python -u scripts/backtest_multiyear.py

@@ -3006,3 +3006,36 @@ calidad manteniendo la misma probabilidad objetivo.
 Re-optimizando ATR/RR desde cero para este universo corregido (el 0.5/25
 se encontro bajo el supuesto equivocado de D1/H4 activo, podria no ser
 el optimo real aqui) -- en curso.
+
+**Re-chequeo ATR=0.75/RR=20 (los valores ORIGINALES, antes de "mejorarlos"
+a 0.5/25) en el universo corregido (sin D1/H4, solo hora 20) -- comando en
+`memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_atr075.txt`**: **69%,
+Sharpe=1.13** -- PEOR que 0.5/25 (77%/1.36) tambien en este universo
+nuevo. **Confirma que la mejora ATR=0.5/RR=25 encontrada antes SIGUE
+siendo valida** -- no era un artefacto del bug D1/H4, se sostiene
+independientemente.
+
+### 🏆 MEJOR CONFIG FINAL VERIFICADA DE TODA LA SESION
+
+`STRATEGY_MODE=BREAKOUT REQUIRE_D1=0 REQUIRE_H4=0 DONCHIAN_N=1
+ATR_MULT_SL_BO=0.5 RR_MULT_BO=25` + horario **SOLO 20 UTC** (21 excluida)
++ 5 pares (GBPCAD excluido) + spread real demo + peak-guard 1000/2% +
+riesgo x2.0 →
+
+**P(pass Axi Select 5% mensual) = 77% | Sharpe = 1.36 | E[mensual] =
+$11,024** -- verificado consistente en los 17 años (2010-2026, ningun
+año negativo) y en los 5 pares (todos positivos). Comando exacto
+reproducible en `memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20only.txt`.
+
+Este es el numero mas alto y mejor verificado de toda la sesion de hoy
+-- muy por encima del 44% que se penso como techo antes de encontrar el
+bug de paridad D1/H4. Sigue sin ser el 98% pedido, pero es un salto real
+y grande (44%->77%), explicado por una causa concreta (bug de mi propia
+metodologia de backtest, no del bot), no una promesa vacia.
+
+**NO APLICADO AUN al codigo en vivo** (`agents/breakout_signal.py` ya
+tiene ATR=0.5/RR=25 desde antes; falta remover la hora 21 de las horas
+activas en `core/supervisor.py::DEAD_HOURS_UTC` -- agregar 21 al set de
+horas bloqueadas). Pendiente de decision del usuario antes de aplicar,
+dado que el bot esta actualmente APAGADO a pedido explicito del
+usuario.
