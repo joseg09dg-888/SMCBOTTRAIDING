@@ -3104,3 +3104,40 @@ mecanismo de reintento adaptativo ya deployado deberia cubrirlo, pero no
 se ha medido su tasa de activacion real con un SL tan ajustado. Sugerido:
 aplicar y observar 1-2 dias en demo antes de confiar en el 82% como
 numero de produccion.
+
+### ✅ CONFIG APLICADA AL BOT EN VIVO (demo), 2026-09-03 ~02:35 UTC
+
+Usuario pidio explicitamente: primero corregir el bot, encenderlo en
+demo, monitorear que el resultado se cumpla -- y solo despues evaluar
+pasar a la real. Aplicado:
+
+1. `agents/breakout_signal.py`: `ATR_MULT_SL` 0.5 -> **0.3**, `RR_MULT`
+   ya estaba en 25.0 (sin cambio).
+2. `core/supervisor.py::DEAD_HOURS_UTC`: agregada la hora 21 UTC al
+   bloqueo -- ahora **solo la hora 20 UTC esta activa** (antes 20 y 21).
+3. `tests/core/test_config.py`: agregado "paused" a los valores validos
+   de `operation_mode` (hueco real del test, no relacionado con lo
+   anterior -- se encontro al correr pytest tras poner el bot en pausa
+   por pedido del usuario horas antes).
+4. `pytest tests/ -q`: **1448 passed, 0 failed** (verificado ANTES de
+   reiniciar el bot).
+5. `.env`: `OPERATION_MODE` regresado de `paused` a `auto`.
+6. Bot reiniciado limpio: modo AUTO, MT5 CONECTADO, balance $94,231.43,
+   sin errores nuevos (solo los pre-existentes documentados: research
+   API key, arxiv DNS).
+
+**NO se toco nada de la cuenta REAL** -- sigue en la demo
+(Axi-US50-Demo), tal como el usuario pidio explicitamente antes de
+considerar el paso a la cuenta real (60290663). Los 3 bloqueos reales
+identificados para ese paso (confirmar con soporte de Axi si el bot
+cuenta como EA propio, implementar el sufijo `.sa` en el conector MT5,
+verificar en vivo que el SL=0.3xATR no dispara demasiado el bug de
+distancia minima del broker) siguen sin resolver -- pendientes antes de
+activar la cuenta real cuando el usuario lo pida.
+
+**Proxima ventana activa: 20:00-21:00 UTC (ahora solo 1 hora, antes
+eran 2) el 2026-09-03.** Tarea pendiente: auditar en vivo esa ventana
+para confirmar que el SL mas ajustado (0.3xATR) no dispara el problema
+de distancia minima del broker (retcode 10016) con mas frecuencia de lo
+manejable, y que el resultado empieza a acercarse a lo que el backtest
+promete.
