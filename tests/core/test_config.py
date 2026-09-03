@@ -8,7 +8,7 @@ def test_config_loads_defaults():
     assert cfg.max_risk_per_trade == 0.005
     assert cfg.max_open_positions == 3
     # operation_mode comes from .env — just validate it's a known value
-    assert cfg.operation_mode in ("auto", "semi", "hybrid", "alerts")
+    assert cfg.operation_mode in ("auto", "semi", "hybrid", "alerts", "paused")
     assert "1h" in cfg.timeframes or "4h" in cfg.timeframes
 
 

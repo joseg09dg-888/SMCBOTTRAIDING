@@ -136,7 +136,11 @@ SCALP_MAX_DOLLAR_RISK    = 50.0
 # fue lo que llevó la probabilidad de pasar Axi Select de 84% a 96% -- cada
 # hora removida se probó empíricamente, no por intuición. Ver SESION_ACTUAL.md.
 DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                             15, 16, 17, 18, 19, 22, 23}  # solo 20,21 UTC activas
+                             15, 16, 17, 18, 19, 21, 22, 23}  # solo 20 UTC activa
+# 2026-09-02: hora 21 UTC bloqueada -- backtest sin el bug D1/H4 (ver
+# SESION_ACTUAL.md) mostro que 21 UTC sola tiene peor WR/avg P&L que 20
+# UTC dentro del universo corregido; excluirla mantiene el mismo
+# P(pass)=82% con mejor Sharpe (1.59 vs 1.36 con ambas horas).
 
 
 

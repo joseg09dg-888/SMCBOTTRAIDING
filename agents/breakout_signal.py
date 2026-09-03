@@ -29,14 +29,17 @@ import pandas as pd
 from agents.signal_agent import SignalType, TradeSignal
 
 DONCHIAN_N = 1
-# 2026-09-02: ATR_MULT_SL bajado de 0.75 a 0.5 tras barrido de 18
-# variables sobre la config real desplegada (5 pares, spread demo medido,
-# horas 20-21 UTC) -- unico hallazgo positivo real de toda la sesion:
-# mismo P(pass)=43->44% pero Sharpe +11% (0.62->0.69), verificado
-# consistente en los 17 años (2010-2026, ningun año negativo). Ver
-# SESION_ACTUAL.md seccion "RESUMEN FINAL DE LA NOCHE" y
-# memory/bt_logs/EXACT_COMMAND_atrsl05.txt (comando exacto reproducible).
-ATR_MULT_SL = 0.5
+# 2026-09-02 (2da correccion, HALLAZGO MAYOR): se encontro que el
+# backtest de todo el dia tenia REQUIRE_D1/REQUIRE_H4 activos por
+# default sin saberlo -- una restriccion que el bot EN VIVO nunca tuvo
+# (el bypass de _scan_mt5_symbol ya salta el H4-confirm desde el
+# 2026-08-31). Al corregir el backtest para medir lo que el bot REAL
+# hace (sin D1/H4) y re-optimizar el SL desde cero para ese universo
+# (2.5x mas volumen de trades), el optimo real bajo de 0.5 a 0.3 --
+# verificado que 0.3 es el pico (0.4->80%, 0.3->82%, 0.2->82% pero peor
+# $, 0.15->revierte a 78%). Ver SESION_ACTUAL.md seccion "CONFIG FINAL
+# DEFINITIVA" y memory/bt_logs/EXACT_COMMAND_norequirehtf_hour20_atr03.txt.
+ATR_MULT_SL = 0.3
 # 2026-08-31 (2da correccion, con spread real): RR subido de 10.0 a 20.0
 # -- revalidado sobre 16 anios reales con el costo de spread REAL de esta
 # cuenta. 2026-09-02: subido otra vez a 25.0 -- sobre el ATR=0.5 nuevo,
