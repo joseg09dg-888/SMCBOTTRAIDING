@@ -13,6 +13,8 @@ import pandas as pd
 
 from core.config import config
 
+from core.atomic_json import read_json, write_json_atomic
+
 from core.risk_manager import RiskManager
 
 from core.decision_filter import DecisionFilter, TradeGrade
@@ -529,8 +531,23 @@ class TradingSupervisor(PositionGuardsMixin):
         self._daily_protect_hit: bool = False    # reserved (unused)
         # Cumulative/total drawdown emergency force-close — fires once, does
         # NOT reset daily (unlike AxiSelectGuard) since a total-DD breach
-        # means the challenge is already failing, not "wait for tomorrow"
-        self._dd_force_closed: bool = False
+        # means the challenge is already failing, not "wait for tomorrow".
+        # BUG-DD-FORCECLOSE-RESTART (2026-09-04, found auditing real trades
+        # from the 2026-08-31/09-02 losing streak): unlike AxiSelectGuard's
+        # paused_today (fixed in BUG-AXI-GUARD-RESTART, 2026-07-09), this
+        # flag lived only in memory -- every pm2 restart (routine during
+        # active dev, since ecosystem.config.js watches core/agents/etc and
+        # restarts on every save) reset it to False while equity stayed
+        # below the threshold, so close_all_positions("DD-GUARD-TOTAL") ran
+        # again on the next cycle after every single restart instead of the
+        # documented "fires once" behavior. Now persisted to the same state
+        # file AxiSelectGuard already uses, so it actually survives restarts
+        # as the comment above always claimed it did.
+        self._dd_force_closed: bool = bool(
+            read_json(os.path.join("memory", "axi_select_state.json"), {}).get(
+                "total_dd_force_closed", False
+            )
+        )
         # ticket -> intended dollar risk at open time (swings only), used to
         # scale LOSS-LIMIT proportionally instead of a flat balance percentage
         self._position_intended_risk: Dict[int, float] = {}
@@ -3309,6 +3326,16 @@ class TradingSupervisor(PositionGuardsMixin):
                                 if not _dd_ok:
                                     print(f"[DD-GUARD] EMERGENCY CLOSE: {_dd_reason}", flush=True)
                                     self._dd_force_closed = True
+                                    try:
+                                        _dd_state = read_json(
+                                            os.path.join("memory", "axi_select_state.json"), {}
+                                        )
+                                        _dd_state["total_dd_force_closed"] = True
+                                        write_json_atomic(
+                                            os.path.join("memory", "axi_select_state.json"), _dd_state
+                                        )
+                                    except Exception:
+                                        pass
                                     try:
                                         await asyncio.get_running_loop().run_in_executor(
                                             None, lambda: self.mt5.close_all_positions("DD-GUARD-TOTAL")

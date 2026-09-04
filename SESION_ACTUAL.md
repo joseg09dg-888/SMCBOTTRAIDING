@@ -3321,3 +3321,89 @@ SSRN 6272239 -- SSRN bloqueo el PDF completo (403), solo tengo el abstract; si s
 numerico hay que entrar con cuenta SSRN. Tambien confirma (sin cambiar nada) que SMC/order blocks
 no tienen validacion academica formal -- coincide con la politica ya adoptada en la seccion 16 de
 CLAUDE.md.
+
+---
+
+## 🔧 Sesion 2026-09-04 manana -- correccion de datos + bug real encontrado y arreglado
+
+Pedido del usuario: "revisa los stops_level y freeze_level de los simbolos en MT5, ejecuta todo lo
+que aprendiste y recomendaciones para mejorar". RAM estaba critica (242MB libres de 4GB, luego bajo
+a 147MB) asi que NO se corrio ningun backtest nuevo ni el suite completo de pytest (solo el archivo
+`tests/strategies/test_ftmo_agent.py`, 28 tests, paso limpio). Se prioriza lo verificable y de bajo
+riesgo sobre lo que requeria RAM que no habia.
+
+### 1. Correccion importante a lo reportado ayer: SI hubo trades reales, y las 10 fueron perdida
+
+Ayer reporte "cero trades ejecutados, todo bloqueado por el guard". Eso era correcto SOLO para lo que
+paso ayer (2026-09-03) -- pero revisando `memory/episodes.db` encontre **10 trades reales en DEMO
+entre 2026-08-31 y 2026-09-02, con tickets MT5 verificados, las 10 PERDEDORAS**. Son la causa real de
+que el drawdown llegara a 5.77% y el guard empezara a bloquear. Auditado con datos reales de MT5
+(`mt5.history_deals_get`/`history_orders_get`, no aproximaciones):
+
+- **USDCAD SELL (pos 103217860)**: SL real=1.38975, cerro en 1.39048 -- **197% del riesgo previsto**
+  (salio ~7 pips MAS ALLA del stop). **USDCHF SELL (pos 103932908)**: SL=0.81321, cerro en 0.81365 --
+  **183%** (~4.4 pips mas alla). **USDCAD BUY (pos 103938557)**: SL=1.38363, cerro en 1.3833 -- **145%**
+  (~3.3 pips mas alla). **NZDUSD SELL (pos 103194381)**: SL=0.58937, cerro en 0.5898 -- **175%**
+  (~4.3 pips mas alla). Estos 4 muestran **slippage real de ejecucion mas alla del nivel de SL** en la
+  cuenta demo -- el broker no cerro exactamente al precio del stop, se fue mas lejos.
+- **EURAUD SELL (pos 103217813)**: cerro EXACTO en el SL (100.2%) -- sin slippage, para contraste.
+- **EURUSD/USDCHF/USDCAD (pos 103929585, 103929859, 103930774)**: cerraron MUY ANTES de llegar al SL
+  (2.5%, 5.1%, 36% del riesgo previsto) -- perdidas chicas ($2.36, $5.81, $43.39). Root cause
+  confirmado en los logs: **`[DD-GUARD] EMERGENCY CLOSE`** disparo `close_all_positions` exactamente
+  en esa ventana (2026-09-02 18:09:37-39, las 3 se cerraron en 2 segundos de diferencia) -- el guard de
+  drawdown total corto estas posiciones antes de que llegaran a su SL completo. Esto en si es que el
+  guard funciono como debia (evito una perdida completa), pero llevo a encontrar el bug real de abajo.
+
+### 2. Bug real encontrado y arreglado: `_dd_force_closed` no sobrevivia reinicios de PM2
+
+Investigando por que `[DD-GUARD] EMERGENCY CLOSE` aparecia repetido en el log en horas muy separadas
+(2UTC, 15UTC, 23UTC, mismo 5.77% cada vez) encontre que `core/supervisor.py` linea ~533 documentaba
+EXPLICITAMENTE la intencion "fires once... a real breach here means the challenge is already failing"
+pero `self._dd_force_closed` vivia SOLO en memoria (`= False`, sin persistencia) -- exactamente el
+mismo bug que ya se habia arreglado para el guard diario (`BUG-AXI-GUARD-RESTART`, 2026-07-09,
+`agents/axi_select_guard.py`), pero nunca se replico para este guard hermano (el de drawdown TOTAL).
+Cada restart de PM2 (rutinario durante desarrollo activo -- `ecosystem.config.js` vigila `core/` y
+reinicia en cada guardado) reseteaba la bandera a `False` mientras el equity seguia bajo el umbral,
+asi que `close_all_positions("DD-GUARD-TOTAL")` se volvia a disparar en cada reinicio en vez de una
+sola vez como decia el comentario.
+
+**Fix aplicado** (`core/supervisor.py`, ~linea 530 y ~linea 3328): persistir la bandera en
+`memory/axi_select_state.json` (mismo archivo/patron atomico que ya usa `AxiSelectGuard`, via
+`core/atomic_json.py::read_json/write_json_atomic`), cargandola en `__init__` y guardandola en el
+momento en que se activa. **Verificado en vivo**: tras el restart automatico de PM2 (watch), el bot
+detecto el breach en el siguiente ciclo de scan y escribio `"total_dd_force_closed": true` en
+`memory/axi_select_state.json` -- confirmado leyendo el archivo despues. `pm2 status` limpio (restart
+count subio de 3 a 4 por el propio cambio, sin crashes despues, uptime estable). Sintaxis verificada
+con `ast.parse` antes de guardar. Suite completa de pytest NO se corrio (RAM critica) -- pendiente
+correrla cuando haya RAM libre, aunque el cambio es aditivo y de bajo riesgo (no toca ningun umbral
+ni logica de trading, solo hace que una bandera ya existente sobreviva un restart, igual que su
+guard hermano desde julio).
+
+### 3. Diagnostico MT5 pedido (stops_level/freeze_level) -- ya resuelto por el propio bot antes
+
+Se corrio el chequeo pedido (`symbol_info().trade_stops_level/.trade_freeze_level` + ATR14 actual por
+simbolo). Resultado: todos los 10 simbolos reportan `stops_level=1pt, freeze_level=0pts` -- confirma
+exactamente lo que ya documenta el comentario `BUG-MT5-INVALID-STOPS-LIVE` (2026-09-01,
+`connectors/metatrader_connector.py:298`): ese campo reporta un valor estatico ~0.1 pip que NO refleja
+el minimo real (dinamico, hasta ~15 pips en killzone activa segun binary-search real ya documentado).
+El bot YA NO confia en ese campo -- ya tiene el retry adaptativo via `order_check()` implementado
+desde esa fecha. Mi recomendacion de anoche de "chequear ese campo primero" quedo parcialmente
+obsoleta por trabajo que ya existia; lo que si es nuevo es la evidencia de arriba (seccion 1) de que
+el slippage real EN VIVO (no el rechazo 10016 en si) es lo que esta comiendose parte del RR esperado
+en varios de los 10 trades reales. **NAS100 no se encontro** con ese nombre exacto en `symbol_info()`
+en esta cuenta -- puede necesitar sufijo de broker (ver nota de `.fs` en seccion 17 de CLAUDE.md);
+no investigado a fondo, queda como item suelto para revisar.
+
+### 4. Lo que NO se ejecuto (requiere mas trades reales, backtest nuevo, o decision del usuario)
+
+- Desglose Costa-paper (majors vs Gold/indices) con datos propios: los 10 trades reales son todos
+  pares FX puros (USDCAD/EURUSD/NZDUSD/EURAUD/USDCHF), sin XAUUSD/indices en la muestra -- no hay
+  con que comparar todavia.
+- Chequeo deflated-Sharpe/PBO sobre ATR_MULT_SL=0.3/RR_MULT=25.0: requiere backtest nuevo, bloqueado
+  por RAM critica hoy.
+- Guard de drawdown (5.60% freno / 8% limite): sigue sin tocarse, sigue siendo decision del usuario.
+
+### Tarea #1 para la proxima sesion
+Correr `pytest tests/ -q` completo cuando haya RAM libre para confirmar que el fix de persistencia no
+rompio nada mas alla del archivo puntual ya verificado. Despues, retomar la conversacion pendiente del
+guard de drawdown (sigue en 5.77%, bloqueando entradas nuevas).
