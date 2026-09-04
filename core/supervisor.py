@@ -450,9 +450,21 @@ class TradingSupervisor(PositionGuardsMixin):
         # MAX_DAILY_DRAWDOWN_PCT=3%). profit_target_pct is set unreachably
         # high because Axi Select is an ongoing funded account, not a
         # timed pass/fail challenge -- it should never enter PASSED status.
+        # DECISION-GUARD-RESET-2026-09-04: decision EXPLICITA del usuario, no
+        # un bug arreglado por mi -- el guard de drawdown total ya habia hecho
+        # su trabajo (freno permanente tras la racha de 10/10 perdidas del
+        # 31/ago-2/sep, ver SESION_ACTUAL.md) y el usuario, tratando la demo
+        # como si fuera capital real, decidio explicitamente resetear el punto
+        # de referencia en vez de abrir una cuenta nueva (los intentos de
+        # cuenta nueva -- tipo "Pro" -- nunca lograron conectar via IPC pese a
+        # agotar todas las alternativas tecnicas disponibles). Este reset
+        # mueve el baseline de drawdown al balance real actual ($94,231.43,
+        # confirmado en vivo) -- el guard sigue activo y sigue protegiendo
+        # contra CUALQUIER perdida futura desde este punto, solo deja de
+        # medir contra el balance original de hace dias.
         _risk_gate_rules = FTMORules(
             challenge_type=ChallengeType.TWO_STEP,
-            initial_balance=100_000.0,  # Axi Select account size — NOT startup capital param
+            initial_balance=94_231.43,  # baseline reseteado 2026-09-04 (decision del usuario, no un bug)
             profit_target_pct=100.0,    # unreachable -- Axi has no challenge "pass" state
             max_daily_loss_pct=0.03,    # Axi Select real limit (was FTMO's 5%)
             max_total_drawdown_pct=0.08,  # Axi Select real limit (was FTMO's 10%)
