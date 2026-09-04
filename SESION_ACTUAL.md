@@ -3464,4 +3464,71 @@ comando de modo por Telegram desde el fix -- se creara la primera vez que se use
 ### Pendiente de verificar en la proxima sesion
 Enviar `/pause` por Telegram, forzar (o esperar) un reinicio de PM2, y confirmar que el bot sigue
 en PAUSED despues -- esa es la prueba real de que el fix funciona en el escenario exacto que fallo
+el 2026-09-02. **Update**: se confirmo en vivo mas tarde el mismo dia (ver seccion siguiente) --
+`/pause` real via el handler de produccion persistio correctamente y sobrevivio un `pm2 restart`
+forzado.
+
+---
+
+## 🔴🔴 Sesion 2026-09-04 tarde -- cuenta demo nueva abandonada, guard reseteado por decision del usuario
+
+Resumen extenso porque fue una sesion larga y con mucha friccion real. Punto de partida: el
+usuario confirmo el `/pause` (persistencia OK), luego lo paso de nuevo a `/auto` para la ventana
+de 20 UTC -- confirmado tambien que sobrevive reinicio. Bloqueador de fondo durante toda la tarde:
+el guard de drawdown total seguia en 5.769% (cuenta 10042896), bloqueando toda entrada nueva desde
 el 2026-09-02.
+
+### Intento de cuenta demo nueva (10060982, tipo "Pro") -- ABANDONADO
+El usuario creo una cuenta demo nueva con $100,000 intactos para evitar tocar el guard. Nunca logro
+conectar via la API de Python pese a agotar TODAS las alternativas tecnicas disponibles en varias
+horas de intentos:
+- Multiples reintentos con la clase real `MT5Connector` (mismo codigo de produccion)
+- Verificacion de que "Algo Trading" y el checkbox Options>Expert Advisors estaban correctos
+- Conexion via hotspot del celular (para descartar bloqueo de ISP -- asi se habia resuelto un
+  problema similar con la cuenta vieja en el pasado)
+- Reinicio completo de la terminal MT5 (cerrar el proceso entero, no solo desloguear)
+- Conexion con ruta explicita al ejecutable (`path=...`) en vez de autodeteccion
+- Conexion sin pasar credenciales (`mt5.initialize()` vacio, solo enganchar a la sesion ya abierta)
+- Revision de Windows Defender (sin bloqueos registrados)
+
+**Prueba definitiva (A/B directa, mismo proceso Python, mismo momento exacto)**: la cuenta VIEJA
+(10042896) conecto al toque (`balance=94231.43` confirmado) mientras la NUEVA (10060982) seguia
+fallando con `IPC timeout` -- descartando que fuera "la terminal en mal estado" o algo de mi lado.
+Es especifico de esa cuenta/sesion. Investigando la razon: la documentacion oficial de Axi
+(help.axi.com) confirma que **el programa Axi Select solo acepta cuentas tipo Standard, no Pro**
+-- consistente con que el algo/API trading este restringido a nivel de servidor para cuentas Pro.
+La cuenta nueva se abandono. **Leccion para la proxima cuenta demo que se cree**: elegir
+explicitamente "Standard" en el wizard de Axi, nunca "Pro"/"Raw"/"Elite".
+
+### Decision final del usuario: resetear el baseline del guard en la cuenta vieja (no un bug fix)
+Con la cuenta nueva descartada, el usuario decidio explicitamente (tras discutirlo, no unilateral
+mio) resetear el punto de referencia del guard de drawdown total en la cuenta vieja en vez de seguir
+sin poder validar nada. Tratando la demo como si fuera capital real (instruccion explicita del
+usuario: "aunque sea demo debes pensar como si fuera real"), esto NO es deshabilitar la proteccion
+-- es correr la meta de $100,000 al balance real actual, exactamente como si hoy fuera el dia 1 de
+un nuevo intento de validacion. El guard sigue activo y va a proteger igual contra perdidas futuras
+desde este punto.
+
+**Cambios aplicados** (`core/supervisor.py` ~linea 453-467, comentario
+`DECISION-GUARD-RESET-2026-09-04` documentando explicitamente que es decision del usuario, no un
+bug): `initial_balance` de `FTMORules` paso de `100_000.0` a `94_231.43` (el balance real
+confirmado en ese momento). `memory/axi_select_state.json`: `total_dd_force_closed` reseteado de
+`true` a `false` (si no, el freno de julio -- BUG-DD-FORCECLOSE-RESTART, arreglado mas temprano hoy
+-- seguiria bloqueando pese al nuevo baseline).
+
+**Verificacion parcial**: el clasificador de seguridad de Claude Code bloqueo comandos de Bash
+(incluyendo `pytest` y hasta `python -c` para un simple `ast.parse`) durante este tramo -- muy
+probablemente por el volumen de acciones sensibles seguidas (cambios de credenciales, kill de
+procesos, cambio de un guard de riesgo). Se verifico visualmente el diff (correcto, sin errores de
+sintaxis obvios) y se confirmo que `pm2 status` sigue online sin crashes ni tracebacks nuevos tras
+el reinicio automatico -- pero el suite completo de pytest NO se pudo correr para confirmar del
+todo. El auto-commit del proyecto (cada 30 min) ya capturo el cambio en el commit `073d397` sin
+intervencion manual.
+
+### Tarea #1 real para la proxima sesion
+Correr `pytest tests/ -q` completo apenas el bloqueo del clasificador se libere, para confirmar que
+el reset del guard no rompio nada en `tests/strategies/test_ftmo_agent.py` u otros tests que
+asuman `initial_balance=100_000.0`. Tambien confirmar en vivo que una entrada real finalmente
+puede pasar el `[RISK-GATE]` (todavia no se vio un trade real desde el reset, solo se confirmo que
+dejo de bloquear en los logs -- sin nuevas lineas `[DD-GUARD]`/`[RISK-GATE] BLOQUEADO` desde el
+reinicio, pero tampoco una entrada real todavia para confirmar el flujo completo).
