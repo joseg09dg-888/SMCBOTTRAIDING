@@ -3407,3 +3407,61 @@ no investigado a fondo, queda como item suelto para revisar.
 Correr `pytest tests/ -q` completo cuando haya RAM libre para confirmar que el fix de persistencia no
 rompio nada mas alla del archivo puntual ya verificado. Despues, retomar la conversacion pendiente del
 guard de drawdown (sigue en 5.77%, bloqueando entradas nuevas).
+
+---
+
+## 🔴 Bug real de consentimiento encontrado y arreglado (2026-09-04, mismo dia, pedido explicito del usuario)
+
+El usuario aclaro algo clave que yo no sabia: **el cerro manualmente varias posiciones el 1-2 de
+septiembre porque no se estaba llegando a la meta mensual, y le habia dicho al bot que no debia
+operar** -- pero el bot siguio abriendo trades solo, sin su consentimiento. Pidio investigar esto
+especificamente. Se verifico con datos reales de MT5 (`reason` field de cada deal, no suposiciones):
+
+### Correccion a lo que reporte antes (importante, me equivoque)
+Ayer atribui las 3 posiciones cerradas casi simultaneamente el 2026-09-02 18:09:37-39 al mecanismo
+`[DD-GUARD] EMERGENCY CLOSE` por coincidencia temporal. **Eso era incorrecto.** El campo real
+`reason` de MT5 confirma que esas 3 (102381942 EURUSD, 103929585 EURUSD, 103929859 USDCHF,
+103930774 USDCAD -- 4 en total, no 3) se cerraron con `reason=CLIENT` (**terminal de escritorio MT5,
+un humano**), no por el bot ni por el guard. Las otras 6 (103194381, 103217813, 103217860, 103932894,
+103932908, 103938557) se cerraron con `reason=SL` (broker automatico, incluye slippage real de hasta
+~200% del riesgo previsto en 4 de ellas -- eso si sigue siendo cierto, ver sesion anterior). **Las 10
+APERTURAS, sin excepcion, fueron `reason=EXPERT/EA`** (el bot, en modo AUTO, sin intervencion
+humana) -- confirmando que el bot SI seguia abriendo posiciones nuevas pese a que el usuario habia
+indicado que no debia operar.
+
+### La causa raiz: ya HABIA un bug encontrado y parcialmente arreglado el mismo 2026-09-02
+Ya existia en el codigo un comentario `BUG-PAUSED-MODE-NOT-CHECKED (2026-09-02)`
+(`core/supervisor.py` linea ~3408 antes de mi cambio): confirma EN VIVO que con
+`OPERATION_MODE=paused` el bot abrio de todos modos la orden real **#103938557 USDCAD** (una de las
+10 perdedoras) porque el motor breakout nuevo (activo desde 2026-08-31) salta directo a
+`_send_mt5_real_order()` sin pasar por `route_signal()`, que era el unico lugar que revisaba
+`self.mode`. Esa sesion anterior ya agrego el chequeo `elif self.mode == "paused":` ahi mismo --
+ese fix especifico ya estaba en el codigo, confirmado leyendolo.
+
+### El hueco que quedaba, y que arregle hoy: el modo NO sobrevivia un reinicio de PM2
+`self.mode` (supervisor) y `self.state.mode`/`.paused` (TelegramCommander) vivian **solo en
+memoria**. Editar `OPERATION_MODE` en `.env` SI sobrevive un reinicio (se relee en cada arranque),
+pero un `/pause` enviado por Telegram en vivo **NO** -- exactamente el mismo tipo de bug que
+`BUG-AXI-GUARD-RESTART` (julio) y el que arregle mas temprano hoy (`BUG-DD-FORCECLOSE-RESTART`).
+Dado que PM2 reinicia el bot rutinariamente durante desarrollo activo (5-10 veces en un dia, ya
+visto hoy mismo), CUALQUIER pausa dada por Telegram podia perderse silenciosamente en el siguiente
+reinicio, retomando trading automatico sin que el usuario volviera a autorizarlo nada.
+
+**Fix aplicado** (`core/supervisor.py`, import de `BotMode`, ~linea 354 y `_on_mode_change` ~linea
+575): `self.mode` ahora se persiste en `memory/bot_mode_state.json` (mismo patron atomico
+`core/atomic_json.py`) cada vez que cambia via Telegram, y se relee al arrancar -- si existe un modo
+persistido, gana sobre el default de `.env` (igual que los otros dos guards ya arreglados). Tambien
+se sincroniza `self.commander.state.mode/.paused` al arrancar para que `/status` no muestre un modo
+viejo despues de un reinicio.
+
+**Verificado**: `ast.parse` limpio, **suite completo de pytest: 1448/1448 pasando** (corrido dos
+veces hoy, antes y despues de este segundo fix), `pm2 status` limpio tras el reinicio automatico
+(uptime estable, sin crashes, restart count subio de 5 a 10 por los guardados de hoy, ninguno por
+error). El archivo `memory/bot_mode_state.json` todavia no existe porque no se ha enviado ningun
+comando de modo por Telegram desde el fix -- se creara la primera vez que se use `/pause` (o
+`/auto`/`/semi`/`/resume`), momento en el que se podra confirmar que sobrevive un reinicio real.
+
+### Pendiente de verificar en la proxima sesion
+Enviar `/pause` por Telegram, forzar (o esperar) un reinicio de PM2, y confirmar que el bot sigue
+en PAUSED despues -- esa es la prueba real de que el fix funciona en el escenario exacto que fallo
+el 2026-09-02.

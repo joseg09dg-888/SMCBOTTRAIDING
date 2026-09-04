@@ -33,7 +33,7 @@ from connectors.glint_browser import GlintBrowser
 
 from dashboard.telegram_bot import TradingTelegramBot
 
-from dashboard.telegram_commander import TelegramCommander
+from dashboard.telegram_commander import TelegramCommander, BotMode
 
 from training.historical_agent import HistoricalDataAgent
 
@@ -351,7 +351,31 @@ class TradingSupervisor(PositionGuardsMixin):
         self._mt5_h4_just_confirmed: Dict[str, bool] = {}  # symbol → True si H4 acaba de confirmar
         self._mt5_d1_trend: Dict[str, str] = {}            # symbol → "LONG" | "SHORT" (D1 50EMA)
 
-        self.mode    = config.operation_mode
+        # BUG-MODE-NOT-PERSISTED (2026-09-04, found investigating why the bot
+        # kept trading after the user said it should stop 2026-09-01/02):
+        # a /pause (or /auto, /semi) sent via Telegram only ever changed
+        # self.mode in memory (see _on_mode_change below) -- it was never
+        # written to disk. Editing OPERATION_MODE in .env directly survives
+        # a restart (re-read here every init), but a live Telegram command
+        # did not: any pm2 restart (routine during active dev -- the watch
+        # config restarts on every core/ save, several times a day) silently
+        # reverted self.mode back to .env's static default, resuming full
+        # trading with no new consent. Same class of bug as
+        # BUG-AXI-GUARD-RESTART (2026-07-09) and BUG-DD-FORCECLOSE-RESTART
+        # (2026-09-04) -- now persisted the same way, so a Telegram mode
+        # command actually survives a restart until explicitly changed again.
+        self.mode    = read_json(
+            os.path.join("memory", "bot_mode_state.json"), {}
+        ).get("mode", config.operation_mode)
+        # Keep the commander's own displayed state (used by /status) in sync
+        # with the persisted mode above -- otherwise /status could show a
+        # stale mode (e.g. AUTO) right after a restart that actually came
+        # back up PAUSED, which is confusing on top of already being wrong.
+        try:
+            self.commander.state.mode = BotMode(self.mode)
+            self.commander.state.paused = (self.mode == "paused")
+        except ValueError:
+            pass
 
         self._running = False
 
@@ -567,8 +591,12 @@ class TradingSupervisor(PositionGuardsMixin):
     def _on_mode_change(self, mode: str):
 
         self.mode = mode
+        try:
+            write_json_atomic(os.path.join("memory", "bot_mode_state.json"), {"mode": mode})
+        except Exception:
+            pass
 
-        print(f"[Mode] Cambiado a: {mode.upper()} vÃ­a Telegram")
+        print(f"[Mode] Cambiado a: {mode.upper()} via Telegram")
 
     def _on_close_all(self):
         """BUG-CLOSE-ALL-NOOP (2026-07-26, telegram/connectors expert audit):
