@@ -3291,3 +3291,33 @@ no sobreviven de una sesion a otra. Solo PM2 (que corre como servicio
 de Windows, no depende de Claude Code) sigue vivo. Cualquier
 "vigilancia en vivo" (poll de balance, tail de logs) hay que
 relanzarla al retomar.
+
+---
+
+## 🔬 Investigacion SSRN overnight (2026-09-03 noche → 2026-09-04), a pedido del usuario
+
+Reporte completo en `docs/research/ssrn_algo_trading_review_2026-09-04.md`. Nada de esto se
+implemento -- solo lectura/investigacion. Top 3 para leer primero mañana:
+
+1. **Accionable sin riesgo, no requiere que el guard se libere**: un paper (Rounce 2026, SSRN
+   5805443) documenta una estrategia FX breakout que en vivo fallaba porque MT5 rechazaba el
+   trailing-stop (mismo genero de problema que nuestro Retcode 10016 nunca validado). Se puede
+   chequear HOY, solo lectura via API MT5: `symbol_info(symbol).trade_stops_level` y
+   `.trade_freeze_level` de los 8 simbolos, comparado contra la distancia de SL que da
+   `ATR(14)*0.3` en cada uno -- para saber de antemano si algun simbolo va a rechazar la orden
+   antes de gastar el primer intento real descubriendolo.
+2. **Alerta a cruzar con datos propios**: un paper (Costa 2026, SSRN 6592020) sobre EURUSD/
+   GBPJPY/USDCAD/USDJPY/AUDUSD/Gold (2016-2026, ~3800 breakouts) encuentra que los majors FX
+   invalidan el breakout >75% del tiempo (mean-reversion), mientras Gold si muestra continuacion
+   real. Cuando haya masa de trades reales, desglosar win rate por simbolo y ver si XAUUSD/
+   indices rinden mejor que los majors puros.
+3. **Bandera sobre la reoptimizacion reciente**: literatura de backtest-overfitting (Bailey &
+   Lopez de Prado, deflated Sharpe / PBO) es relevante para ATR_MULT_SL=0.3/RR_MULT=25.0, que
+   nacieron de corregir el bug de paridad D1/H4 -- no esta mal, pero cuando haya mas trades reales
+   vale la pena un chequeo out-of-sample antes de tratar esa config como definitiva.
+
+El paper mas parecido a nuestra arquitectura exacta (Donchian+ATR risk management) es Poluri 2026,
+SSRN 6272239 -- SSRN bloqueo el PDF completo (403), solo tengo el abstract; si se quiere el detalle
+numerico hay que entrar con cuenta SSRN. Tambien confirma (sin cambiar nada) que SMC/order blocks
+no tienen validacion academica formal -- coincide con la politica ya adoptada en la seccion 16 de
+CLAUDE.md.
