@@ -139,7 +139,17 @@ class VolumeCalculator:
         volume  = max(min_vol, min(max_vol, volume))
 
         # Safety check: if broker minimum forces >2.5x allowed risk, skip the trade
-        if min_vol > self._MIN_VOL and capital > 0:
+        # BUG-MINVOL-SAFETY-GAP (2026-09-07, found analyzing viability of a
+        # small real account): this used to only fire when min_vol > the
+        # GLOBAL default (0.01) -- so a symbol whose min IS the 0.01 default
+        # (most of them, including XAUUSD) got zero protection here, even
+        # when a tight SL + small capital forced volume to round up from a
+        # tiny fractional lot to 0.01, which can be 5-15x the intended risk_pct
+        # (confirmed: on a $100 account, XAUUSD's real risk hit ~14x the
+        # intended 0.5%). The check's own comment says "if broker minimum
+        # forces >2.5x allowed risk" with no carve-out for which minimum --
+        # the capital>0 condition alone is the correct guard.
+        if capital > 0:
             actual_risk = volume * pips * pip_value
             if actual_risk > capital * risk_pct * 2.5:
                 return 0.0

@@ -187,8 +187,19 @@ class PositionGuardsMixin:
             # Sync realized PnL from MT5 — acumula todos los trades cerrados hoy
             mt5_daily = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
             if mt5_daily is not None:
+                # BUG-AXI-TRACKER-WRITE-STORM (2026-09-07): record_day() used
+                # to fire unconditionally every ~30s scan cycle all day,
+                # rewriting memory/axi_select_state.json (atomic temp+rename)
+                # even when the PnL hadn't moved at all -- confirmed in the
+                # live log as the root cause of 162 recurring "[WinError 5]
+                # Acceso denegado" tracebacks (Windows/AV briefly locking the
+                # file mid-rename on that write frequency). Only write when
+                # the value actually changed -- record_day's own contract is
+                # "today's PnL", not "PnL as of this exact tick".
+                _pnl_changed = float(mt5_daily) != self._daily_realized_pnl
                 self._daily_realized_pnl = float(mt5_daily)
-                self._axi_tracker.record_day(self._daily_realized_pnl, capital=bal)
+                if _pnl_changed:
+                    self._axi_tracker.record_day(self._daily_realized_pnl, capital=bal)
                 # Si el PnL REAL está bajo el target (ej: ganó $277 luego NAS100 -$212 → $65)
                 # el flag se resetea para que el bot pueda seguir operando y llegar a $250
                 if self._daily_target_hit and self._daily_realized_pnl < self.daily_profit_target:

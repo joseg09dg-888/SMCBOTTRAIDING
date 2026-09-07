@@ -27,9 +27,22 @@ class TestVolumeCalculator:
 
     def test_volume_min_clamped(self):
         vc = VolumeCalculator()
-        # Very large SL -> tiny calculated volume -> clamped to 0.01
-        vol = vc.calculate_volume(1_000, 1.0, 0.001, "EURUSD")
+        # SL of 100 pips -> tiny calculated volume -> clamped to 0.01, and the
+        # resulting risk ($10) stays within 2.5x the intended risk ($12.50),
+        # so the safety-skip below does not fire.
+        vol = vc.calculate_volume(1_000, 1.0, 0.99, "EURUSD")
         assert vol == 0.01
+
+    def test_volume_min_clamp_skipped_when_excessive_risk(self):
+        vc = VolumeCalculator()
+        # BUG-MINVOL-SAFETY-GAP (2026-09-07): a wildly oversized SL (0.999,
+        # ~9990 pips) forces the clamp to 0.01 lots, but that alone would put
+        # real risk (~$999) at ~80x the intended 0.5% of $1,000 ($5) -- the
+        # exact case the ">2.5x allowed risk -> skip" safety check exists
+        # for. Before the fix this symbol (min_vol == the global 0.01
+        # default) got no protection at all and still returned 0.01.
+        vol = vc.calculate_volume(1_000, 1.0, 0.001, "EURUSD")
+        assert vol == 0.0
 
     def test_volume_max_clamped(self):
         vc = VolumeCalculator()

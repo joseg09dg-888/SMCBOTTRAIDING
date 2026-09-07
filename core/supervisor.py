@@ -2384,7 +2384,16 @@ class TradingSupervisor(PositionGuardsMixin):
 
                     "direction": order_type,
 
-                    "entry": result.get("price", signal.entry),
+                    # BUG-EPISODE-ENTRY-ZERO (2026-09-07, found auditing the
+                    # 10 real trades from 31/ago-2/sep): Axi (market-execution
+                    # broker) often returns price=0 in the order result --
+                    # already known and handled for the [MT5 REAL] log line
+                    # above (result.get("price") or result.get("requested_price")),
+                    # but that same fallback was never applied here, so
+                    # episodes.db recorded entry=0.0 for every single real
+                    # trade (.get("price", signal.entry) only falls back when
+                    # the "price" KEY is missing, not when its value is 0).
+                    "entry": result.get("price") or result.get("requested_price") or signal.entry,
 
                     "sl": sl_val,
 

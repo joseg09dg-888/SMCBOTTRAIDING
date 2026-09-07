@@ -3532,3 +3532,55 @@ asuman `initial_balance=100_000.0`. Tambien confirmar en vivo que una entrada re
 puede pasar el `[RISK-GATE]` (todavia no se vio un trade real desde el reset, solo se confirmo que
 dejo de bloquear en los logs -- sin nuevas lineas `[DD-GUARD]`/`[RISK-GATE] BLOQUEADO` desde el
 reinicio, pero tampoco una entrada real todavia para confirmar el flujo completo).
+
+---
+
+## 🔧 Sesion 2026-09-07 -- 3 bugs reales encontrados y arreglados mientras se esperaba la primera orden real
+
+Pedido del usuario: "necesito que lo veas operar para que ajustes lo que debas antes de pasar a
+real". Mientras se esperaba una senal real que pasara todos los filtros (guard ya libre desde el
+2026-09-04), se audito el codigo de riesgo/posiciones y se encontraron 3 bugs reales, todos
+arreglados y verificados con el suite completo (1449/1449 pasando al final).
+
+### 1. BUG-AXI-TRACKER-WRITE-STORM (`core/position_guards.py`)
+`record_day()` se llamaba sin condicion cada ~30s (cada ciclo de scan), reescribiendo
+`memory/axi_select_state.json` aunque el PnL no hubiera cambiado -- causa raiz confirmada de los
+162 tracebacks recurrentes "[WinError 5] Acceso denegado" ya vistos en el log (contencion de
+Windows/antivirus al re-escanear el archivo justo en el momento del rename atomico). Fix: solo
+llama a `record_day()` cuando el PnL realmente cambio desde el ciclo anterior.
+
+### 2. BUG-MINVOL-SAFETY-GAP (`core/volume_calculator.py`)
+Encontrado analizando la viabilidad de una cuenta real de $100 (idea del usuario, descartada --
+ver mas abajo). El chequeo de seguridad "si el minimo del broker fuerza >2.5x el riesgo permitido,
+saltar el trade" solo se activaba para simbolos cuyo minimo es MAYOR al default global (0.01) --
+para simbolos que YA estan en 0.01 (la mayoria, incluido XAUUSD), nunca se activaba. Confirmado con
+numeros reales: en una cuenta de $100, XAUUSD con la config actual (ATR_MULT_SL=0.3) podia arriesgar
+~14x lo previsto (7.16% del capital en un solo trade) sin que nada lo frenara. Fix: se quito la
+condicion que limitaba el chequeo solo a simbolos con minimo custom -- ahora protege siempre que
+`capital > 0`, que es lo que el propio comentario del codigo ya decia que debia hacer. No afecta la
+cuenta actual de $94K (el chequeo nunca se activa a ese tamano de capital, solo importa en cuentas
+muy chicas). Test `test_volume_min_clamped` actualizado (usaba un caso extremo que ahora
+correctamente se salta) + test nuevo `test_volume_min_clamp_skipped_when_excessive_risk` agregado.
+
+### 3. BUG-EPISODE-ENTRY-ZERO (`core/supervisor.py`, linea ~2387)
+Explica el "entry siempre 0.0" que se encontro auditando los 10 trades reales del 31/ago-2/sep
+(ver seccion de esa fecha mas arriba). Causa real: Axi (broker de ejecucion a mercado) a menudo
+devuelve `price=0` en el resultado de la orden -- **ya documentado y arreglado para el print de log
+`[MT5 REAL]`** (`result.get("price") or result.get("requested_price")`) dos lineas mas abajo en el
+mismo archivo, pero ese mismo fallback nunca se aplico al guardado en `episodes.db`
+(`result.get("price", signal.entry)` solo cae al fallback cuando la KEY "price" no existe, no
+cuando su valor es 0). Fix: mismo patron de fallback aplicado al campo "entry" de `record_episode`.
+
+### Idea evaluada y descartada: cuenta real de $100 sin fondeo
+El usuario propuso probar con una cuenta real chica ($100) antes de pasar a Axi Select. Analisis
+con la matematica real del `VolumeCalculator` (no especulacion): el minimo de lote del broker
+(0.01) fuerza un riesgo real de 1.2x-14x el 0.5% previsto segun el simbolo, y una racha corta como
+la real de 0/10 ya vista podria quemar $100 en 2-3 trades en vez de 10. Se descarto por ahora --
+si se quiere validar con plata real chica en el futuro, $500-1000 es el piso donde el minimo de
+lote deja de dominar el calculo de riesgo.
+
+### Estado del bot al cierre de esta seccion
+Online, PM2 estable, sin restarts por error. Balance $94,231.43, drawdown 0.000% (guard libre,
+desde el reset del 2026-09-04). Todavia sin una primera orden real ejecutada con la config actual
+-- las senales que aparecieron se bloquearon por horario (solo 20 UTC activa) o por mercado cerrado
+(fin de semana). Monitor armado esperando la ventana de 20 UTC de hoy.
