@@ -1,5 +1,5 @@
 {
-  "saved_at": 1788812099.8819733,
+  "saved_at": 1788813924.2481005,
   "positions": [
     {
       "symbol": "USDCHF",
@@ -18,6 +18,24 @@
       "ticket": 105827658,
       "sl": 1.38192,
       "tp": 1.37611
+    },
+    {
+      "symbol": "EURAUD",
+      "entry": 1.61002,
+      "direction": "short",
+      "size": 1.78,
+      "ticket": 105827911,
+      "sl": 1.61053,
+      "tp": 1.6046399999999998
+    },
+    {
+      "symbol": "NZDUSD",
+      "entry": 0.58784,
+      "direction": "long",
+      "size": 1.18,
+      "ticket": 105827974,
+      "sl": 0.58734,
+      "tp": 0.59146
     }
   ]
 }
