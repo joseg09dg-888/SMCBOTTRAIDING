@@ -236,6 +236,12 @@ ENABLE_REGIME_FILTER = False  # probado 2026-07-09: empeoro TODO (P(pasar Axi) 4
 # avg -$205/-$213 en los 3 niveles de vol, ~5676 de 25195 trades = 22.5% del
 # total) y deja pasar los otros 6 de 9 combos, todos con WR 47-68%.
 EXCLUDE_CHOPPY = os.environ.get("EXCLUDE_CHOPPY", "0") == "1"
+# 2026-09-07: filtro de volatilidad puro (distinto de EXCLUDE_CHOPPY, que es
+# regimen de TENDENCIA) -- idea de la investigacion SSRN de la sesion
+# 2026-09-04 (Poluri: "solo operar si ATR actual >= SMA(ATR)"). vol_regime()
+# ya clasifica esto mismo (LOW = ATR actual por debajo de su media movil de
+# 60 velas menos 0.5 desviaciones) -- reusa esa funcion en vez de reinventar.
+EXCLUDE_LOW_VOL = os.environ.get("EXCLUDE_LOW_VOL", "0") == "1"
 
 # ── Data download ──────────────────────────────────────────────────────
 print("\n[DATA] Descargando datos historicos...")
@@ -1250,6 +1256,9 @@ if True:
                 continue
         if EXCLUDE_CHOPPY:
             if trend_regime(df1, idx) == "CHOPPY":
+                continue
+        if EXCLUDE_LOW_VOL:
+            if vol_regime(df1, idx) == "LOW":
                 continue
 
         # Filtros nuevos 2026-07-09: RSI/Bollinger/Estocastico/volumen (smc/momentum.py)

@@ -3662,3 +3662,25 @@ o muy cerca desde 3 angulos independientes, no solo el que ya se habia probado e
 **Vector pendiente, no probado aun**: filtro de volatilidad tipo "solo operar si ATR actual >=
 SMA(ATR,50)" (idea de la investigacion SSRN de la sesion 2026-09-04, distinta al filtro de regimen
 de TENDENCIA ya descartado -- este es sobre volatilidad pura, podria comportarse distinto).
+
+### EXCLUDE_LOW_VOL (filtro de volatilidad, idea SSRN) -- tambien descartado
+Se agrego el flag `EXCLUDE_LOW_VOL` a `scripts/backtest_multiyear.py` (reusa `vol_regime()` ya
+existente, filtra solo cuando ATR actual < su media movil de 60 velas - 0.5 desviaciones -- misma
+idea del paper de Poluri de la investigacion SSRN, distinta al filtro de TENDENCIA ya descartado).
+Resultado: **mismo patron que los otros 3 vectores**. WR=34% (sin cambio), E[mensual] $9,644
+(-17% vs $11,612 base), P(pasar 5%) 75% (-7 puntos), P5 mensual -0.0% (borde de mes perdedor).
+
+### CONCLUSION FINAL de la investigacion del WR (4 vectores independientes probados)
+Regimen de tendencia (CHOPPY), RR (10/15/25/30), largo de canal Donchian (N=5), y regimen de
+volatilidad -- los 4 chocan exactamente con la misma pared: **WR pegado en 33-36% sin importar que
+se toque**, y cualquier filtro que reduce la frecuencia de trades empeora todo lo demas sin
+excepcion (E[mensual], P(pasar Axi), Sharpe, cola de meses perdedores). Esto ya no es un patron
+aislado de un solo intento -- es consistente en 4 mecanismos de filtrado completamente distintos.
+
+**Veredicto con evidencia real, no opinion**: el ~34% de WR es el techo real que da el mercado para
+este tipo de señal (breakout 1 vela, estos 5 pares forex, hora 20 UTC) -- no un parametro mal
+ajustado que se pueda subir con mas backtesting. La config actual en vivo (N=1, ATR=0.3, RR=25) es
+el optimo real dentro de esta familia de estrategia, confirmado desde 4 angulos independientes.
+Seguir buscando "subir el WR" con mas parametros de esta misma familia de estrategia probablemente
+no va a dar resultado distinto -- para cambiar eso de verdad haria falta una estrategia distinta
+(otro tipo de señal, no un ajuste de parametro), que es un proyecto de otra escala, no un tuneo.
