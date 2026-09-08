@@ -3684,3 +3684,36 @@ el optimo real dentro de esta familia de estrategia, confirmado desde 4 angulos 
 Seguir buscando "subir el WR" con mas parametros de esta misma familia de estrategia probablemente
 no va a dar resultado distinto -- para cambiar eso de verdad haria falta una estrategia distinta
 (otro tipo de señal, no un ajuste de parametro), que es un proyecto de otra escala, no un tuneo.
+
+---
+
+## 🔴 PUNTO EXACTO DE RETOMO -- usuario apaga la PC 2026-09-07 noche
+
+**Estado real verificado al cierre** (no promesa, chequeado en vivo momentos antes de apagar):
+- Balance/equity: **$93,607.33** (sin cambios desde que se cerraron las 4 posiciones de la ventana
+  de 20 UTC). Drawdown vs baseline reseteado: **0.662%**, lejos del freno (5.60%).
+- **0 posiciones abiertas.**
+- Guard de drawdown total: libre (reseteado 2026-09-04, sigue libre).
+- PM2 se va a caer al apagar la PC -- hay que levantarlo de nuevo con `pm2 start
+  ecosystem.config.js` en la proxima sesion, igual que las veces anteriores tras un reinicio.
+
+**Trabajo de hoy (2026-09-07), en orden:**
+1. 3 bugs reales encontrados y arreglados (axi_tracker write-storm, hueco de seguridad en sizing,
+   entry=0.0 en episodes.db) -- 1449/1449 tests pasando.
+2. Primera orden real de la config actual ejecutada (4 trades, 20 UTC, las 4 perdedoras, -$624.10
+   total) -- analizado con backtest real, confirmado que esta dentro de la distribucion normal
+   (P25-P75 diario), no una señal de alarma.
+3. Investigacion completa de "subir el WR" pedida por el usuario -- 4 vectores distintos probados
+   con backtest real (regimen tendencia, RR 10/15/25/30, largo canal Donchian, regimen volatilidad)
+   -- los 4 chocan con el mismo techo (~34% WR, no se mueve), y cualquier filtro que reduce
+   frecuencia empeora todo lo demas. Veredicto: la config en vivo (N=1/ATR=0.3/RR=25/hora 20 UTC) ya
+   esta en el optimo real para esta familia de estrategia, confirmado desde 4 angulos.
+
+**Tarea #1 para la proxima sesion:**
+1. `pm2 start ecosystem.config.js` para levantar el bot de nuevo.
+2. Verificar balance/drawdown/guard igual que siempre (no asumir, chequear en vivo).
+3. Seguir monitoreando trades reales de la ventana de 20 UTC -- todavia no se vio ninguna llegar al
+   TP completo, sigue siendo la pregunta abierta mas importante para decidir pasar a real.
+4. Si el usuario quiere seguir explorando mejoras: la unica direccion no probada aun es un cambio de
+   estrategia completo (no un parametro), dado que se agotaron 4 vectores distintos de tuneo sin
+   resultado. No insistir con mas parametros de esta misma familia sin una idea genuinamente nueva.
