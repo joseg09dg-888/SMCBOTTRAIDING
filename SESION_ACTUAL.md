@@ -3644,3 +3644,21 @@ de regimen reduce la frecuencia y eso pesa mas que sacar los trades malos.
   SSRN de la sesion 2026-09-04) -- distinto al filtro de regimen de tendencia ya descartado.
 - Filtrar solo los 1-2 peores PARES (NZDUSD/USDCHF, ~$150/trade vs ~$270-370 de EURUSD/EURAUD) en
   vez de por regimen de mercado -- mecanismo distinto (instrumento vs condicion), no probado aun.
+
+### DONCHIAN_N=5 -- tambien descartado
+Canal mas largo (5 velas en vez de 1) para señales de "mas calidad" en teoria. Resultado: **el peor
+de todos los vectores probados**. WR=33% (sigue sin moverse), pero trades cayeron 66% (3018 vs
+8945) -- E[mensual] $3,581 (-69%), P(pasar 5%) 32% (colapso desde 82%), P5 mensual -1.8% (mes
+perdedor otra vez). Un canal mas largo genera breakouts demasiado raros para este universo de
+pares/horario.
+
+### Conclusion tras probar 3 vectores independientes (regimen, RR, largo de canal)
+El WR queda pegado entre 33-36% sin importar que se toque -- parece ser el techo real que da el
+mercado para este tipo de señal (breakout 1 vela, estos 5 pares, hora 20 UTC), no un parametro mal
+ajustado. Cualquier cambio que reduce la frecuencia de trades (regimen, canal largo, RR bajo)
+empeora todo lo demas sin excepcion. La config actual (N=1, ATR=0.3, RR=25) confirmada como optima
+o muy cerca desde 3 angulos independientes, no solo el que ya se habia probado en sesiones previas.
+
+**Vector pendiente, no probado aun**: filtro de volatilidad tipo "solo operar si ATR actual >=
+SMA(ATR,50)" (idea de la investigacion SSRN de la sesion 2026-09-04, distinta al filtro de regimen
+de TENDENCIA ya descartado -- este es sobre volatilidad pura, podria comportarse distinto).
