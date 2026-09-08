@@ -3584,3 +3584,63 @@ Online, PM2 estable, sin restarts por error. Balance $94,231.43, drawdown 0.000%
 desde el reset del 2026-09-04). Todavia sin una primera orden real ejecutada con la config actual
 -- las senales que aparecieron se bloquearon por horario (solo 20 UTC activa) o por mercado cerrado
 (fin de semana). Monitor armado esperando la ventana de 20 UTC de hoy.
+
+---
+
+## 🎯 Sesion 2026-09-07 tarde -- primera orden real ejecutada + busqueda de mejora del WR
+
+### Primera orden real de la config actual (ATR=0.3/RR=25/hora 20 UTC), guard ya destrabado
+Entraron 4 trades reales en la ventana de 20 UTC: USDCHF BUY #105827491, USDCAD SELL, EURAUD SELL
+#105827911, NZDUSD BUY #105827974. Las 4 se cerraron por el guard de perdida maxima (0.8% del
+balance, USDCHF por ejemplo cerro en -$177.84 > limite $118) -- ninguna llego al TP. Perdida total
+realizada: **-$624.10** (balance $94,231.43 -> $93,607.33). Drawdown vs el nuevo baseline: 0.662%,
+lejos del freno (5.60%). El historial de deals de MT5 no devolvio registros para estos 4 tickets
+(ni siquiera las aperturas) durante varias horas -- problema del lado del servidor de Axi, no del
+codigo (el propio bot ya tiene el mecanismo de reintento `_recover_orphaned_episodes` para esto).
+
+### Pedido del usuario: subir el WR "todo unificado" (sin romper rentabilidad/consistencia)
+El usuario dejo claro que el objetivo real no es el WR aislado sino **pasar el 5% mensual de Axi
+Select de forma estable y consistente** -- no una probabilidad aislada sino que la cola de la
+distribucion sea de mas ganancias, no de perdidas. Se corrieron 4 backtests reales (16 anos, mismo
+comando exacto que valida la config en vivo) para probarlo con evidencia, no opinion.
+
+**Barrido de RR_MULT (10, 15, 25, 30) -- resultado definitivo:**
+
+| RR | WR real | E[mensual] | P(pasar 5%) | Sharpe | P5 mensual |
+|----|---------|------------|-------------|--------|------------|
+| 10 | 35.6% | $6,387  | 60% | 1.28 | -1.2% (¡mes perdedor!) |
+| 15 | 34.3% | $9,418  | 76% | 1.51 | +0.1% |
+| **25 (EN VIVO)** | **34.1%** | **$11,612** | **82%** | **1.59** | **+0.9%** |
+| 30 | 34.0% | $11,971 | 83% | 1.58 | +1.0% |
+
+**Conclusion con evidencia real**: el WR NO se mueve en todo el rango (34.0%-35.6%, ruido) --
+el RR no controla el win rate en esta estrategia (la mayoria de los trades se deciden por SL o
+guards mucho antes de acercarse al TP, sea cercano o lejano). Bajar el RR solo destruye la plata
+esperada y la consistencia (RR=10 introduce meses perdedores que no existen en la config actual).
+RR=30 es marginalmente mejor que RR=25 (83% vs 82%) pero la diferencia es ruido estadistico --
+**RR=25-30 es la meseta real, confirmado de nuevo con el lente "unificado" (no solo $), coincide
+con lo ya encontrado en sesiones anteriores.**
+
+**Prueba de EXCLUDE_CHOPPY=1 (excluir regimen sin tendencia, ~21% de los trades, WR=12-19%
+aislado)** -- ya existia el flag en `scripts/backtest_multiyear.py` de una sesion anterior, nunca
+se habia corrido hasta el final. Resultado: **empeoro todo** -- WR sin cambio (34.1%->34.2%),
+E[mensual] $11,612->$9,152 (-21%), P(pasar) 82%->74%. La estrategia depende de la CANTIDAD de
+intentos para atrapar las pocas ganancias grandes que sostienen el sistema -- filtrar por calidad
+de regimen reduce la frecuencia y eso pesa mas que sacar los trades malos.
+
+### Vectores probados y descartados hasta ahora (con evidencia, no opinion)
+1. EXCLUDE_CHOPPY -- empeora todo (documentado arriba)
+2. Bajar RR (10, 15) -- WR no sube, todo lo demas empeora (documentado arriba)
+3. Subir RR (30) -- mejora marginal, no vale la pena el cambio (meseta ya confirmada antes)
+
+### Pendiente / proximos vectores a explorar (distintos al RR, en curso al cierre de esta seccion)
+- **DONCHIAN_N** (actual=1, nunca se probo N mayor con el motor breakout nuevo -- Turtle System
+  clasico usa N=20/55): cambiar el largo del canal es un cambio de CALIDAD de señal, no de gestion
+  de riesgo como el RR -- vector conceptualmente distinto, prioritario para probar.
+- **ATR_MULT_SL** mas ancho (0.5, 1.0) evaluado con el lente unificado (WR + $ + consistencia
+  juntos) -- el sweep anterior (0.5->0.4->0.3->0.2->0.15) solo optimizo por $/Sharpe, nunca se miro
+  el WR como eje separado.
+- Filtro de volatilidad tipo "solo operar si ATR actual >= SMA(ATR,50)" (idea de la investigacion
+  SSRN de la sesion 2026-09-04) -- distinto al filtro de regimen de tendencia ya descartado.
+- Filtrar solo los 1-2 peores PARES (NZDUSD/USDCHF, ~$150/trade vs ~$270-370 de EURUSD/EURAUD) en
+  vez de por regimen de mercado -- mecanismo distinto (instrumento vs condicion), no probado aun.
