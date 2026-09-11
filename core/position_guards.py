@@ -167,6 +167,17 @@ class PositionGuardsMixin:
         MAX_HOLD_HOURS = 36  # only close positions that are losing after 36h
         FRIDAY_CLOSE_HOUR = 19   # UTC — close losers by 19:30 UTC to avoid weekend gap risk
         FRIDAY_CLOSE_MIN  = 30
+        # BUG-ROLLOVER-SLIPPAGE (2026-09-08, found auditing the 4 real trades from
+        # 2026-09-07): all 4 hit their SL within the same minute, 00:00-00:01 UTC --
+        # confirmed via real MT5 M1 bars that this is the broker's daily rollover
+        # (swap charge), where spread spikes ~20x for 3-5 min (USDCHF: 8pts -> 167pts,
+        # EURAUD 27->104, USDCAD 8->173, NZDUSD 8->59) and any SL near price gets
+        # filled inside that inflated spread with heavy slippage (156%-359% of the
+        # intended risk on these 4). Same pattern as the Friday weekend-gap risk
+        # above, just a nightly instead of weekly window -- close everything a few
+        # minutes before the rollover so nothing is sitting exposed through it.
+        ROLLOVER_CLOSE_HOUR = 23  # UTC
+        ROLLOVER_CLOSE_MIN  = 55
         try:
             loop = asyncio.get_running_loop()
             positions = await loop.run_in_executor(None, self.mt5.get_positions)
@@ -505,6 +516,36 @@ class PositionGuardsMixin:
                     positions = await loop.run_in_executor(None, self.mt5.get_positions)
                     if not positions:
                         return
+
+            # ── 0a-bis. Rollover pre-close: dump ALL positions before the nightly
+            # broker rollover (00:00 UTC) — see BUG-ROLLOVER-SLIPPAGE above. Runs
+            # every day (Friday's own 19:30 UTC close already empties positions
+            # well before this, so this mostly matters Sun night through Thursday).
+            past_rollover_cutoff = (
+                now_utc.hour == ROLLOVER_CLOSE_HOUR and now_utc.minute >= ROLLOVER_CLOSE_MIN
+            )
+            if past_rollover_cutoff:
+                for lp in list(positions):
+                    sym    = lp.get("symbol", "?")
+                    ticket = lp["ticket"]
+                    pnl    = lp.get("profit", 0.0)
+                    estado = "perdiendo" if pnl < 0 else "ganando"
+                    print(
+                        f"[ROLLOVER-CLOSE] {sym} #{ticket} {estado} ${pnl:.2f} "
+                        f"— cerrando antes del rollover diario (00:00 UTC)",
+                        flush=True,
+                    )
+                    ok = await self._close_guarded(
+                        loop, ticket, "ROLLOVER-CLOSE",
+                        f"<b>CIERRE ROLLOVER</b> {sym} #{ticket}\n"
+                        f"Cerrado antes del rollover diario (spread se ensancha ~20x).\n"
+                        f"P&amp;L: ${pnl:.2f}"
+                    )
+                    if not ok:
+                        print(f"[ROLLOVER-CLOSE] ERROR cerrando {sym} #{ticket}", flush=True)
+                positions = await loop.run_in_executor(None, self.mt5.get_positions)
+                if not positions:
+                    return
 
             # ── 0. Anti-drag: ONLY for positions WITHOUT a proper SL ────────
             # Positions WITH a SL are already protected — don't override MT5's SL/TP.
