@@ -250,6 +250,25 @@ print("       H1: MT5 real (hasta ~16 años) para forex | D1: hasta 10 años")
 MT5_H1_MAX_BARS = int(os.environ.get("MT5_H1_MAX_BARS", "99999"))  # terminal maxbars cap
 _mt5_ok = mt5.initialize()
 
+# 2026-09-11: overfitting-check hook -- ATR_MULT_SL/RR_MULT were reoptimized
+# this same week using the FULL 16-year window every single sweep run, so
+# there has never been a genuine held-out period the reoptimization decision
+# didn't see. Restricting to a date sub-range here (e.g. only the years AFTER
+# the tuning session) gives a real out-of-sample check instead of just
+# re-measuring the same data the parameters were chosen on. Empty by default
+# (no behavior change) -- only applies when explicitly set.
+HOLDOUT_FROM = os.environ.get("HOLDOUT_FROM", "")  # "YYYY-MM-DD", inclusive
+HOLDOUT_TO   = os.environ.get("HOLDOUT_TO", "")    # "YYYY-MM-DD", exclusive
+
+def _apply_holdout(df):
+    if df is None or len(df) == 0:
+        return df
+    if HOLDOUT_FROM:
+        df = df[df.index >= pd.Timestamp(HOLDOUT_FROM)]
+    if HOLDOUT_TO:
+        df = df[df.index < pd.Timestamp(HOLDOUT_TO)]
+    return df
+
 d1_data = {}
 h1_data = {}
 
@@ -293,11 +312,11 @@ for pair in PAIRS_FOREX:
         rates_h1 = mt5.copy_rates_from(pair, mt5.TIMEFRAME_H1, datetime.now(timezone.utc), MT5_H1_MAX_BARS)
         if rates_h1 is None or len(rates_h1) == 0:
             raise RuntimeError(f"copy_rates_from H1 returned nothing: {mt5.last_error()}")
-        dh1 = _mt5_rates_to_df(rates_h1)
+        dh1 = _apply_holdout(_mt5_rates_to_df(rates_h1))
         h1_data[pair] = dh1
 
         rates_d1 = mt5.copy_rates_from(pair, mt5.TIMEFRAME_D1, datetime.now(timezone.utc), 4500)
-        dd1 = _mt5_rates_to_df(rates_d1) if rates_d1 is not None and len(rates_d1) > 0 else pd.DataFrame()
+        dd1 = _apply_holdout(_mt5_rates_to_df(rates_d1)) if rates_d1 is not None and len(rates_d1) > 0 else pd.DataFrame()
         d1_data[pair] = dd1
 
         h1_years = (dh1.index[-1] - dh1.index[0]).days / 365.25 if len(dh1) else 0.0
@@ -312,14 +331,14 @@ for pair in PAIRS_FOREX:
             dh1.columns = dh1.columns.get_level_values(0)
         dh1.columns = [c.lower() for c in dh1.columns]
         dh1.dropna(inplace=True)
-        dh1 = _strip_tz(dh1)
+        dh1 = _apply_holdout(_strip_tz(dh1))
         h1_data[pair] = dh1
         dd1 = yf.download(tk, start=_end - timedelta(days=3650), end=_end, interval="1d", progress=False, auto_adjust=True)
         if isinstance(dd1.columns, pd.MultiIndex):
             dd1.columns = dd1.columns.get_level_values(0)
         dd1.columns = [c.lower() for c in dd1.columns]
         dd1.dropna(inplace=True)
-        dd1 = _strip_tz(dd1)
+        dd1 = _apply_holdout(_strip_tz(dd1))
         d1_data[pair] = dd1
         print(f"  {pair} (yfinance fallback): H1={len(dh1)} bars | D1={len(dd1)} bars")
 
@@ -331,14 +350,14 @@ for pair, tk in PAIR_NAS.items():
             dh1.columns = dh1.columns.get_level_values(0)
         dh1.columns = [c.lower() for c in dh1.columns]
         dh1.dropna(inplace=True)
-        dh1 = _strip_tz(dh1)
+        dh1 = _apply_holdout(_strip_tz(dh1))
         h1_data[pair] = dh1
         dd1 = yf.download(tk, start=_end - timedelta(days=3650), end=_end, interval="1d", progress=False, auto_adjust=True)
         if isinstance(dd1.columns, pd.MultiIndex):
             dd1.columns = dd1.columns.get_level_values(0)
         dd1.columns = [c.lower() for c in dd1.columns]
         dd1.dropna(inplace=True)
-        dd1 = _strip_tz(dd1)
+        dd1 = _apply_holdout(_strip_tz(dd1))
         d1_data[pair] = dd1
         print(f"  {pair} (yfinance, indice): H1={len(dh1)} bars ({len(dh1)//504:.1f} años efectivos) | D1={len(dd1)} bars ({len(dd1)/252:.1f} años)")
     except Exception as e:

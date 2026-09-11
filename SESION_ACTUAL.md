@@ -3748,3 +3748,53 @@ limpio (restart automatico por el watch, sin crashes).
 Confirmar en vivo, la proxima vez que una posicion siga abierta cerca de medianoche UTC, que el
 cierre preventivo efectivamente dispara antes del salto de spread (nunca se ha visto operar en
 vivo desde que se agrego -- se agrego hoy mismo).
+
+---
+
+## 🔴 Sesion 2026-09-11 -- estado real del mes + chequeo de sobreajuste
+
+### Estado real de la cuenta (verificado, no promesa)
+5 trades reales totales desde que se desbloqueo el guard (2026-09-04): 0 ganadores, -$681.16.
+Balance: $93,553.15. Mes de septiembre hasta hoy (dia 11): **-$1,590.73 (-1.67%)**, NO en camino
+al 5% mensual -- necesitaria +$6,347 en lo que queda del mes sin ninguna ganadora real confirmada
+todavia. Reportado sin maquillaje al usuario, que expreso dudas serias sobre pasar a real.
+
+### Bug de rollover-close aun sin confirmar en vivo
+La 5ta operacion real (EURUSD, 2026-09-09) volvio a chocar con el mismo patron de slippage de
+medianoche que se arreglo el 2026-09-08 (`ROLLOVER-CLOSE` en `core/position_guards.py`). El fix
+se guardo en disco a las 23:36 UTC esa noche (19 min antes del corte de 23:55), pero **nunca se
+disparo** (cero lineas `ROLLOVER-CLOSE` en el log) -- revision de codigo no encontro un bug
+estructural obvio (no quedo anidado en el bloque de viernes, la variable de hora esta bien
+definida). Causa mas probable: una excepcion transitoria o un fetch vacio de posiciones esa noche
+especifica impidio que el codigo llegara a ejecutarse. **Sigue sin confirmarse funcionando en
+vivo** -- pendiente de observacion directa la proxima vez que quede una posicion abierta cerca de
+medianoche. Tambien se encontro que este fix llevaba 3 dias sin commitear (la tarea de auto-commit
+dejo de correr el 2026-09-08 17:15) -- ya commiteado y pusheado (`0d2d288`).
+
+### Chequeo de sobreajuste (pedido explicito del usuario: "necesito esto funcionando ya")
+Se agrego un hook `HOLDOUT_FROM`/`HOLDOUT_TO` a `scripts/backtest_multiyear.py` (filtra el rango de
+fechas de los datos historicos antes de la simulacion) para poder correr la config actual sobre un
+sub-periodo que la reoptimizacion de ATR/RR de la semana pasada no uso de forma aislada (siempre se
+uso el agregado de los 16 anios completos). Corrido sobre 2020-2026 (6.7 anios):
+
+| | 16 anios completos | Solo 2020-2026 |
+|---|---|---|
+| WR real | 34.1% | 33.8% |
+| E[mensual] | $11,612 | $10,449 |
+| P(pasar 5%) | 82% | 79% |
+| Sharpe | 1.59 | 1.55 |
+| P5 mensual | +0.9% | +0.5% |
+
+Los numeros se sostienen casi identicos en la ventana mas reciente -- si los parametros estuvieran
+sobreajustados al ruido veriamos un desplome marcado (como paso al bajar el RR o filtrar por
+regimen la semana pasada), y no es el caso aqui. No es una prueba absoluta de ausencia de
+overfitting (un chequeo CSCV/PBO real necesitaria mas ingenieria), pero es evidencia real de que el
+82% no es un espejismo del backtest completo. RAM estaba critica (150-217MB libres) durante toda
+esta sesion -- el codigo del filtro se preparo primero (sin costo de RAM) y se corrio con cuidado
+solo cuando la memoria lo permitio, sin forzar nada.
+
+### Conclusion honesta de la sesion
+La evidencia de backtest (16 anios y el sub-periodo 2020-2026) sigue respaldando la config actual.
+Lo unico que sigue sin poder confirmarse es la ejecucion real -- 0/5 trades ganadores todavia, y el
+mes va en negativo. Ninguna de las dos cosas es prueba de que el sistema este roto, pero tampoco es
+prueba de que funcione -- sigue siendo una cuestion de mas muestra real, no de mas backtest.
