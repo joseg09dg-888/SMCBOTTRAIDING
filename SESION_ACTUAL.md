@@ -3717,3 +3717,34 @@ no va a dar resultado distinto -- para cambiar eso de verdad haria falta una est
 4. Si el usuario quiere seguir explorando mejoras: la unica direccion no probada aun es un cambio de
    estrategia completo (no un parametro), dado que se agotaron 4 vectores distintos de tuneo sin
    resultado. No insistir con mas parametros de esta misma familia sin una idea genuinamente nueva.
+
+---
+
+## 🔧 Sesion 2026-09-08 -- causa raiz real de las perdidas de ayer encontrada y arreglada
+
+Pedido del usuario: "revisa qué pasó a esa hora exacta" (las 4 posiciones del 2026-09-07 cerraron
+todas en el mismo minuto). Se investigo con datos reales de MT5 (barras M1, no suposicion) usando
+datetimes tz-aware en UTC explicito (el primer intento con datetime naive dio una hora equivocada
+por 5h de diferencia entre zona horaria local/servidor/UTC -- corregido antes de reportar).
+
+### Causa raiz confirmada: rollover diario del broker a medianoche UTC
+Las 4 posiciones (USDCHF, EURAUD, USDCAD, NZDUSD) cerraron las 4 en el mismo minuto exacto
+(00:00-00:01 UTC del 2026-09-08). Barras M1 reales confirman que a esa hora el spread se dispara
+~20x en las 4 monedas simultaneamente (USDCHF 8->167pts, EURAUD 27->104, USDCAD 8->173, NZDUSD
+8->59), con un gap de precio de golpe, tardando ~5 minutos en normalizarse. Esto es el rollover
+diario estandar de cualquier broker de forex (cobro de swap a medianoche UTC) -- no es un bug de
+Axi ni del codigo. Los 4 SL, al estar cerca del precio en ese momento, se ejecutaron a mercado
+dentro de ese spread inflado con slippage real de 156%-359% del riesgo previsto en cada uno.
+
+### Fix aplicado: cierre preventivo antes del rollover (`core/position_guards.py`)
+Mismo patron ya usado para el riesgo de gap de fin de semana (`FRIDAY_CLOSE_HOUR=19`), replicado
+para el rollover diario: nuevo bloque `ROLLOVER-CLOSE` que cierra TODAS las posiciones abiertas
+(ganadoras y perdedoras, igual que el de viernes) a partir de las **23:55 UTC** cada dia, antes de
+que el spread se ensanche a medianoche. Comentario `BUG-ROLLOVER-SLIPPAGE` documentando la causa
+real encontrada. Verificado: `ast.parse` limpio, **suite completo 1449/1449 pasando**, PM2 recargo
+limpio (restart automatico por el watch, sin crashes).
+
+### Pendiente de verificar
+Confirmar en vivo, la proxima vez que una posicion siga abierta cerca de medianoche UTC, que el
+cierre preventivo efectivamente dispara antes del salto de spread (nunca se ha visto operar en
+vivo desde que se agrego -- se agrego hoy mismo).

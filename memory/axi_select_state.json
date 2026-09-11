@@ -40,12 +40,22 @@
       "date": "2026-09-08",
       "pnl": -624.1,
       "pnl_pct": -0.006667212920184776
+    },
+    {
+      "date": "2026-09-09",
+      "pnl": -54.18,
+      "pnl_pct": -0.0005791360312293066
+    },
+    {
+      "date": "2026-09-11",
+      "pnl": 0.0,
+      "pnl_pct": 0.0
     }
   ],
-  "capital": 93607.33,
+  "capital": 93553.15,
   "initial_month_balance": 95124.19,
-  "guard_day_start_balance": 93607.33,
-  "guard_day_start_date": "2026-09-08",
+  "guard_day_start_balance": 93553.15,
+  "guard_day_start_date": "2026-09-11",
   "guard_paused_today": false,
   "total_dd_force_closed": false
 }
