@@ -55,7 +55,7 @@
   "capital": 93553.15,
   "initial_month_balance": 95124.19,
   "guard_day_start_balance": 93553.15,
-  "guard_day_start_date": "2026-09-11",
+  "guard_day_start_date": "2026-09-12",
   "guard_paused_today": false,
   "total_dd_force_closed": false
 }
