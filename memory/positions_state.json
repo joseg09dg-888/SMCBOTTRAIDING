@@ -1,0 +1,32 @@
+{
+  "saved_at": 1789503322.3854024,
+  "positions": [
+    {
+      "symbol": "EURAUD",
+      "entry": 1.61819,
+      "direction": "short",
+      "size": 1.77,
+      "ticket": 111222923,
+      "sl": 1.61869,
+      "tp": 1.6098400000000002
+    },
+    {
+      "symbol": "EURUSD",
+      "entry": 1.15396,
+      "direction": "short",
+      "size": 1.17,
+      "ticket": 111223326,
+      "sl": 1.15446,
+      "tp": 1.14844
+    },
+    {
+      "symbol": "USDCHF",
+      "entry": 0.81892,
+      "direction": "long",
+      "size": 1.17,
+      "ticket": 111223346,
+      "sl": 0.81842,
+      "tp": 0.82419
+    }
+  ]
+}
