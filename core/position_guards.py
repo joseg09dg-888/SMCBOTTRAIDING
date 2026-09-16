@@ -177,7 +177,12 @@ class PositionGuardsMixin:
         # above, just a nightly instead of weekly window -- close everything a few
         # minutes before the rollover so nothing is sitting exposed through it.
         ROLLOVER_CLOSE_HOUR = 23  # UTC
-        ROLLOVER_CLOSE_MIN  = 55
+        # Widened 55->50 (2026-09-16): extra margin now that the real blocker
+        # (record_day() WinError-5 silently aborting this whole function
+        # before reaching this check -- see BUG-ROLLOVER-SILENT-ABORT above)
+        # is fixed. 10 min of window instead of 5 in case anything else ever
+        # stalls a cycle.
+        ROLLOVER_CLOSE_MIN  = 50
         try:
             loop = asyncio.get_running_loop()
             positions = await loop.run_in_executor(None, self.mt5.get_positions)
@@ -210,7 +215,16 @@ class PositionGuardsMixin:
                 _pnl_changed = float(mt5_daily) != self._daily_realized_pnl
                 self._daily_realized_pnl = float(mt5_daily)
                 if _pnl_changed:
-                    self._axi_tracker.record_day(self._daily_realized_pnl, capital=bal)
+                    # BUG-ROLLOVER-SILENT-ABORT (2026-09-16): this write can still
+                    # fail (see atomic_json.py) even with retries -- must never be
+                    # allowed to abort the rest of this function (Friday-close,
+                    # Rollover-close, and every other safety check below all run
+                    # AFTER this line). Bookkeeping failure here is not a reason
+                    # to skip real position management.
+                    try:
+                        self._axi_tracker.record_day(self._daily_realized_pnl, capital=bal)
+                    except Exception as _rec_exc:
+                        print(f"[AXI-TRACKER] record_day fallo (no bloqueante): {_rec_exc}", flush=True)
                 # Si el PnL REAL está bajo el target (ej: ganó $277 luego NAS100 -$212 → $65)
                 # el flag se resetea para que el bot pueda seguir operando y llegar a $250
                 if self._daily_target_hit and self._daily_realized_pnl < self.daily_profit_target:

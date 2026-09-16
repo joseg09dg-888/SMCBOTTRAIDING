@@ -3826,3 +3826,100 @@ Retomar el punto de decision pendiente: 9/9 sin ganadoras es estadisticamente si
 solo "mala suerte"), amerita revisar en serio si hay algo real en la ejecucion que el backtest no
 esta capturando, no seguir esperando pasivamente. Reintentar la auditoria de los 4 trades del
 2026-09-15 con MT5 (el historial de deals deberia estar disponible ya para entonces).
+
+---
+
+## 🔴🔧 Sesion 2026-09-16 -- CAUSA RAIZ REAL encontrada: BUG-ROLLOVER-SILENT-ABORT
+
+Usuario desperto, vio la racha 9/9 y la exigio explicitamente 3 veces: "es tu deber descubrir por
+que no gana". Reintente la auditoria MT5 de los 4 trades del 2026-09-15 (el retraso del historial
+ya se habia resuelto) y esta vez si trajo los cierres completos.
+
+### Auditoria real (MT5 history_deals_get, no estimado)
+
+| Ticket | Par | Entrada | SL previsto | Cierre real | Hora cierre UTC | Slippage vs riesgo previsto |
+|---|---|---|---|---|---|---|
+| 111222923 | EURAUD | 1.61819 | 1.61869 | 1.61869 | 23:40:00 | Ninguno -- SL limpio, normal |
+| 111223326 | EURUSD | 1.15396 | 1.15446 | 1.15505 | **00:01:00** | +118% |
+| 111223346 | USDCHF | 0.81892 | 0.81842 | 0.81772 | **00:05:00** | +40% |
+| 111227892 | USDCAD | 1.39215 | ~1.39165 (est.) | 1.39122 | **00:01:00** | +86% |
+
+**3 de 4 trades (75%) cerraron exactamente en la ventana 00:01-00:05 UTC** -- el rollover diario del
+broker ya identificado el 2026-09-08 (BUG-ROLLOVER-SLIPPAGE), con SL ejecutado muy por encima del
+riesgo previsto. El fix `ROLLOVER-CLOSE` desplegado el 2026-09-08 (cerrar todo antes de las 23:55
+UTC) **nunca disparo, segunda vez consecutiva** en su unica oportunidad real de probarse.
+
+**Accion inmediata**: bot pausado (`memory/bot_mode_state.json` -> `paused`, pm2 restart, confirmado
+en log `Modo: PAUSED | threshold=999 | max_trades=0`) para frenar mas perdidas mientras se
+investigaba la causa real.
+
+### Causa raiz real (no es el mercado, no es la estrategia, no son indicadores)
+
+`grep ROLLOVER core/atomic_json.py del log de pm2` dio 0 resultados -- el codigo de ROLLOVER-CLOSE
+nunca habia impreso NADA. Pero `grep "AUTO-CLOSE. error"` (el catch-all de toda la funcion
+`_manage_open_positions()`) dio **163 ocurrencias reales**, todas `[WinError 5] Acceso denegado`
+sobre `memory/axi_select_state.json` -- el mismo problema de BUG-AXI-TRACKER-WRITE-STORM
+(2026-09-07), que se penso resuelto ese dia pero seguia ocurriendo casi con la misma frecuencia.
+
+El problema mecanico real: `self._axi_tracker.record_day(...)` (linea 213 de
+`core/position_guards.py`, dentro de `_manage_open_positions()`) escribe a disco cada vez que el
+PnL diario cambia -- es decir, cada vez que una posicion cierra. Esa llamada **no tenia try/except
+propio**. Cuando `os.replace()` choca con un lock transitorio de Windows (antivirus, otro hilo
+leyendo el mismo archivo), la excepcion se propaga hasta el `except Exception as _me` de toda la
+funcion (linea 944), que la atrapa con un simple print y **aborta el resto del ciclo completo** --
+incluyendo el bloque FRIDAY-CLOSE y el bloque ROLLOVER-CLOSE, que estan mas abajo en el mismo
+metodo y nunca se alcanzan ese ciclo.
+
+Esto es estructuralmente el peor momento posible para que falle: la ventana de rollover (multiples
+posiciones cerrando en 1-5 minutos, cada cierre disparando una nueva escritura a
+`axi_select_state.json`) es exactamente cuando mas probable es que dos escrituras casi simultaneas
+choquen con el lock de Windows -- justo cuando el bloque ROLLOVER-CLOSE mas necesita ejecutarse.
+
+### Fix aplicado (2 capas, no solo una)
+
+1. `core/atomic_json.py::write_json_atomic()` -- ahora reintenta `os.replace()` hasta 5 veces con
+   50ms de espera entre intentos antes de fallar de verdad (el lock es tipicamente de milisegundos,
+   no un error real).
+2. `core/position_guards.py:213-225` -- la llamada a `record_day()` ahora tiene su propio
+   try/except (`[AXI-TRACKER] record_day fallo (no bloqueante)`) para que, aunque falle tras los 5
+   reintentos, NUNCA vuelva a abortar el resto de la funcion.
+3. `ROLLOVER_CLOSE_MIN` ampliado de 55 a 50 (ventana de 10 min en vez de 5) como margen extra.
+
+Auditoria del resto de `core/supervisor.py` y `position_guards.py` para el mismo patron (escritura
+a disco sin try/except propio dentro de una funcion critica): los otros 2 sitios que tocan
+`axi_select_state.json`/`sl_cooldown_state.json` en rutas calientes (linea 2798 de position_guards,
+linea 3378 de supervisor -- el DD-GUARD) **ya estaban correctamente protegidos** con su propio
+try/except. `record_day()` en la linea 213 era el unico punto sin proteccion -- consistente con
+que fuera precisamente el que rompia el flujo hacia ROLLOVER-CLOSE.
+
+Verificado: `ast.parse` en ambos archivos OK, `pytest tests/core/test_atomic_json.py` 7/7 OK (RAM
+critica -- 286MB libres -- no se corrio el suite completo, mismo criterio que sesiones anteriores).
+No existe test dedicado para `position_guards.py::_manage_open_positions()` (tampoco existia antes
+de esta sesion).
+
+### Estado al cierre
+
+Bot dejado **PAUSADO** deliberadamente (no reactivado sin autorizacion explicita, dado lo tensa que
+esta la conversacion y que las perdidas fueron reales). El proximo rollover (23:50-00:00 UTC de
+hoy, 2026-09-16 a 09-17) es la primera oportunidad real de confirmar si el fix funciona -- no se
+puede dar por bueno hasta verse en vivo.
+
+### Respuesta honesta a "por que no gana"
+
+No es falta de indicadores, no es mala lectura de mercado, no es la estrategia en si (el WR
+estructural ~33-36% ya se investigo exhaustivamente el 2026-08-28/09 y es un techo real de esta
+familia de estrategias, no algo que un bug este empeorando). Es un bug de concurrencia/manejo de
+excepciones muy concreto que hacia que el bot, la mayoria de las noches, corriera SIN la
+proteccion de rollover que se penso que tenia -- dejando posiciones expuestas al pico de spread de
+medianoche y convirtiendo perdidas de SL normales en perdidas 40-118% mas grandes de lo previsto.
+Esto no explica toda la racha de 9/9 (el primer trade de hoy, EURAUD, perdio limpio sin rollover de
+por medio), pero si explica una parte real y medible de por que las perdidas de las ultimas dos
+semanas fueron mas grandes de lo que el backtest predice.
+
+### Pendiente real para la proxima sesion
+- Confirmar en vivo (con MT5 real, no logs) si ROLLOVER-CLOSE dispara esta noche.
+- Decidir con el usuario cuando reactivar el bot -- quedo pausado, no es decision unilateral de
+  reactivarlo.
+- El techo de WR 33-36% sigue siendo un limite estructural de la estrategia, no un bug -- si el
+  objetivo es un WR mucho mas alto, eso requeriria una familia de estrategia distinta, no mas
+  parches a esta.
