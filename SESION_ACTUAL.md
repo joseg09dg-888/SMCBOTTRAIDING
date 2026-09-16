@@ -3923,3 +3923,69 @@ semanas fueron mas grandes de lo que el backtest predice.
 - El techo de WR 33-36% sigue siendo un limite estructural de la estrategia, no un bug -- si el
   objetivo es un WR mucho mas alto, eso requeriria una familia de estrategia distinta, no mas
   parches a esta.
+
+---
+
+## 🔴🔴 Sesion 2026-09-16 (noche) -- CRITICO: reloj del broker desfasado 3h, invalida el analisis de horarios de los ultimos 4 meses
+
+Se reactivo el bot en AUTO con el fix del rollover + horas reabiertas (15,16,20-23 UTC, ver seccion
+anterior). Entraron 3 operaciones reales: USDCHF BUY #112072940, EURUSD SELL #112078332, EURAUD
+SELL #112088989. EURUSD y EURAUD cerraron en perdida normal (SL limpio, slippage <20%, sin nada
+raro). USDCHF, en cambio, perdio -$232.03 -- casi 4x el riesgo previsto (~$58) -- disparando el
+guardia de emergencia `[AUTO-CLOSE]` (perdiendo $254.23 > limite $116) en vez de su propio SL.
+
+### Causa raiz real: el reloj del servidor de Axi esta 3 horas adelantado del UTC real
+
+Confirmado con evidencia dura, no especulacion: `mt5.symbol_info_tick('USDCHF').time` decodificado
+como UTC dio `2026-09-17 00:06:14`, mientras el reloj real del sistema (`datetime.now(timezone.utc)`)
+daba `2026-09-16 21:06:19` -- una diferencia de +3h exacta, confirmada tambien con las barras M1 mas
+recientes (`copy_rates_from_pos`). Osea: **todo timestamp que viene de MT5 (barras, deals, ticks)
+esta en hora del servidor del broker (UTC+3), no en UTC real**, aunque el codigo en varios lugares
+lo decodifica con `datetime.fromtimestamp(x, tz=timezone.utc)` como si lo fuera.
+
+Esto explica USDCHF de esta noche: la "medianoche del broker" (el evento real de rollover/pico de
+spread, ya documentado desde el 2026-09-08) ocurre en **UTC real ~21:00**, no a medianoche UTC real
+como se penso siempre. El guardia ROLLOVER-CLOSE (corregido mas temprano esta sesion para el bug de
+WinError-5) seguia apuntando a las 23:50-00:00 UTC real -- 3 horas tarde. USDCHF, abierta a las
+20:20 UTC real, siguio expuesta exactamente durante el pico real de spread (21:00 UTC real) sin
+proteccion. Corregido: `ROLLOVER_CLOSE_HOUR` de 23 a 20 en `core/position_guards.py` (commit
+pendiente). Ya paso la ventana de esta noche, no se pudo confirmar en vivo todavia.
+
+### Hallazgo mas grave: el analisis de "mejores horas" (DIM4) de TODA la sesion esta mal alineado
+
+`scripts/backtest_multiyear.py::_mt5_rates_to_df()` construye el indice de tiempo de las barras H1
+con `pd.to_datetime(df["time"], unit="s")` -- **sin corregir el desfase de 3h**, con un comentario
+(escrito en una sesion anterior) que asumia, sin verificarlo nunca, que "el bot en vivo usa la
+misma convencion". Verificado hoy que es FALSO: el bot en vivo decide la hora activa con
+`datetime.now(timezone.utc)` (linea 1999 de `core/supervisor.py`) -- reloj real del sistema, UTC
+de verdad, sin relacion con el reloj del broker.
+
+Traduccion real (broker_label = UTC_real + 3h, o UTC_real = label - 3h): de las 6 horas activas
+configuradas esta noche (UTC real 15,16,20,21,22,23), solo la hora 20 real corresponde a una hora
+que el backtest (en su propia numeracion, aunque mal etiquetada) considero "buena" (label 23). Las
+otras 5 horas reales (15,16,21,22,23) corresponden a labels (18,19,0,1,2) que el propio backtest
+ya tenia bloqueadas o nunca probo como buenas. Osea: el cambio que se hizo esta misma noche
+(reabrir horas 15,16,21,22,23 basado en el backtest recien corrido) probablemente empeoro la
+seleccion de horarios en vez de mejorarla, porque el backtest de esta noche uso la misma
+conversion sin corregir.
+
+**Esto pone en duda la seleccion de horarios activos de TODO el proyecto desde que se migro al
+motor MT5 (2026-07-25 en adelante, ver seccion 19 de CLAUDE.md)** -- no solo el cambio de esta
+noche. No se corrigio en esta sesion (demasiado riesgoso re-escribir esto de madrugada sin
+verificacion completa); queda como el item #1 pendiente, critico, para la proxima sesion.
+
+### Estado al cierre
+Bot **pausado** deliberadamente, no reactivado. Balance real: revisar en vivo al retomar (ronda
+~$92,745 tras las 3 operaciones de esta noche). Codigo del rollover corregido (`ROLLOVER_CLOSE_HOUR
+20`) pero sin verificar en vivo todavia. El analisis de horarios NO fue corregido, solo detectado
+y documentado -- usar los horarios actuales con precaucion, saber que probablemente estan mal
+elegidos.
+
+### Tarea #1 real para la proxima sesion (la mas importante de esta sesion)
+Auditar y corregir de raiz el manejo de zona horaria en TODO el pipeline: decidir de una vez si
+todo el codigo (backtest Y bot en vivo) va a trabajar en UTC real corregido (restando 3h a cada
+timestamp de MT5) o en "hora del broker" consistente en ambos lados -- lo que esta mal hoy es que
+cada lado usa una convencion distinta sin saberlo. Una vez corregido, TODO el analisis DIM4/mejores
+horas de los ultimos 4 meses necesita re-correrse desde cero -- los numeros actuales (incluidos los
+de esta misma noche) no son confiables. No reactivar el bot con capital (ni demo con intencion de
+tomarlo en serio) hasta que esto este resuelto y re-validado.

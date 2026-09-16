@@ -168,20 +168,34 @@ class PositionGuardsMixin:
         FRIDAY_CLOSE_HOUR = 19   # UTC — close losers by 19:30 UTC to avoid weekend gap risk
         FRIDAY_CLOSE_MIN  = 30
         # BUG-ROLLOVER-SLIPPAGE (2026-09-08, found auditing the 4 real trades from
-        # 2026-09-07): all 4 hit their SL within the same minute, 00:00-00:01 UTC --
-        # confirmed via real MT5 M1 bars that this is the broker's daily rollover
-        # (swap charge), where spread spikes ~20x for 3-5 min (USDCHF: 8pts -> 167pts,
-        # EURAUD 27->104, USDCAD 8->173, NZDUSD 8->59) and any SL near price gets
-        # filled inside that inflated spread with heavy slippage (156%-359% of the
-        # intended risk on these 4). Same pattern as the Friday weekend-gap risk
-        # above, just a nightly instead of weekly window -- close everything a few
-        # minutes before the rollover so nothing is sitting exposed through it.
-        ROLLOVER_CLOSE_HOUR = 23  # UTC
-        # Widened 55->50 (2026-09-16): extra margin now that the real blocker
-        # (record_day() WinError-5 silently aborting this whole function
-        # before reaching this check -- see BUG-ROLLOVER-SILENT-ABORT above)
-        # is fixed. 10 min of window instead of 5 in case anything else ever
-        # stalls a cycle.
+        # 2026-09-07): all 4 hit their SL within the same minute -- originally
+        # logged as "00:00-00:01 UTC" and confirmed via real MT5 M1 bars that
+        # this is the broker's daily rollover (swap charge), where spread spikes
+        # ~20x for 3-5 min (USDCHF: 8pts -> 167pts, EURAUD 27->104, USDCAD
+        # 8->173, NZDUSD 8->59) and any SL near price gets filled inside that
+        # inflated spread with heavy slippage (156%-359% of the intended risk
+        # on these 4). Same pattern as the Friday weekend-gap risk above, just
+        # a nightly instead of weekly window -- close everything a few minutes
+        # before the rollover so nothing is sitting exposed through it.
+        #
+        # BUG-BROKER-CLOCK-UTC3 (2026-09-16): the "00:00-00:01 UTC" above was
+        # WRONG -- it came from interpreting MT5 deal/bar timestamps
+        # (datetime.fromtimestamp(x, tz=timezone.utc)) as true UTC, but this
+        # Axi broker's server clock actually runs 3h AHEAD of true UTC
+        # (confirmed live: real system UTC 21:06 vs MT5 tick.time decoding to
+        # 00:06). So "broker midnight" -- the real rollover/spread-spike event
+        # -- happens at TRUE UTC ~21:00, not true UTC 00:00. This guard was
+        # aimed at the wrong 3-hour window the entire time; it could never
+        # have protected anything, since real positions get hit at 21:00 UTC
+        # while this only started checking at 23:00 UTC. Confirmed by a live
+        # incident tonight: USDCHF #112072940, opened 20:20 UTC (real, correct
+        # active-hour window), lost -$232 (4x the intended ~$58 risk) exactly
+        # when true UTC crossed 21:00. Corrected below to the true-UTC broker
+        # midnight. NOTE: this same mislabeling likely affects the historical
+        # DEAD_HOURS_UTC / "best session hour" backtest analysis (DIM4) too,
+        # since it was computed off the same MT5 bar timestamps -- flagged as
+        # a separate, still-open item, not fixed here.
+        ROLLOVER_CLOSE_HOUR = 20  # true UTC (broker midnight, server = UTC+3)
         ROLLOVER_CLOSE_MIN  = 50
         try:
             loop = asyncio.get_running_loop()
@@ -532,7 +546,8 @@ class PositionGuardsMixin:
                         return
 
             # ── 0a-bis. Rollover pre-close: dump ALL positions before the nightly
-            # broker rollover (00:00 UTC) — see BUG-ROLLOVER-SLIPPAGE above. Runs
+            # broker rollover (true UTC ~21:00, broker midnight -- see
+            # BUG-BROKER-CLOCK-UTC3 above) -- see BUG-ROLLOVER-SLIPPAGE above. Runs
             # every day (Friday's own 19:30 UTC close already empties positions
             # well before this, so this mostly matters Sun night through Thursday).
             past_rollover_cutoff = (
@@ -546,7 +561,7 @@ class PositionGuardsMixin:
                     estado = "perdiendo" if pnl < 0 else "ganando"
                     print(
                         f"[ROLLOVER-CLOSE] {sym} #{ticket} {estado} ${pnl:.2f} "
-                        f"— cerrando antes del rollover diario (00:00 UTC)",
+                        f"— cerrando antes del rollover diario (broker medianoche = 21:00 UTC real)",
                         flush=True,
                     )
                     ok = await self._close_guarded(
