@@ -3798,3 +3798,31 @@ La evidencia de backtest (16 anios y el sub-periodo 2020-2026) sigue respaldando
 Lo unico que sigue sin poder confirmarse es la ejecucion real -- 0/5 trades ganadores todavia, y el
 mes va en negativo. Ninguna de las dos cosas es prueba de que el sistema este roto, pero tampoco es
 prueba de que funcione -- sigue siendo una cuestion de mas muestra real, no de mas backtest.
+
+---
+
+## 🔴 Sesion 2026-09-15 -- racha de 9/9 sin ganadoras, punto critico de decision
+
+Bot reactivado tras el hueco del 11 al 15 (PC apagada, sin actividad en el medio). Ventana de 20 UTC
+de hoy: entraron 4 operaciones reales (EURAUD, EURUSD, USDCHF, USDCAD) -- **las 4 cerraron en
+perdida**. Balance del dia: $93,553.15 -> $93,095.13 (-$458.02).
+
+**Con esto van 9 trades reales totales desde el reset del guard (2026-09-04), 0 ganadores.**
+Probabilidad de esta racha bajo el 34% WR que muestra el backtest: ~1.9% -- ya no es "variacion
+normal" como los primeros 5, es un caso extremo. Se lo comunique asi de claro al usuario, sin
+suavizarlo.
+
+Intente auditar los 4 trades de hoy con datos reales de MT5 (igual que con el rollover) pero el
+historial de deals no devolvio los cierres (mismo retraso de servidor ya documentado antes, no es
+nuevo). Los montos de perdida vienen confirmados por delta de balance real, no por el historial.
+
+**Punto de decision ofrecido al usuario, sin respuesta aun al cierre de esta sesion**: auditar mas
+a fondo estos 4 trades cuando el historial de MT5 se ponga al dia, o pausar el bot mientras se
+piensa que hacer con esta racha. El usuario quedo en silencio (varios ciclos de 30 min sin
+respuesta) -- no se tomo ninguna decision unilateral, el bot sigue operando normal, sin pausar.
+
+### Tarea #1 para la proxima sesion
+Retomar el punto de decision pendiente: 9/9 sin ganadoras es estadisticamente significativo (no
+solo "mala suerte"), amerita revisar en serio si hay algo real en la ejecucion que el backtest no
+esta capturando, no seguir esperando pasivamente. Reintentar la auditoria de los 4 trades del
+2026-09-15 con MT5 (el historial de deals deberia estar disponible ya para entonces).
