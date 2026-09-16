@@ -286,15 +286,24 @@ def _strip_tz(df):
 
 
 def _mt5_rates_to_df(rates):
-    # Match connectors/metatrader_connector.py::get_ohlcv() exactly: naive
-    # pd.to_datetime(unit="s"), NO utc=True. The live bot's own DEAD_HOURS_UTC/
-    # kill-zone logic already operates on whatever raw timestamp MT5 returns
-    # (broker server time, not necessarily true UTC) -- matching that exactly
-    # here means the backtest's hour-based analysis (DIM4, kill zones) uses
-    # the identical convention live actually runs on, not a "corrected" one
-    # that would silently diverge from real behavior.
+    # BUG-BROKER-CLOCK-UTC3 (2026-09-16): the comment this replaces (2026-08-30)
+    # assumed the live bot's DEAD_HOURS_UTC/kill-zone logic operates on raw MT5
+    # broker-server timestamps -- confirmed FALSE by live verification tonight.
+    # core/supervisor.py:1999 uses `datetime.now(timezone.utc)` (the real
+    # system clock, true UTC) to decide the current hour for every live
+    # trading decision -- it never reads an MT5 timestamp for that. Meanwhile
+    # Axi's MT5 server clock runs 3h AHEAD of true UTC (confirmed live:
+    # symbol_info_tick().time decoded to 00:06 while real system UTC was
+    # 21:06). So raw MT5 bar timestamps, decoded naively, are broker-server
+    # time -- 3h off from what the live bot's own hour-gate actually uses.
+    # Subtracting that offset here means "hour X" in this backtest's DIM4/
+    # kill-zone analysis means the same real-world hour X the live bot
+    # checks against, instead of silently disagreeing by 3h (which likely
+    # invalidated the DEAD_HOURS_UTC/best-hour selection across this whole
+    # project's history -- see SESION_ACTUAL.md 2026-09-16 for the incident
+    # that exposed this).
     df = pd.DataFrame(rates)
-    df["time"] = pd.to_datetime(df["time"], unit="s")
+    df["time"] = pd.to_datetime(df["time"], unit="s") - pd.Timedelta(hours=3)
     df.set_index("time", inplace=True)
     df.rename(columns={"tick_volume": "volume"}, inplace=True)
     # 2026-08-30: se mantiene "volume" (antes se descartaba) -- smc/ml_predictor.py

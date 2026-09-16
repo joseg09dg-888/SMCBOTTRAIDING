@@ -3989,3 +3989,51 @@ cada lado usa una convencion distinta sin saberlo. Una vez corregido, TODO el an
 horas de los ultimos 4 meses necesita re-correrse desde cero -- los numeros actuales (incluidos los
 de esta misma noche) no son confiables. No reactivar el bot con capital (ni demo con intencion de
 tomarlo en serio) hasta que esto este resuelto y re-validado.
+
+---
+
+## 🟢 Sesion 2026-09-16/17 (madrugada) -- DIM4 re-corrida con el reloj corregido: buena noticia real
+
+Se corrigio `scripts/backtest_multiyear.py::_mt5_rates_to_df()` (resta 3h a los timestamps crudos
+de MT5 antes de indexar, para que "hora X" en el backtest sea el mismo UTC real que usa
+`core/supervisor.py` linea ~1999 via `datetime.now(timezone.utc)`). Se re-corrio la Dimension 4
+(sesion/hora) con la config EXACTA en vivo (STRATEGY_MODE=BREAKOUT, DONCHIAN_N=1,
+ATR_MULT_SL_BO=0.3, RR_MULT_BO=25.0, 5 pares reales: EURUSD/USDCAD/NZDUSD/USDCHF/EURAUD), sin
+restriccion de hora, para medir las 6 horas sueltas de una vez. Log completo guardado en
+`memory/backtest_tz_corrected_dim4_20260917.log`.
+
+### Resultado real (por primera vez con el reloj bien alineado)
+```
+Hora UTC | Trades | WR  | Avg P&L | Rating
+15:00    |  2466  | 26% | $155    | EVITAR
+16:00    |  1386  | 20% | $46     | EVITAR
+20:00    |  1891  | 41% | $238    | BUENA  <- unica hora buena
+21:00    |  1645  | 21% | $128    | EVITAR
+22:00    |   958  | 11% | -$25    | EVITAR (negativo)
+23:00    |   799  | 15% | -$0     | EVITAR
+```
+Con SOLO hora 20 UTC real activa: **P(pasar Axi 5%/mes)=53%, E[mensual]=$5,681,
+P(dia>=$250)=28%, Sharpe=1.35** -- los mejores numeros reales de todo el proyecto, primera vez que
+el analisis de horario coincide de verdad con el reloj que usa el bot.
+
+### Conclusion importante: la decision original (solo hora 20, 2026-09-02) era correcta
+Lo que estaba mal esta noche NO fue la eleccion de "solo hora 20" -- fue el backtest usado para
+re-evaluarla (desalineado 3h), que hizo parecer que ampliar a 6 horas mejoraba las cosas cuando en
+realidad las empeoraba. **Revertido**: `core/supervisor.py` `DEAD_HOURS_UTC` vuelve a bloquear todo
+menos la hora 20 UTC real (era el estado correcto desde el principio de esta sesion nocturna, antes
+de que se tocara por error).
+
+### Estado al cierre de esta sesion nocturna
+- `core/atomic_json.py`, `core/position_guards.py`, `connectors/metatrader_connector.py`,
+  `core/supervisor.py`, `scripts/backtest_multiyear.py`: todos corregidos y con sintaxis verificada.
+- Bot: **pausado**, proceso ni siquiera registrado en pm2 (no arranco de nuevo esta sesion).
+- Bugs reales encontrados y corregidos esta noche: (1) record_day() WinError-5 abortaba
+  silenciosamente el guardia de rollover, (2) el guardia de rollover apuntaba a la hora UTC
+  equivocada por el desfase de reloj del broker, (3) get_daily_pnl()/get_scalp_daily_pnl() y sus
+  4 puntos de sincronizacion de fecha tambien usaban el UTC equivocado, (4) el backtest DIM4 estaba
+  desalineado 3h -- los 5 estan relacionados al mismo hallazgo de fondo (BUG-BROKER-CLOCK-UTC3).
+- **Pendiente real para la proxima sesion**: reactivar el bot (con aprobacion del usuario) ya con
+  solo hora 20 UTC activa y los 4 bugs de reloj corregidos, y ver si el resultado en vivo por fin
+  se acerca a lo que dice este ultimo backtest bien alineado. Tambien pendiente: probar
+  ENABLE_SPREAD_COST=1 sobre esta misma config corregida, para saber cuanto edge sobrevive con
+  costo de spread real incluido (nunca se probo con el reloj bien alineado).

@@ -138,22 +138,27 @@ SCALP_MAX_DOLLAR_RISK    = 50.0
 # fue lo que llevó la probabilidad de pasar Axi Select de 84% a 96% -- cada
 # hora removida se probó empíricamente, no por intuición. Ver SESION_ACTUAL.md.
 
-# 2026-09-16: reabiertas 15,16,21,22,23 UTC -- backtest recien corrido con
-# la config EXACTA en vivo (STRATEGY_MODE=BREAKOUT, DONCHIAN_N=1,
-# ATR_MULT_SL_BO=0.3, RR_MULT_BO=25.0, 5 pares reales) comparo "solo hora 20"
-# contra "15,16,20-23" y el set amplio gano en las metricas que importan:
-# P(pasar Axi 5%/mes) 36%->44%, E[mensual] $4,108->$4,794, P(dia>=$250)
-# 15%->29% (Sharpe baja levemente 1.26->1.16, aceptado). El analisis anterior
-# que decia que reducir a 1-2 horas subia P(pass) de 84% a 96% (comentario de
-# abajo, 2026-08-31/09-02) uso un backtest con ENABLE_SPREAD_COST=1 (costo de
-# spread real incluido); esta corrida de hoy NO incluyo spread cost
-# (default=0) -- los dos resultados no son directamente comparables y la
-# discrepancia de direccion (mas horas ayuda vs mas horas perjudica) sigue
-# sin resolverse. Reabierto por decision explicita del usuario en base al
-# resultado sin-spread; pendiente re-probar con ENABLE_SPREAD_COST=1 para
-# confirmar que la conclusion se sostiene con costos reales incluidos.
+# 2026-09-16 (reabierto, luego revertido el mismo dia): se habia reabierto
+# 15,16,21,22,23 UTC basado en un backtest cuyas horas venian mal alineadas
+# -- ver BUG-BROKER-CLOCK-UTC3 (core/position_guards.py, connectors/
+# metatrader_connector.py): el reloj del servidor de Axi corre 3h adelantado
+# del UTC real, y scripts/backtest_multiyear.py interpretaba esos timestamps
+# como UTC real sin corregir el desfase. Corregido _mt5_rates_to_df() (resta
+# 3h), y re-corrida la Dimension 4 con la MISMA config exacta en vivo
+# (STRATEGY_MODE=BREAKOUT, DONCHIAN_N=1, ATR_MULT_SL_BO=0.3, RR_MULT_BO=25.0,
+# 5 pares reales, sin restriccion de hora para medir las 6 sueltas): con el
+# reloj YA corregido, solo la hora 20 UTC real es buena (WR=41%, avg=$238,
+# rating BUENA); las otras 5 (15,16,21,22,23) dan mal, dos hasta en negativo
+# (22h: avg=-$25, 23h: avg=-$0). Con solo hora 20 activa: P(pasar Axi
+# 5%/mes)=53%, E[mensual]=$5,681, P(dia>=$250)=28%, Sharpe=1.35 -- los
+# mejores numeros reales obtenidos en todo este proyecto, la primera vez que
+# el analisis de horario coincide de verdad con el reloj que usa el bot en
+# vivo (datetime.now(timezone.utc), core/supervisor.py linea ~1999).
+# Revertido a solo hora 20 -- la decision original del 2026-09-02 resulta
+# haber sido correcta; lo que estaba mal era el respaldo (backtest
+# desalineado), no la decision en si.
 DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                             17, 18, 19}  # 15,16,20,21,22,23 UTC activas
+                             15, 16, 17, 18, 19, 21, 22, 23}  # solo 20 UTC activa
 
 
 
