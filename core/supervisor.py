@@ -137,12 +137,23 @@ SCALP_MAX_DOLLAR_RISK    = 50.0
 # (-$46 y -$91/trade), y concentrar solo en 20:00-21:00 UTC (en vez de las 6)
 # fue lo que llevó la probabilidad de pasar Axi Select de 84% a 96% -- cada
 # hora removida se probó empíricamente, no por intuición. Ver SESION_ACTUAL.md.
+
+# 2026-09-16: reabiertas 15,16,21,22,23 UTC -- backtest recien corrido con
+# la config EXACTA en vivo (STRATEGY_MODE=BREAKOUT, DONCHIAN_N=1,
+# ATR_MULT_SL_BO=0.3, RR_MULT_BO=25.0, 5 pares reales) comparo "solo hora 20"
+# contra "15,16,20-23" y el set amplio gano en las metricas que importan:
+# P(pasar Axi 5%/mes) 36%->44%, E[mensual] $4,108->$4,794, P(dia>=$250)
+# 15%->29% (Sharpe baja levemente 1.26->1.16, aceptado). El analisis anterior
+# que decia que reducir a 1-2 horas subia P(pass) de 84% a 96% (comentario de
+# abajo, 2026-08-31/09-02) uso un backtest con ENABLE_SPREAD_COST=1 (costo de
+# spread real incluido); esta corrida de hoy NO incluyo spread cost
+# (default=0) -- los dos resultados no son directamente comparables y la
+# discrepancia de direccion (mas horas ayuda vs mas horas perjudica) sigue
+# sin resolverse. Reabierto por decision explicita del usuario en base al
+# resultado sin-spread; pendiente re-probar con ENABLE_SPREAD_COST=1 para
+# confirmar que la conclusion se sostiene con costos reales incluidos.
 DEAD_HOURS_UTC           = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-                             15, 16, 17, 18, 19, 21, 22, 23}  # solo 20 UTC activa
-# 2026-09-02: hora 21 UTC bloqueada -- backtest sin el bug D1/H4 (ver
-# SESION_ACTUAL.md) mostro que 21 UTC sola tiene peor WR/avg P&L que 20
-# UTC dentro del universo corregido; excluirla mantiene el mismo
-# P(pass)=82% con mejor Sharpe (1.59 vs 1.36 con ambas horas).
+                             17, 18, 19}  # 15,16,20,21,22,23 UTC activas
 
 
 
