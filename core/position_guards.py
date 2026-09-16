@@ -208,7 +208,17 @@ class PositionGuardsMixin:
 
             # ── 0. Daily profit target ────────────────────────────────────────
             # $245 = meta mínima diaria → notifica → bot sigue para más ganancia
-            today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # BUG-BROKER-CLOCK-UTC3 (2026-09-16): usar la fecha calendario UTC
+            # real (medianoche) para detectar "nuevo dia" quedaba desalineado
+            # con get_daily_pnl() (corregido para usar el rollover real del
+            # broker, ~21:00 UTC real, como limite del dia de trading) -- con
+            # los dos limites distintos, las banderas _daily_target_hit/
+            # _daily_protect_hit podian resetearse 3h antes o despues de que
+            # el PnL que gatillan en realidad cambiara de dia. Alineado al
+            # mismo limite real (rollover ~21:00 UTC).
+            _now_for_day = datetime.now(timezone.utc)
+            _trading_day = _now_for_day if _now_for_day.hour >= 21 else (_now_for_day - timedelta(days=1))
+            today_utc = _trading_day.strftime("%Y-%m-%d")
             if self._daily_pnl_date != today_utc:
                 self._daily_pnl_date    = today_utc
                 self._daily_target_hit  = False
@@ -332,7 +342,10 @@ class PositionGuardsMixin:
             SCALP_DAILY_TARGET =  60.0   # cerrar TODOS scalps cuando acumula $60 hoy
 
             # Sincronizar scalp P&L desde MT5 real cada ciclo — no confiar en contador en memoria
-            _today_s = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # BUG-BROKER-CLOCK-UTC3: mismo limite de dia que _daily_pnl_date arriba
+            # (rollover real ~21:00 UTC), para no desalinearse con get_scalp_daily_pnl().
+            _now_scalp = datetime.now(timezone.utc)
+            _today_s = (_now_scalp if _now_scalp.hour >= 21 else (_now_scalp - timedelta(days=1))).strftime("%Y-%m-%d")
             if self._scalp_pnl_date != _today_s:
                 self._scalp_pnl_date   = _today_s
                 self._scalp_daily_hit  = False

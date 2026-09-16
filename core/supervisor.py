@@ -912,7 +912,10 @@ class TradingSupervisor(PositionGuardsMixin):
             # Sync daily PnL on startup — prevents race condition where _market_scan_loop
             # fires immediately (no sleep) before _position_monitor_loop first runs (60s sleep).
             # Without this, bot could open new trades even if today's target was already hit.
-            _today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # BUG-BROKER-CLOCK-UTC3: mismo limite de dia de trading (rollover
+            # real ~21:00 UTC) que el resto de _daily_pnl_date/get_daily_pnl().
+            _now_startup = datetime.now(timezone.utc)
+            _today_str = (_now_startup if _now_startup.hour >= 21 else (_now_startup - timedelta(days=1))).strftime("%Y-%m-%d")
             _realized  = await loop.run_in_executor(None, self.mt5.get_daily_pnl)
             _realized_val = float(_realized) if (_realized is not None and float(_realized) != 0.0) else None
 
@@ -2126,7 +2129,14 @@ class TradingSupervisor(PositionGuardsMixin):
 
             self._risk_gate_state.daily_pnl_today = daily_pnl
             # Keep daily_realized_pnl in sync with MT5 real closed P&L
-            today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # BUG-BROKER-CLOCK-UTC3 (2026-09-16): must use the same trading-day
+            # boundary as core/position_guards.py's _daily_pnl_date (broker
+            # rollover ~21:00 UTC real, not calendar UTC midnight) -- otherwise
+            # this comparison silently mismatches every day between 21:00 and
+            # 00:00 UTC, and _daily_realized_pnl stops syncing from the real
+            # MT5 value during exactly that 3h window.
+            _now_sync = datetime.now(timezone.utc)
+            today_utc = (_now_sync if _now_sync.hour >= 21 else (_now_sync - timedelta(days=1))).strftime("%Y-%m-%d")
             if self._daily_pnl_date == today_utc and daily_pnl is not None:
                 self._daily_realized_pnl = float(daily_pnl)
 

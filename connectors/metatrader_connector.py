@@ -555,15 +555,33 @@ class MT5Connector:
             logger.error(f"MT5 get_closing_deal error: {e}")
         return {}
 
+    # BUG-BROKER-CLOCK-UTC3 (2026-09-16): Axi's MT5 server clock runs 3h
+    # ahead of true UTC (confirmed live: symbol_info_tick().time decodes to
+    # 00:06 while real system UTC was 21:06) -- every timestamp history_deals_get()
+    # filters against is broker-server time, not true UTC. Passing true-UTC
+    # bounds silently queried the wrong window (missed tonight's real trades
+    # entirely -- get_daily_pnl returned $0 while a real -$232 loss had just
+    # happened). Also: the bot's actual trading-day boundary IS broker
+    # midnight (true UTC ~21:00 -- see ROLLOVER_CLOSE_HOUR in
+    # core/position_guards.py), so "today" for P&L purposes should span
+    # since that rollover, not since true UTC 00:00.
+    def _trading_day_bounds(self):
+        from datetime import datetime, timezone, timedelta
+        now_true = datetime.now(timezone.utc)
+        if now_true.hour >= 21:
+            day_start_true = now_true.replace(hour=21, minute=0, second=0, microsecond=0)
+        else:
+            day_start_true = (now_true - timedelta(days=1)).replace(hour=21, minute=0, second=0, microsecond=0)
+        offset = timedelta(hours=3)
+        return day_start_true + offset, now_true + offset
+
     def get_daily_pnl(self) -> float:
-        """Realized P&L for today (UTC)."""
+        """Realized P&L since the last broker rollover (true UTC ~21:00 -- the bot's actual trading day)."""
         if not HAS_MT5:
             return 0.0
         try:
-            from datetime import datetime, timezone
-            now   = datetime.now(timezone.utc)
-            today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-            deals = mt5.history_deals_get(today, now) or []
+            day_start, now = self._trading_day_bounds()
+            deals = mt5.history_deals_get(day_start, now) or []
             return round(sum(
                 d.profit + d.swap + d.commission
                 for d in deals if d.entry == 1 and d.symbol != ""
@@ -572,14 +590,12 @@ class MT5Connector:
             return 0.0
 
     def get_scalp_daily_pnl(self) -> float:
-        """Realized P&L from scalp trades today (volume <= 0.1L). Syncs from MT5."""
+        """Realized P&L from scalp trades since the last broker rollover (volume <= 0.1L)."""
         if not HAS_MT5:
             return 0.0
         try:
-            from datetime import datetime, timezone
-            now   = datetime.now(timezone.utc)
-            today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-            deals = mt5.history_deals_get(today, now) or []
+            day_start, now = self._trading_day_bounds()
+            deals = mt5.history_deals_get(day_start, now) or []
             return round(sum(
                 d.profit + d.swap + d.commission
                 for d in deals if d.entry == 1 and d.symbol != "" and d.volume <= 0.11
