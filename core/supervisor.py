@@ -25,7 +25,7 @@ from agents.signal_agent import TradeSignal, SignalType, SignalAgent
 
 from connectors.binance_connector import BinanceConnector
 
-from connectors.metatrader_connector import MT5Connector
+from connectors.metatrader_connector import MT5Connector, resolve_symbol
 
 from connectors.glint_connector import GlintSignal
 
@@ -1977,10 +1977,10 @@ class TradingSupervisor(PositionGuardsMixin):
         # Forex: max 3 pips | Índices (NAS100/US30): max 80 pips
         try:
             import MetaTrader5 as _mt5sp
-            _tick_sp = _mt5sp.symbol_info_tick(signal.symbol)
+            _tick_sp = _mt5sp.symbol_info_tick(resolve_symbol(signal.symbol))
             if _tick_sp:
                 _spread = abs(_tick_sp.ask - _tick_sp.bid)
-                _sym_sp = _mt5sp.symbol_info(signal.symbol)
+                _sym_sp = _mt5sp.symbol_info(resolve_symbol(signal.symbol))
                 if _sym_sp and _sym_sp.point > 0:
                     _spread_pips = _spread / (_sym_sp.point * 10)
                     _is_index = any(x in signal.symbol for x in ("NAS", "US30", "SPX", "DAX", "UK100"))
@@ -2030,9 +2030,9 @@ class TradingSupervisor(PositionGuardsMixin):
                 return
             try:
                 import MetaTrader5 as _mt5s
-                _tick_s = _mt5s.symbol_info_tick(signal.symbol)
+                _tick_s = _mt5s.symbol_info_tick(resolve_symbol(signal.symbol))
                 _scalp_price = (_tick_s.ask if order_type == "BUY" else _tick_s.bid) if _tick_s else 0.0
-                _sym_s = _mt5s.symbol_info(signal.symbol)
+                _sym_s = _mt5s.symbol_info(resolve_symbol(signal.symbol))
                 if _scalp_price > 0 and _sym_s:
                     _pip = _sym_s.point * 10  # 1 pip = 10 points (5-digit broker)
                     _sl_pips  = 8   # 8 pips SL = $8 max loss a 0.1L (era 4, muy ajustado)
@@ -2051,7 +2051,7 @@ class TradingSupervisor(PositionGuardsMixin):
         if tp_val > 0 and sl_val > 0:
             try:
                 import MetaTrader5 as _mt5
-                _tick = _mt5.symbol_info_tick(signal.symbol)
+                _tick = _mt5.symbol_info_tick(resolve_symbol(signal.symbol))
                 _market_price = (_tick.ask if order_type == "BUY" else _tick.bid) if _tick else 0.0
             except Exception:
                 _market_price = 0.0
@@ -2286,7 +2286,7 @@ class TradingSupervisor(PositionGuardsMixin):
         # Use current market price for correct lot sizing (signal.entry can be H4 stale)
         try:
             import MetaTrader5 as _mt5
-            _tick_vol = _mt5.symbol_info_tick(signal.symbol)
+            _tick_vol = _mt5.symbol_info_tick(resolve_symbol(signal.symbol))
             _fill_price = (_tick_vol.ask if order_type == "BUY" else _tick_vol.bid) if _tick_vol else 0.0
         except Exception:
             _fill_price = 0.0
@@ -2324,7 +2324,7 @@ class TradingSupervisor(PositionGuardsMixin):
             _sym_info = None
             try:
                 import MetaTrader5 as _mt5r
-                _sym_info = _mt5r.symbol_info(signal.symbol)
+                _sym_info = _mt5r.symbol_info(resolve_symbol(signal.symbol))
             except Exception:
                 pass
             if _sym_info:

@@ -869,7 +869,8 @@ class PositionGuardsMixin:
                     if sl_dist < 0.0001:           # SL ya en breakeven o muy cerca → skip trailing
                         sl_dist = 0.0              # fuerza skip del bloque abajo
                     if sl_dist > 0:
-                        tick = _mt5.symbol_info_tick(sym)
+                        from connectors.metatrader_connector import resolve_symbol as _rs
+                        tick = _mt5.symbol_info_tick(_rs(sym))
                         if tick is not None:
                             cur_price = tick.ask if is_buy else tick.bid
                             profit_r  = (cur_price - entry) / sl_dist if is_buy else (entry - cur_price) / sl_dist

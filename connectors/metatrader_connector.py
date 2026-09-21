@@ -15,6 +15,43 @@ except ImportError:
     HAS_MT5 = False
     mt5 = None
 
+_SYMBOL_CACHE: Dict[str, str] = {}
+
+
+def resolve_symbol(symbol: str) -> str:
+    """Broker-side name for a plain symbol. The real Axi account (Axi-US51-Live)
+    suffixes symbols with '.sa' (EURUSD.sa); the demo has no suffix. Bot logic
+    keeps using plain names and translates only at the MT5 boundary."""
+    if not HAS_MT5 or not symbol:
+        return symbol
+    cached = _SYMBOL_CACHE.get(symbol)
+    if cached:
+        return cached
+    try:
+        if mt5.symbol_info(symbol) is not None:
+            _SYMBOL_CACHE[symbol] = symbol
+            return symbol
+        matches = mt5.symbols_get(f"{symbol}*") or []
+        names = [m.name for m in matches]
+        if names:
+            best = min(names, key=len)
+            _SYMBOL_CACHE[symbol] = best
+            return best
+    except Exception:
+        pass
+    return symbol
+
+
+def plain_symbol(broker_symbol: str) -> str:
+    """Inverse of resolve_symbol: broker name back to the plain name the bot uses."""
+    for plain, resolved in _SYMBOL_CACHE.items():
+        if resolved == broker_symbol:
+            return plain
+    if broker_symbol and broker_symbol.endswith(".sa"):
+        return broker_symbol[:-3]
+    return broker_symbol
+
+
 TIMEFRAME_MAP = {
     "1m":  1,   "5m":  5,   "15m": 15,  "30m": 30,
     "1h":  16385, "4h": 16388, "1d": 16408,
@@ -200,7 +237,7 @@ class MT5Connector:
             return empty
         try:
             tf = TIMEFRAME_MAP.get(timeframe, 16385)
-            rates = mt5.copy_rates_from_pos(symbol, tf, 0, count)
+            rates = mt5.copy_rates_from_pos(resolve_symbol(symbol), tf, 0, count)
             if rates is None:
                 return empty
             df = pd.DataFrame(rates)
@@ -234,6 +271,7 @@ class MT5Connector:
         if not HAS_MT5:
             return {"error": "MT5 not installed"}
         try:
+            symbol = resolve_symbol(symbol)
             mt5.symbol_select(symbol, True)
             tick = mt5.symbol_info_tick(symbol)
             if tick is None:
@@ -446,7 +484,7 @@ class MT5Connector:
                 sym_info = mt5.symbol_info(p.symbol)
                 contract_size = sym_info.trade_contract_size if sym_info else 100_000.0
                 result.append({
-                    "ticket": p.ticket, "symbol": p.symbol,
+                    "ticket": p.ticket, "symbol": plain_symbol(p.symbol),
                     "type": "BUY" if p.type == 0 else "SELL",
                     "volume": p.volume, "profit": p.profit,
                     "price_open": p.price_open,
