@@ -4037,3 +4037,27 @@ de que se tocara por error).
   se acerca a lo que dice este ultimo backtest bien alineado. Tambien pendiente: probar
   ENABLE_SPREAD_COST=1 sobre esta misma config corregida, para saber cuanto edge sobrevive con
   costo de spread real incluido (nunca se probo con el reloj bien alineado).
+
+---
+
+## 2026-09-21 -- bot en demo, guardia de rollover verificado en vivo, dos desfases mas en el backtest
+
+- Bot reactivado en demo (AUTO). Primera ventana con todos los fixes (20:01 UTC): EURAUD BUY -$40.10 y
+  EURUSD SELL -$19.72, ambos cerrados por `ROLLOVER-CLOSE` a las 20:50 UTC (antes del pico de las 21:00).
+  Primera verificacion en vivo del guardia corregido. Balance $92,687.53. Van 13 operaciones reales sin ganar.
+- Sufijo `.sa` de la cuenta real resuelto en el conector (`resolve_symbol`/`plain_symbol`), commit 6f4175d.
+  Pendiente: verificacion de solo lectura contra la cuenta real (reloj del servidor, lote minimo, spread).
+- **Hallazgo 1 (backtest)**: `scripts/backtest_multiyear.py` hacia `continue` en horas muertas ANTES de gestionar
+  posiciones, asi que con pocas horas activas una posicion solo se evaluaba 24h despues contra UNA barra.
+- **Hallazgo 2 (backtest)**: la entrada es el `close` de la barra idx (barra etiquetada H entra a H+1:00 reloj real);
+  el bot en vivo entra a ~H:01 con la barra ya cerrada H-1. La "hora 20" del backtest NO es la hora 20 en vivo:
+  la equivalente es la barra etiquetada 19, que nunca se midio con el reloj corregido (estaba bloqueada como
+  "mala" desde el analisis viejo desalineado). El 25% de P(pasar) y "hora 20 es la unica buena" NO son validos
+  para lo que el bot hace en vivo.
+- **Hallazgo 3**: el backtest no modela ROLLOVER-CLOSE (cierre a 20:50), y las ganadoras de RR alto necesitan tiempo.
+- Cambio hecho (opciones apagadas por defecto): `MANAGE_DEAD_HOURS=1` y `ROLLOVER_CLOSE_TEST=1`.
+- Corrida de paridad (EXTRA_DEAD_HOURS=15,16,20,21,22,23 REMOVE_DEAD_HOURS=19 MANAGE_DEAD_HOURS=1
+  ROLLOVER_CLOSE_TEST=1 ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO STRATEGY_MODE=BREAKOUT DONCHIAN_N=1
+  ATR_MULT_SL_BO=0.3 RR_MULT_BO=25 EXCLUDE_PAIRS=GBPCAD) fue detenida por falta de RAM (~100MB libres, Chrome +
+  2 procesos de Claude). NO reiniciar sola; repetir cuando haya RAM libre. Hasta entonces, no hay numero valido
+  de rentabilidad esperada para la configuracion real.

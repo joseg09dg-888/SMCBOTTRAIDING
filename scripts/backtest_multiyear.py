@@ -257,6 +257,18 @@ _mt5_ok = mt5.initialize()
 # the tuning session) gives a real out-of-sample check instead of just
 # re-measuring the same data the parameters were chosen on. Empty by default
 # (no behavior change) -- only applies when explicitly set.
+# 2026-09-21: PARIDAD CON EL BOT EN VIVO. (1) El backtest saltaba la gestion de
+# posiciones en horas "muertas" (`continue` antes de "Manage open positions"), asi
+# que con pocas horas activas una posicion solo se evaluaba 24h despues, contra
+# el rango de UNA barra. MANAGE_DEAD_HOURS=1 gestiona SL/TP en todas las barras y
+# deja las horas muertas solo para bloquear ENTRADAS. (2) ROLLOVER_CLOSE_TEST=1
+# modela core/position_guards.py ROLLOVER-CLOSE: cierra todo a ~20:50 UTC real
+# (aprox. al abrir la barra 21:00). (3) Entrada: aqui entry = close de la barra
+# idx, es decir que la barra etiquetada H entra a las H+1:00 en reloj real; el
+# bot en vivo entra a las ~H:01 usando la barra ya cerrada H-1. Para simular
+# "entradas en vivo a las 20:xx" hay que activar la barra etiquetada 19.
+MANAGE_DEAD_HOURS = os.environ.get("MANAGE_DEAD_HOURS", "0") == "1"
+ROLLOVER_CLOSE_TEST = os.environ.get("ROLLOVER_CLOSE_TEST", "0") == "1"
 HOLDOUT_FROM = os.environ.get("HOLDOUT_FROM", "")  # "YYYY-MM-DD", inclusive
 HOLDOUT_TO   = os.environ.get("HOLDOUT_TO", "")    # "YYYY-MM-DD", exclusive
 
@@ -982,10 +994,11 @@ if True:
             # anios reales de MT5 ahora disponibles (bloqueo original se fijo con menos
             # historia) -- permite reabrir una hora especifica para medir su edge real.
             DEAD_HOURS_UTC = DEAD_HOURS_UTC - {int(h) for h in _remove_dead.split(",") if h.strip()}
-        if hour_utc in DEAD_HOURS_UTC: continue  # kill zone
+        _dead_hour = hour_utc in DEAD_HOURS_UTC
+        if _dead_hour and not MANAGE_DEAD_HOURS: continue  # kill zone
         day_str = str(pd.Timestamp(dt).date())
         year_str = str(pd.Timestamp(dt).year)
-        ALL_TRADING_DAYS.add(day_str)
+        if not _dead_hour: ALL_TRADING_DAYS.add(day_str)
         # 2026-08-30: HALLAZGO CRITICO -- daily_pnl (defaultdict) solo tiene
         # entrada para dias con AL MENOS un cierre no-cero; dias sin ningun
         # trade simplemente no aparecen en el dict. Con el motor viejo
@@ -1111,7 +1124,13 @@ if True:
             # cambia ningun resultado ya confirmado.
             cur_sl_dist = abs(entry - sl)
             cur_tp_dist = abs(entry - tp)
-            if direction == "LONG":
+            _rollover_hit = ROLLOVER_CLOSE_TEST and hour_utc == 21
+            if _rollover_hit:
+                _cur_o = bar["open"]
+                _move = (_cur_o - entry) if direction == "LONG" else (entry - _cur_o)
+                pnl = vol_p * _move * pip_v / PIP_SZ[pair_p]
+                top_close_type = "rollover_close"
+            elif direction == "LONG":
                 if cur_l <= sl:
                     pnl = -vol_p * cur_sl_dist * pip_v / PIP_SZ[pair_p]
                 elif cur_h >= tp:
@@ -1223,6 +1242,7 @@ if True:
                                       partial_done, be_sl, pip_v, pair_p, peak_pnl, stagn_flag_idx))
 
         open_pos = other_pos + new_open  # 2026-08-29: reincorpora las posiciones de otros pares sin tocar
+        if _dead_hour: continue  # solo gestion de posiciones en horas muertas, sin entradas
         if len(open_pos) >= MAX_OPEN_TEST: continue  # ahora GLOBAL (todos los pares) -- corregido 2026-08-29, antes era por-par
 
         # Signal generation -- decoupled from D1/H4 bias (see smc_signal()
