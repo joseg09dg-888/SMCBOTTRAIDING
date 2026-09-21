@@ -22,22 +22,6 @@
   "risk_multiplier": 0.25,
   "history": [
     {
-      "ts": "2026-09-07T09:03:18.396759+00:00",
-      "active_symbols": [
-        "USDCAD",
-        "EURUSD",
-        "NZDUSD",
-        "USDCHF",
-        "EURAUD"
-      ],
-      "risk_multiplier": 0.5,
-      "changes": {
-        "suspended": [],
-        "reactivated": [],
-        "risk_multiplier": null
-      }
-    },
-    {
       "ts": "2026-09-07T11:03:20.185663+00:00",
       "active_symbols": [
         "USDCAD",
@@ -824,8 +808,24 @@
         "reactivated": [],
         "risk_multiplier": null
       }
+    },
+    {
+      "ts": "2026-09-21T18:27:17.112188+00:00",
+      "active_symbols": [
+        "USDCAD",
+        "EURUSD",
+        "NZDUSD",
+        "USDCHF",
+        "EURAUD"
+      ],
+      "risk_multiplier": 0.25,
+      "changes": {
+        "suspended": [],
+        "reactivated": [],
+        "risk_multiplier": null
+      }
     }
   ],
-  "last_run": "2026-09-21T16:27:15.597624+00:00",
+  "last_run": "2026-09-21T18:27:17.112188+00:00",
   "last_drawdown_pct": 0.07254970000000001
 }
