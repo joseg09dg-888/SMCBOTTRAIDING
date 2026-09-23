@@ -1,5 +1,5 @@
 {
-  "date": "2026-09-23T17:05:26.015224",
+  "date": "2026-09-23T17:40:40.697467",
   "config": {
     "years_h1": 2,
     "years_d1": 10,
@@ -19,21 +19,21 @@
   "stats": {
     "total_trades": 2576,
     "total_days": 1792,
-    "total_trading_days_real": 4160,
-    "trade_frequency_pct": 43.08,
-    "wr_pct_final_only": 0.0,
+    "total_trading_days_real": 4161,
+    "trade_frequency_pct": 43.07,
+    "wr_pct_final_only": 0.2,
     "wr_pct_real": 12.6,
-    "avg_daily": -204.05,
+    "avg_daily": -203.82,
     "p_day_250": 0.7,
     "p_pass_axi": 0.0,
-    "e_monthly": -1931.73,
-    "sharpe": -2.596,
+    "e_monthly": -1928.74,
+    "sharpe": -2.583,
     "best_hours": [
       6,
-      7,
       5,
       21,
-      20
+      20,
+      0
     ]
   },
   "year_stats": {
@@ -60,7 +60,7 @@
     "2014": {
       "trades": 147,
       "wr_pct": 3.4,
-      "pnl": -22839.47
+      "pnl": -22566.38
     },
     "2015": {
       "trades": 173,
@@ -80,7 +80,7 @@
     "2018": {
       "trades": 144,
       "wr_pct": 18.8,
-      "pnl": -16329.55
+      "pnl": -16197.27
     },
     "2019": {
       "trades": 142,
@@ -127,7 +127,7 @@
     "HIGH_STRONG_TREND": {
       "trades": 915,
       "wr_pct": 15.4,
-      "avg_pnl": -135.19
+      "avg_pnl": -134.75
     },
     "HIGH_CHOPPY": {
       "trades": 163,
