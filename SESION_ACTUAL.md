@@ -4061,3 +4061,55 @@ de que se tocara por error).
   ATR_MULT_SL_BO=0.3 RR_MULT_BO=25 EXCLUDE_PAIRS=GBPCAD) fue detenida por falta de RAM (~100MB libres, Chrome +
   2 procesos de Claude). NO reiniciar sola; repetir cuando haya RAM libre. Hasta entonces, no hay numero valido
   de rentabilidad esperada para la configuracion real.
+
+---
+
+## 2026-09-23 (noche) -- CRITICO: con la sincronizacion real de horario + rollover, la estrategia da 0% de exito
+
+Se corrio por fin el backtest de paridad completo (5 pares, 16 anios, MANAGE_DEAD_HOURS=1,
+ROLLOVER_CLOSE_TEST=1, ENABLE_SPREAD_COST=1 SPREAD_PROFILE=DEMO), simulando exactamente lo que
+el bot hace en vivo: entra ~20:01 UTC (barra etiquetada 19 = entrada real a la hora 20 en reloj de
+pared) y se cierra a las 20:50 UTC por el guardia de rollover -- ventana de vida real de ~50 minutos.
+
+Log completo: `memory/tmp_logs/bt_live_parity.log`.
+
+### Resultado real (16 anios, hora 20 UTC, unica hora activa)
+```
+Trades finales (SL/TP): 1199 | Wins: 0/1199 = 0.0% WR
+rollover_close: 1072 (41.6% de todos los cierres) -- la mayoria de las operaciones
+  ni siquiera llegan a SL/TP, se las lleva el cierre forzado.
+Hora 20 UTC: WR=6%, avg=-$185/trade
+E[mensual]: -$1,932 | Sharpe mensual: -2.60
+P(mes >= 2%): 0% | P(mes >= 5%): 0%
+Incluso P95 (mejor 5% de los meses simulados): -$764 -- NUNCA positivo en 100,000 sims.
+```
+
+### Causa raiz (confirmada, no especulacion)
+RR_MULT_BO=25.0 fija el objetivo a 25x la distancia del stop -- una distancia enorme. El guardia
+ROLLOVER-CLOSE (agregado el 2026-09-16 para proteger del pico de spread de medianoche, correcto
+en su proposito) corta cada posicion a los ~50 minutos de abierta. En 16 anios reales, NINGUNA
+operacion alcanzo el TP en ese tiempo. Las 2 "ganadoras" reales de esta semana (USDCHF +$60.44,
+USDCAD +$32.36, 2026-09-23) no llegaron a su TP tampoco -- estaban de casualidad en positivo
+en el momento exacto del cierre por rollover. Esto explica retroactivamente por que 18 operaciones
+reales desde el reset dieron solo 2 "ganadoras" chicas y ninguna ganadora grande pese al RR=25 de
+diseno: la ventana de vida real nunca permite que una ganadora grande ocurra.
+
+### Decision tomada esta sesion
+Bot dejado PAUSADO (estaba detenido temporalmente para liberar RAM para este backtest; NO se
+reactivo al terminar, a diferencia de lo planeado, por este hallazgo). No tiene sentido operar en
+vivo con una config que la evidencia real dice que pierde en promedio.
+
+### Pendiente real para la proxima sesion (rediseño, no parche)
+El conflicto es estructural: RR=25 requiere mucho mas tiempo del que la ventana de 50 minutos
+permite. Opciones reales a evaluar, ninguna trivial:
+1. Bajar RR_MULT_BO a algo alcanzable en <=50 min (requiere barrido nuevo con esta MISMA paridad
+   de horario+rollover, no con el motor viejo que no modelaba el cierre).
+2. Repensar el cierre de rollover: en vez de cerrar TODO a las 20:50, evaluar si hay una forma de
+   proteger contra el pico de spread sin eliminar por completo el tiempo de vida de la operacion
+   (ej. mover a breakeven en vez de cerrar, o ampliar la ventana activa a varias horas seguidas
+   para que una posicion abierta temprano tenga mas margen antes del rollover).
+3. Repetir DIM4 (mejores horas) con esta paridad completa activada, para casos donde la operacion
+   SI tiene mas tiempo real antes del corte (ej. abrir mas temprano en el dia).
+Sea cual sea la direccion, hay que probarla con MANAGE_DEAD_HOURS=1 y ROLLOVER_CLOSE_TEST=1
+activados siempre de ahora en adelante -- el motor viejo (sin estas 2 opciones) ya demostro que da
+numeros que no se sostienen en la realidad.
