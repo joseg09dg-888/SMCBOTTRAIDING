@@ -65,12 +65,17 @@
       "date": "2026-09-21",
       "pnl": 0.0,
       "pnl_pct": 0.0
+    },
+    {
+      "date": "2026-09-23",
+      "pnl": 0.0,
+      "pnl_pct": 0.0
     }
   ],
-  "capital": 92687.53,
+  "capital": 92751.52,
   "initial_month_balance": 95124.19,
-  "guard_day_start_balance": 92687.53,
-  "guard_day_start_date": "2026-09-23",
+  "guard_day_start_balance": 92745.03,
+  "guard_day_start_date": "2026-09-21",
   "guard_paused_today": false,
   "total_dd_force_closed": false
 }
